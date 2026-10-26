@@ -356,6 +356,7 @@ describe('Room', () => {
     expect(obs()).toEqual([
       [0, -1],
       [0, -1],
+      [0, -1],
     ]);
     // Obstacle 1: one hit, then removed at tick 65536 (0 on the wire).
     physics.breaks = [1];
@@ -368,6 +369,7 @@ describe('Room', () => {
     expect(obs()).toEqual([
       [0, -1],
       [2, 2],
+      [0, -1],
     ]);
     expect(decodeSnapshot(binaries(a).at(-1)!)!.obs![1].angle).toBeCloseTo(1.5, 1);
     for (let i = 0; i < SNAP_EVERY; i++) {
@@ -516,13 +518,15 @@ describe('Room tournament', () => {
     expect(snap(a).obs!.map(o => [o.hits, o.since >= 0])).toEqual([
       [2, true],
       [1, false],
+      [0, false],
     ]);
     winRound(a, 0);
     // Frozen in the break: as they were.
-    expect(snap(a).obs!.map(o => o.hits)).toEqual([2, 1]);
+    expect(snap(a).obs!.map(o => o.hits)).toEqual([2, 1, 0]);
     ticks(6);
     expect(lastMatch(a)).toMatchObject({ phase: 'play', round: 2 });
     expect(snap(a).obs).toEqual([
+      { hits: 0, since: -1, angle: 0 },
       { hits: 0, since: -1, angle: 0 },
       { hits: 0, since: -1, angle: 0 },
     ]);
