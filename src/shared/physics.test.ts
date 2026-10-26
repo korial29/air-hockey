@@ -13,7 +13,7 @@ import {
   W,
 } from './constants';
 import { PERIOD, obstacles } from './arena';
-import { clampPaddle, createWorld, spawnPoint, step } from './physics';
+import { clampPaddle, createWorld, skate, spawnPoint, step } from './physics';
 import type { Arena, Paddle, Team, World } from './types';
 
 const DT = 1 / TICK_HZ;
@@ -173,6 +173,43 @@ describe('paddles', () => {
       expect(p.y).toBeGreaterThanOrEqual(PADDLE_R);
     });
     expect([edge(), p.y]).toEqual([W / 2, PADDLE_R]);
+  });
+});
+
+describe('skate (countdown)', () => {
+  /** Everything skate must leave alone. */
+  const rest = (w: World) =>
+    JSON.stringify([w.puck, w.tick, w.obs, w.live, w.hit, w.bumps, w.score, w.size, w.count]);
+
+  it('moves the paddles like step, sub-stepped, around the obstacles; the rest of the world waits', () => {
+    const w = createWorld('ice', 2, 7);
+    const a = paddle(0, 300, 300, 1);
+    const b = paddle(1, 3700, 300, 2);
+    [a.tx, a.ty, b.tx, b.ty] = [1700, 1900, 2300, 1900];
+    w.paddles = [a, b];
+    const before = rest(w);
+    skate(w, DT);
+    // Twice the top speed on a rink of size 2.
+    expect(Math.hypot(a.x - 300, a.y - 300)).toBeCloseTo(2 * PADDLE_MAX_SPEED * DT);
+    for (let i = 0; i < 480; i++) {
+      skate(w, DT);
+      expect(overlap(w)).toBeLessThan(1e-6);
+    }
+    expect([a.x, a.y, b.x, b.y]).toEqual([1700, 1900, 2300, 1900]);
+    expect(rest(w)).toBe(before);
+  });
+
+  it('stops a paddle against the served puck, never pushing it nor putting it in play', () => {
+    const w = createWorld('classic');
+    const p = paddle(0, 200, H / 2);
+    [p.tx, p.ty] = [W / 2, H / 2];
+    w.paddles = [p];
+    const before = rest(w);
+    for (let i = 0; i < 240; i++) {
+      skate(w, DT);
+    }
+    expect(Math.hypot(p.x - W / 2, p.y - H / 2)).toBeCloseTo(RR, 6);
+    expect(rest(w)).toBe(before);
   });
 });
 

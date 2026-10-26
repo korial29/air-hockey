@@ -50,6 +50,7 @@ export const RULES: Rules = {
   roundWin: 10,
   matchWin: 30,
   headStart: 1,
+  readySec: 3,
   breakSec: 3,
   endSec: 15,
 };

@@ -5,7 +5,19 @@ import { decodeSnapshot, encodeInput, parseText } from '../shared/protocol';
 import type { ServerText } from '../shared/protocol';
 import type { PlayerInfo, SocketLike } from '../shared/types';
 import { predict, rebase, reset, view } from './predict';
-import { circle, hud, obstacle, pen, rink, snow, stadium, streak, text, veil } from './render';
+import {
+  circle,
+  countdown,
+  hud,
+  obstacle,
+  pen,
+  rink,
+  snow,
+  stadium,
+  streak,
+  text,
+  veil,
+} from './render';
 import { CH, TOP, sample, toField } from './util';
 import type { Stamped } from './util';
 
@@ -56,6 +68,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   let open = false;
   let score = '';
   let goalAt = -1e4;
+  /** Countdown: when play starts (ms), from the 'ready' message; when it did, from 'play'. */
+  let goAt = 0;
+  let playAt = -1e4;
   let msg = '';
   let raf = 0;
   let dead = false;
@@ -105,9 +120,20 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     } else if (m?.t == 'match') {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { t, ...rest } = m;
-      // The host puts paddles back on their spawn points at round start: drop the prediction
-      // until the pointer moves again, or our paddle would be drawn where it no longer is.
-      me = undefined;
+      const now = performance.now();
+      // 'ready' says how long is left as of sending: a joiner mid-countdown counts from there too.
+      if (m.phase == 'ready') {
+        goAt = now + (m.left ?? 0);
+      }
+      // The countdown ends where the paddles got to: the pointer stays the target.
+      const go = m.phase == 'play' && match?.phase == 'ready';
+      if (go) {
+        playAt = now;
+      } else {
+        // The host puts paddles back on their spawn points at round start: drop the prediction
+        // until the pointer moves again, or our paddle would be drawn where it no longer is.
+        me = undefined;
+      }
       reset(P, m.phase, m.arena, m.size, m.count);
       emit('match', (match = rest));
     } else if (m?.t == 'full') {
@@ -210,6 +236,14 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       snow(now);
     }
     const { phase, winner, ranking = [] } = match ?? {};
+    // Countdown over the rink: 3, 2, 1, one second each, then PLAY! for 600 ms.
+    if (phase == 'ready') {
+      const t = (goAt - now) / 1000;
+      const n = Math.max(1, Math.ceil(t));
+      countdown(n + '', Math.min(1, n - t));
+    } else if (phase == 'play' && now - playAt < 600) {
+      countdown('PLAY!', (now - playAt) / 600, '#fc3');
+    }
     const label = msg || (open ? '' : 'Connecting…');
     const a = 1 - (now - goalAt) / 600;
     if (a > 0 && phase != 'break' && phase != 'end') {

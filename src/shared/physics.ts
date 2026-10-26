@@ -219,11 +219,49 @@ export const step = (w: World, dt: number, host = true): Team | -1 => {
   return goal;
 };
 
+/** Paddle p toward its target for dt, at most PADDLE_MAX_SPEED · size, around the obstacles obs. */
+const drive = (p: Paddle, w: World, obs: Obstacle[], dt: number): void => {
+  const s = w.size;
+  const m = PADDLE_MAX_SPEED * s * dt;
+  const ox = p.x;
+  const oy = p.y;
+  // Aim at the clamped target so a target across the line still gets the full speed budget.
+  const [tx, ty] = clampPaddle(p.team, p.tx, p.ty, s);
+  let dx = tx - ox;
+  let dy = ty - oy;
+  const d = Math.hypot(dx, dy);
+  if (d > m) {
+    dx *= m / d;
+    dy *= m / d;
+  }
+  place(p, ox + dx, oy + dy, s);
+  avoid(p, w, obs);
+  p.vx = (p.x - ox) / dt;
+  p.vy = (p.y - oy) / dt;
+};
+
+/**
+ * The countdown before a round (phase 'ready'): step for the paddles only. They move toward their
+ * targets as in step, around the obstacles where they stand and around the puck, which they never
+ * push. The puck, the obstacles, w.tick, w.hit, w.live and the score stay as they are.
+ */
+export const skate = (w: World, dt: number): void => {
+  const n = Math.ceil(w.size);
+  const obs = obstacles(w.arena, w.tick, w.size, w.count);
+  for (let i = 0; i < n; i++) {
+    for (const p of w.paddles) {
+      drive(p, w, obs, dt / n);
+      if (out(p, w.puck, RR, place, w.size)) {
+        avoid(p, w, obs);
+      }
+    }
+  }
+};
+
 /** One sub-step of step, among the obstacles obs. */
 const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 => {
   const s = w.size;
   const k = w.puck;
-  const m = PADDLE_MAX_SPEED * s * dt;
   // Rink width and height, half-height of the goal mouth.
   const X = W * s;
   const Y = H * s;
@@ -232,23 +270,7 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
   let hit = -1;
   let goal: Team | -1 = -1;
 
-  for (const p of w.paddles) {
-    const ox = p.x;
-    const oy = p.y;
-    // Aim at the clamped target so a target across the line still gets the full speed budget.
-    const [tx, ty] = clampPaddle(p.team, p.tx, p.ty, s);
-    let dx = tx - ox;
-    let dy = ty - oy;
-    const d = Math.hypot(dx, dy);
-    if (d > m) {
-      dx *= m / d;
-      dy *= m / d;
-    }
-    place(p, ox + dx, oy + dy, s);
-    avoid(p, w, obs);
-    p.vx = (p.x - ox) / dt;
-    p.vy = (p.y - oy) / dt;
-  }
+  w.paddles.forEach(p => drive(p, w, obs, dt));
 
   const f = DRAG ** dt;
   k.vx *= f;

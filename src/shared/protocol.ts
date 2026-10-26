@@ -25,6 +25,11 @@ export type ServerText =
       rounds: number;
       /** Rounds won by each team. */
       wins: [number, number];
+      /**
+       * 'ready': ms left until play, as of sending. Sent again on a refit and to a joiner, so
+       * everyone counts down to the same moment, give or take their latency.
+       */
+      left?: number;
       /** 'break': the team that won the round. 'end': the team that won the match. */
       winner?: Team;
       /** 'break' and 'end': everyone who played this match, best points first. */

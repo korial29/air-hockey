@@ -12,8 +12,10 @@
 // For the renderer: view(...).obs[i] is obstacle i of obstacles(arena, view(...).tick, size, count)
 // (hits; since: ticks since removal, fractional, -1 in play; angle). Removed for since in
 // [0, RESPAWN), a ghost from RESPAWN - GHOST. P.hits keeps the local contact times.
+// During the countdown (phase 'ready') the local world moves the paddles only, like the host: the
+// own paddle follows the pointer, the puck, the obstacles and the tick stay on the snapshot's.
 import { GOAL, H, PUCK_R, TICK_HZ, W } from '../shared/constants';
-import { createWorld, step } from '../shared/physics';
+import { createWorld, skate, step } from '../shared/physics';
 import type { Arena, Paddle, Phase, Snapshot, World } from '../shared/types';
 
 /** Physics step, in ms. */
@@ -50,6 +52,8 @@ export interface Prediction {
   wait?: boolean;
   /** Phase 'break' or 'end': the host is frozen, snapshots are drawn as they are. */
   off?: boolean;
+  /** Phase 'ready': local steps move the paddles only (skate). */
+  ready?: boolean;
   /** Score of the last snapshot. When it changes the puck was served: rebased without easing. */
   score: string;
   /**
@@ -75,6 +79,10 @@ const advance = (p: Prediction, now: number): void => {
   const k = w.puck;
   p.t = Math.max(p.t, now - MAX_CATCH_UP * DT);
   for (; p.t + DT <= now; p.t += DT) {
+    if (p.ready) {
+      skate(w, DT / 1000);
+      continue;
+    }
     const { x, y } = k;
     const goal = step(w, DT / 1000, false);
     if (goal != -1) {
@@ -156,6 +164,7 @@ export const reset = (p: Prediction, phase: Phase, arena: Arena, size = 1, count
   p.me = undefined;
   p.score = '';
   p.off = phase == 'break' || phase == 'end';
+  p.ready = phase == 'ready';
 };
 
 /**
@@ -164,7 +173,8 @@ export const reset = (p: Prediction, phase: Phase, arena: Arena, size = 1, count
  * Its tick is the fractional world tick at now: draw obstacles(p.w.arena, tick, p.w.size,
  * p.w.count) with it. Its obs are the host's latest obstacle states, `since` counted up to that
  * tick (fractional): removals, ghosts and returns animate smoothly between snapshots.
- * While the host is frozen (break, end) s comes back as is, its tick and obs still.
+ * While the host is frozen (break, end) s comes back as is, its tick and obs still. In the
+ * countdown (ready) only the own paddle moves: the tick is the snapshot's, not counted up.
  */
 export const view = (
   p: Prediction,
@@ -183,7 +193,7 @@ export const view = (
   const k = w.puck;
   // w stands up to one step behind now: the puck is drawn where it gets at now.
   const r = (now - p.t) / 1000;
-  const f = (now - p.t) / DT;
+  const f = p.ready ? 0 : (now - p.t) / DT;
   // That push and the correction ignore the walls: keep the drawn puck off the boards (it may
   // only go past a goal line in front of the mouth), or it would dip in and out on a bounce.
   const { size } = w;

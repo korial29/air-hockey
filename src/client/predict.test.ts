@@ -228,6 +228,42 @@ describe('predict', () => {
     },
   );
 
+  it('moves only the own paddle in the countdown: puck, tick and obstacles stay on the snapshot', () => {
+    const p = predict();
+    reset(p, 'ready', 'ice');
+    const obs = [
+      { hits: 1, since: -1, angle: 0 },
+      { hits: 0, since: -1, angle: 0 },
+    ];
+    // The served puck in the paddle's way: it stops against it, never pushes it.
+    const s = { ...snap({ x: 500, y: 450 }), tick: 100, obs };
+    rebase(p, s, ME, 0);
+    const a = draw(p, s, 0.5 * DT, [800, 450]);
+    expect(a.v.tick).toBe(100);
+    for (let t = DT; t < 300; t += 16) {
+      const d = draw(p, s, t, [800, 450]);
+      expect(d.v.tick).toBe(100);
+      expect(d.puck).toMatchObject({ x: 500, y: 450, vx: 0, vy: 0 });
+      expect(d.v.obs).toEqual(obs);
+    }
+    expect(p.me).toMatchObject({ x: 500 - PUCK_R - PADDLE_R, y: 450 });
+    expect(p.w.hit).toBe(-1);
+    expect(p.w.live).toBe(false);
+    // Another snapshot: the own paddle keeps its local course, the rest follows the host.
+    const next = { ...snap({ x: 500, y: 450 }, [{ id: ME, x: 320, y: 450 }]), tick: 100, obs };
+    rebase(p, next, ME, 300);
+    expect(p.me).toMatchObject({ x: 500 - PUCK_R - PADDLE_R, y: 450 });
+    expect(draw(p, next, 300 + 2 * DT, [300, 200]).me!.y).toBeLessThan(450);
+    expect(p.w.puck).toMatchObject({ x: 500, y: 450 });
+
+    // Play: the local world runs again.
+    reset(p, 'play', 'ice');
+    rebase(p, { ...next, puck: { x: 500, y: 450, vx: 600, vy: 0 } }, ME, 400);
+    const d = draw(p, next, 400 + 4.5 * DT);
+    expect(d.v.tick).toBeCloseTo(104.5, 9);
+    expect(d.puck.x).toBeGreaterThan(510);
+  });
+
   it('rebases the world tick on each snapshot and draws the fractional tick at now', () => {
     const p = predict();
     rebase(p, { ...snap({}, []), tick: 100 }, ME, 0);
