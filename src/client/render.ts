@@ -2,8 +2,8 @@
 // end-of-match stadium. The rink grows with the players (World.size): the world (obstacles, puck,
 // paddles) is drawn in world units, W · size × H · size, under a transform scaled by 1 / size,
 // while the rink picture, the snow, the veils and the HUD stay in base units.
-import { GOAL, H, PUCK_R, W } from '../shared/constants';
-import type { Obstacle, PlayerInfo, Rank, Team } from '../shared/types';
+import { GHOST, GOAL, H, PUCK_R, RESPAWN, TICK_HZ, W } from '../shared/constants';
+import type { Obstacle, PlayerInfo, Rank, Snapshot, Team } from '../shared/types';
 import type { MatchState } from './index';
 import { BOT, CH, TOP, byTeam, flow, podium, rnd, shown } from './util';
 
@@ -237,13 +237,12 @@ export const rink = (ice: boolean, k: number) => {
   c.drawImage(img, 0, 0, W, H);
 };
 
-/**
- * An iceberg, in world units: facets lit from the top left. e: hit flash, 1 → 0. Strokes and the
- * shake scale with the rink like its radius does.
- */
-const berg = (x: number, y: number, r: number, i: number, e: number, age: number) => {
-  x += Math.sin(age / 12) * e * 8 * u;
-  shadow(x + r * 0.25, y + r * 0.3, r * 1.3, r, '#0a4a7a66');
+/** Ms from removal to return, and from removal to the ghost (see ObstacleState.gone). */
+const BACK = (RESPAWN * 1000) / TICK_HZ;
+const SHOW = ((RESPAWN - GHOST) * 1000) / TICK_HZ;
+
+/** Outline of iceberg i around x, y (x, y pairs), the same every frame, and its peak off-centre. */
+const corners = (x: number, y: number, r: number, i: number) => {
   const n = 7 + (i % 3);
   const v: number[] = [];
   for (let j = 0; j < n; j++) {
@@ -251,9 +250,29 @@ const berg = (x: number, y: number, r: number, i: number, e: number, age: number
     const d = r * (1.02 + rnd(i * 7 + j + 50) * 0.22);
     v.push(x + Math.cos(a) * d, y + Math.sin(a) * d);
   }
-  // Facets from a peak off-centre: bright toward the top left, shaded toward the bottom right.
-  const px = x - r * 0.18;
-  const py = y - r * 0.22;
+  return [v, x - r * 0.18, y - r * 0.22] as const;
+};
+
+/** Facet colour: bright toward the top left (m: its direction from the centre), l: extra light. */
+const shade = (m: number, l: number) => `hsl(196 70% ${76 + 18 * Math.cos(m + 2.36) + l}%)`;
+
+/**
+ * An iceberg, in world units: facets lit from the top left. e: hit flash, 1 → 0. hits: puck hits
+ * taken, a crack at 1, deeper branching cracks and a chipped corner at 2. Strokes and the shake
+ * scale with the rink like its radius does.
+ */
+const berg = (x: number, y: number, r: number, i: number, e: number, age: number, hits = 0) => {
+  x += Math.sin(age / 12) * e * 8 * u;
+  shadow(x + r * 0.25, y + r * 0.3, r * 1.3, r, '#0a4a7a66');
+  const [v, px, py] = corners(x, y, r, i);
+  const n = v.length / 2;
+  // Two hits: one corner knocked off, the facets around it in shadow.
+  const chip = hits > 1 ? ((i * 2) % n) * 2 : -1;
+  if (chip >= 0) {
+    v[chip] = x + (v[chip] - x) * 0.4;
+    v[chip + 1] = y + (v[chip + 1] - y) * 0.4;
+  }
+  // Facets from the peak: bright toward the top left, shaded toward the bottom right.
   for (let j = 0; j < n * 2; j += 2) {
     const k = (j + 2) % (n * 2);
     c.beginPath();
@@ -261,7 +280,7 @@ const berg = (x: number, y: number, r: number, i: number, e: number, age: number
     c.lineTo(v[j], v[j + 1]);
     c.lineTo(v[k], v[k + 1]);
     const m = Math.atan2(v[j + 1] + v[k + 1] - 2 * y, v[j] + v[k] - 2 * x);
-    c.fillStyle = `hsl(196 70% ${76 + 18 * Math.cos(m + 2.36) + 30 * e}%)`;
+    c.fillStyle = shade(m, 30 * e - (j == chip || k == chip ? 40 : 0));
     c.fill();
   }
   c.beginPath();
@@ -281,6 +300,32 @@ const berg = (x: number, y: number, r: number, i: number, e: number, age: number
   c.lineWidth = 4 * u;
   c.lineJoin = 'round';
   c.stroke();
+  if (hits) {
+    // A zigzag crack from one corner across the facets to the far side, lit on its top-left lip.
+    const a = ((i * 3) % n) * 2;
+    const b = (a + (n & ~1)) % (n * 2);
+    const p: number[] = [];
+    for (let k = 0; k < 6; k++) {
+      const j = k % 5 ? (rnd(i * 11 + k) - 0.5) * r * 0.3 : 0;
+      p.push(
+        x + ((v[a] - x) * (5 - k) + (v[b] - x) * k) * 0.18 + j,
+        y + ((v[a + 1] - y) * (5 - k) + (v[b + 1] - y) * k) * 0.18 - j,
+      );
+    }
+    const w = hits > 1 ? 7 : 4;
+    line('#fffd', w * u, ...p.map(q => q - w * u));
+    line('#2b6d96', w * u, ...p);
+    if (hits > 1) {
+      // Deeper: two branches toward the next corners.
+      for (const [s, t] of [
+        [2, a + 4],
+        [6, b + 4],
+      ]) {
+        const q = t % (n * 2);
+        line('#2b6d96', 3 * u, p[s], p[s + 1], (p[s] + v[q]) / 2, (p[s + 1] + v[q + 1]) / 2);
+      }
+    }
+  }
   if (e) {
     // Bumper flash: a ring spreading out, and ice shards flying off.
     c.globalAlpha = e;
@@ -372,16 +417,137 @@ const penguin = (
   }
 };
 
-/** An obstacle of the ice arena, in world units; age: ms since the puck last hit it. */
+/**
+ * Iceberg i shattering, q: 0 → 1 over 800 ms. Its facets slide apart on the ice, slowing down,
+ * spinning a little and fading, in a puff of ice dust.
+ */
+const shatter = (x: number, y: number, r: number, i: number, q: number) => {
+  const [v, px, py] = corners(x, y, r, i);
+  const d = r * 1.6 * q * (2 - q);
+  c.globalAlpha = 1 - q;
+  c.beginPath();
+  for (let j = 0; j < 9; j++) {
+    const a = j * 0.7 + i;
+    const s = r * (0.3 + q * (0.6 + rnd(j + i * 9)));
+    const t = r * (0.25 + q * 0.35);
+    c.moveTo(x + Math.cos(a) * s + t, y + Math.sin(a) * s);
+    c.arc(x + Math.cos(a) * s, y + Math.sin(a) * s, t, 0, 7);
+  }
+  c.fillStyle = '#f8fdff';
+  c.fill();
+  c.strokeStyle = '#a9d4ea';
+  c.lineWidth = 2 * u;
+  c.stroke();
+  c.globalAlpha = Math.min(1, 2 - 2 * q);
+  for (let j = 0; j < v.length; j += 2) {
+    const k = (j + 2) % v.length;
+    const cx = (px + v[j] + v[k]) / 3;
+    const cy = (py + v[j + 1] + v[k + 1]) / 3;
+    const m = Math.atan2(v[j + 1] + v[k + 1] - 2 * y, v[j] + v[k] - 2 * x);
+    const s = d * (0.6 + rnd(i * 5 + j) * 0.8);
+    c.save();
+    c.translate(cx + Math.cos(m) * s, cy + Math.sin(m) * s);
+    c.rotate((rnd(i + j * 3) - 0.5) * 2.5 * q);
+    c.beginPath();
+    c.moveTo(px - cx, py - cy);
+    c.lineTo(v[j] - cx, v[j + 1] - cy);
+    c.lineTo(v[k] - cx, v[k + 1] - cy);
+    c.closePath();
+    c.fillStyle = shade(m, 0);
+    c.fill();
+    c.strokeStyle = '#4f9cc4';
+    c.lineWidth = 3 * u;
+    c.stroke();
+    c.restore();
+  }
+  c.globalAlpha = 1;
+};
+
+/**
+ * A penguin shot out, q: 0 → 1 over 1 s, from where the puck hit it (x, y) along a. It flies off,
+ * spinning and shrinking, stars around its head, feathers left behind; gone past the boards.
+ */
+const shot = (x: number, y: number, r: number, a: number, q: number, now: number) => {
+  c.globalAlpha = 1 - q;
+  for (let j = 0; j < 6; j++) {
+    const b = a + 3.14 + (rnd(j + 30) - 0.5) * 3;
+    const d = r * (0.4 + q * (1.2 + rnd(j + 40)));
+    c.beginPath();
+    c.ellipse(x + Math.cos(b) * d, y + Math.sin(b) * d, r * 0.3, r * 0.1, b + q * j, 0, 7);
+    c.fillStyle = j % 3 ? '#f7fbff' : BLACK;
+    c.fill();
+    c.strokeStyle = '#7fb6d6';
+    c.lineWidth = 2 * u;
+    c.stroke();
+  }
+  c.globalAlpha = Math.min(1, 4 - 4 * q);
+  const d = r * 24 * q;
+  const vx = Math.cos(a);
+  const vy = Math.sin(a);
+  penguin(x + vx * d, y + vy * d, r * (1 - 0.35 * q), vx, vy, 1 - q, now);
+  c.globalAlpha = 1;
+};
+
+/** What the host says of an obstacle, Snapshot.obs[i]. */
+export type ObstacleView = NonNullable<Snapshot['obs']>[number];
+
+/**
+ * An obstacle of the ice arena, in world units; age: ms since the puck last hit it, back: ms since
+ * it came back in play. st: its state, absent while intact and in play. Once removed
+ * (st.since ≥ 0), from where it was then: an iceberg shatters, a penguin is shot out. Then nothing
+ * until its ghost, at o (its lane goes on): see-through, beating faster and faster, a ring
+ * closing on it. Back in play it pops in.
+ */
 export const obstacle = (
-  { kind, x, y, r, vx, vy }: Obstacle,
+  o: Obstacle,
   i: number,
   age: number,
   now: number,
-) =>
-  kind == 'iceberg'
-    ? berg(x, y, r, i, Math.max(0, 1 - age / 400), age)
-    : penguin(x, y, r, vx, vy, Math.max(0, 1 - age / 800), now);
+  st?: ObstacleView,
+  back = 1e9,
+  from = o,
+) => {
+  const ms = st && st.since >= 0 ? (st.since * 1000) / TICK_HZ : -1;
+  const ice = o.kind == 'iceberg';
+  if (ms >= 0 && ms < SHOW) {
+    if (ms < (ice ? 800 : 1000)) {
+      if (ice) {
+        shatter(from.x, from.y, from.r, i, ms / 800);
+      } else {
+        shot(from.x, from.y, from.r, st!.angle, ms / 1000, now);
+      }
+    }
+    return;
+  }
+  const { x, y, r, vx, vy } = o;
+  const q = back / 300;
+  c.save();
+  if (ms >= 0) {
+    // Beats at each whole p, closer and closer: 6 of them in the last 3 s.
+    const p = (ms - SHOW) / (BACK - SHOW);
+    const b = (1 - ((3 * p * (1 + p)) % 1)) ** 3;
+    c.globalAlpha = 0.3 + 0.6 * b;
+    ring(x, y, r * (1.2 + 1.5 * (1 - p)), '#7fe3ff', (3 + 6 * b) * u);
+    c.globalAlpha = 0.25 + 0.2 * b;
+    age = 1e9;
+  } else if (q < 1) {
+    const z = 0.85 + 0.15 * q + 0.2 * Math.sin(q * 3.14);
+    c.translate(x, y);
+    c.scale(z, z);
+    c.translate(-x, -y);
+  }
+  if (ice) {
+    berg(x, y, r, i, Math.max(0, 1 - age / 400), age, ms < 0 ? st?.hits : 0);
+  } else {
+    penguin(x, y, r, vx, vy, Math.max(0, 1 - age / 800), now);
+  }
+  c.restore();
+  if (ms < 0 && q < 1) {
+    c.globalAlpha = 1 - q;
+    ring(x, y, r * (1.2 + q * 0.6), '#fff', 6 * u);
+    c.globalAlpha = 1;
+  }
+};
 
 /**
  * The puck's trail, in world units: p holds the last positions drawn (x, y pairs), the one at

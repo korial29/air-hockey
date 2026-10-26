@@ -1,5 +1,5 @@
 import { obstacles } from '../shared/arena';
-import { INTERP_DELAY, PADDLE_R, PUCK_R, W } from '../shared/constants';
+import { GHOST, INTERP_DELAY, PADDLE_R, PUCK_R, RESPAWN, W } from '../shared/constants';
 import { clampPaddle } from '../shared/physics';
 import { decodeSnapshot, encodeInput, parseText } from '../shared/protocol';
 import type { ServerText } from '../shared/protocol';
@@ -62,6 +62,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   let match: MatchState | undefined;
   /** Last puck positions drawn, for its trail. */
   const trail: number[] = [];
+  /** Per obstacle: Snapshot.obs since drawn last frame, and when it came back in play (ms). */
+  const was: number[] = [];
+  const back: number[] = [];
 
   const ws = opts.socket ?? (new WebSocket(opts.url!) as unknown as SocketLike);
   ws.binaryType = 'arraybuffer';
@@ -158,9 +161,25 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     const s = view(P, sample(buf, now - INTERP_DELAY), now, me);
     // Time of the puck's last contact with each obstacle; absent before prediction tracks it.
     const hits = P.hits;
-    obstacles(arena, s?.tick ?? 0, size, count).forEach((o, i) =>
-      obstacle(o, i, now - (hits?.[i] ?? -1e9), now),
-    );
+    const tick = s?.tick ?? 0;
+    obstacles(arena, tick, size, count).forEach((o, i) => {
+      // Absent: intact and in play. Removed: drawn from where it was then, ghost where it is now.
+      const st = s?.obs?.[i];
+      const since = st?.since ?? -1;
+      if (since < 0 && was[i] >= 0) {
+        back[i] = now;
+      }
+      was[i] = since;
+      obstacle(
+        o,
+        i,
+        now - (hits?.[i] ?? -1e9),
+        now,
+        st,
+        now - (back[i] ?? -1e9),
+        since >= 0 && since < RESPAWN - GHOST ? obstacles(arena, tick - since, size, count)[i] : o,
+      );
+    });
     if (s) {
       const { x, y, vx, vy } = s.puck;
       // Top speeds scale with the rink: so does the speed that leaves a trail.
