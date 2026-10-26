@@ -717,8 +717,8 @@ describe('Room tournament', () => {
       // paddles respawned on it, the puck on its scaled serve spot.
       const c = join(room, 'C');
       join(room, 'D');
-      expect(lastMatch(a)).toMatchObject({ phase: 'play', round: 1, size: Math.SQRT2, count: 3 });
-      expect(rink(c)).toEqual([Math.SQRT2, 3]);
+      expect(lastMatch(a)).toMatchObject({ phase: 'play', round: 1, size: Math.SQRT2, count: 4 });
+      expect(rink(c)).toEqual([Math.SQRT2, 4]);
       expect(snap(a).paddles.map(p => [p.x, p.y])).toEqual(
         [
           [400, 100],
@@ -738,11 +738,11 @@ describe('Room tournament', () => {
       join(room, 'F');
       expect(matches(a)).toHaveLength(n);
       expect(physics.rinks).toHaveLength(made);
-      expect(rink(e)).toEqual([Math.SQRT2, 3]);
+      expect(rink(e)).toEqual([Math.SQRT2, 4]);
 
       // The next serve (after a goal) fits the 6 players, the score kept.
       goal(0);
-      expect(lastMatch(a)).toMatchObject({ phase: 'play', size: Math.sqrt(3), count: 4 });
+      expect(lastMatch(a)).toMatchObject({ phase: 'play', size: Math.sqrt(3), count: 5 });
       expect(snap(a).score).toEqual([1, 0]);
     });
 
@@ -751,7 +751,7 @@ describe('Room tournament', () => {
       const [a] = conns;
       winRound(a, 0);
       ticks(6);
-      expect(rink(a)).toEqual([Math.sqrt(3), 4]);
+      expect(rink(a)).toEqual([Math.sqrt(3), 5]);
       goal(0);
       touch(me(a).id);
       // Team 1 empties with the puck in play: waiting with 3 players, told once.
