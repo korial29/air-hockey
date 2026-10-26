@@ -13,7 +13,7 @@ Tiny multiplayer air hockey for the browser. Zero runtime dependencies on the cl
 | `src/shared/room.ts` | One game, transport-agnostic: roster, colours, teams, tick loop, match (rounds, points, ranking) |
 | `src/server/` | Node `ws` adapter (`air-hockey/server`) and its CLI |
 | `src/local/` | Same-browser multiplayer over BroadcastChannel (`air-hockey/local`) |
-| `src/client/` | Canvas renderer, input, interpolation, public `airHockey()` API |
+| `src/client/` | Public `airHockey()` API, input, interpolation; `predict.ts` runs the puck and own paddle locally, `render.ts` draws the HUD bands and the end screen |
 | `demo/` | Demo page, deployed to gh-pages |
 
 ## Rules
