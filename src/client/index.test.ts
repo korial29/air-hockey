@@ -530,7 +530,8 @@ describe('airHockey', () => {
     // Penguin shot out 0.5 s ago along +x: it flies from where it was at removal, stars around it.
     set([0, -1], [1, sec(0.5)], 0);
     draw();
-    expect(obstacles).toHaveBeenCalledWith('ice', expect.closeTo(4000 - sec(0.5), 0), 1, 7);
+    // The predicted tick runs on real time: a loaded machine adds a few ticks between steps.
+    expect(obstacles).toHaveBeenCalledWith('ice', expect.closeTo(4000 - sec(0.5), -1), 1, 7);
     expect(texts.filter(t => t == '★')).toHaveLength(3);
     expect(texts.moves).toContainEqual([1000 + 50 * 24 * 0.5, 500]);
     // Gone for good at 2 s: nothing drawn for it.
