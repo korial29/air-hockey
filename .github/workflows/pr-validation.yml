@@ -1,0 +1,39 @@
+name: PR validation
+
+# Ensures every PR targeting master carries exactly one release label.
+# This label drives the release workflow once the PR is merged.
+on:
+  pull_request:
+    types: [opened, reopened, labeled, unlabeled, synchronize]
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  require-release-label:
+    name: require-release-label
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for a single release label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const allowed = ['release:major', 'release:minor', 'release:patch', 'release:skip'];
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            const found = labels.filter(l => allowed.includes(l));
+
+            if (found.length === 0) {
+              core.setFailed(
+                `This PR must carry exactly one release label so the release can be generated on merge.\n` +
+                `Add one of: ${allowed.join(', ')}.\n` +
+                `Use "release:skip" if this PR should not trigger a release.`
+              );
+              return;
+            }
+            if (found.length > 1) {
+              core.setFailed(`Found multiple release labels (${found.join(', ')}). Keep only one.`);
+              return;
+            }
+            core.info(`Release label OK: ${found[0]}`);

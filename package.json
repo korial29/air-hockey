@@ -1,0 +1,83 @@
+{
+  "name": "air-hockey",
+  "description": "A tiny multiplayer air hockey game for the browser: zero runtime dependencies, WebSocket or same-browser multi-tab play, pluggable into any JS app.",
+  "license": "Apache-2.0",
+  "version": "0.0.0",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/types/client/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./local": {
+      "types": "./dist/types/local/index.d.ts",
+      "default": "./dist/local.js"
+    },
+    "./server": {
+      "types": "./dist/types/server/index.d.ts",
+      "default": "./dist/server.js"
+    }
+  },
+  "bin": {
+    "air-hockey-server": "dist/cli.js"
+  },
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/korial29/air-hockey.git"
+  },
+  "homepage": "https://korial29.github.io/air-hockey/",
+  "keywords": [
+    "air-hockey",
+    "game",
+    "multiplayer",
+    "websocket",
+    "canvas",
+    "broadcastchannel"
+  ],
+  "author": "Ludovic Dupont <ludovic.dupont29@gmail.com>",
+  "peerDependencies": {
+    "ws": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ws": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "start": "vite demo --config vite.config.ts",
+    "dev:server": "tsx watch src/server/cli.ts",
+    "build": "rm -rf dist && vite build && BUILD_SERVER=true vite build && tsc -p tsconfig.build.json",
+    "build:demo": "BUILD_DEMO=true vite build",
+    "size": "node scripts/size.mjs",
+    "lint:eslint": "eslint .",
+    "format:eslint": "eslint . --fix",
+    "lint:prettier": "prettier --check \"**/*.{js,mjs,ts}\"",
+    "format:prettier": "prettier \"**/*.{js,mjs,ts}\" --write",
+    "lint:tsc": "tsc --noEmit",
+    "lint": "npm run lint:prettier && npm run lint:eslint && npm run lint:tsc",
+    "format": "npm run format:prettier && npm run format:eslint",
+    "test": "vitest run --coverage",
+    "test:ci": "vitest run --coverage --passWithNoTests",
+    "test:watch": "vitest --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
+    "@vitest/coverage-v8": "^5.0.5",
+    "eslint": "^10.13.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.7",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.9.10",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5",
+    "ws": "^8.22.0"
+  }
+}
