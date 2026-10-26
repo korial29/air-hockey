@@ -105,7 +105,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       // The host puts paddles back on their spawn points at round start: drop the prediction
       // until the pointer moves again, or our paddle would be drawn where it no longer is.
       me = undefined;
-      reset(P, m.phase, m.arena);
+      reset(P, m.phase, m.arena, m.size, m.count);
       emit('match', (match = rest));
     } else if (m?.t == 'full') {
       msg = 'Room is full';
@@ -116,7 +116,11 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   const onPointer = (e: PointerEvent) => {
     const team = players.get(you)?.team;
     if (team != null) {
-      me = clampPaddle(team, ...toField(e.clientX, e.clientY, canvas.getBoundingClientRect()));
+      me = clampPaddle(
+        team,
+        ...toField(e.clientX, e.clientY, canvas.getBoundingClientRect()),
+        P.w.size,
+      );
       dirty = true;
     }
   };

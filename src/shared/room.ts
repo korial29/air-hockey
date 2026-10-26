@@ -1,3 +1,4 @@
+import { layout } from './arena';
 import { MAX_NAME, MAX_PLAYERS, RULES, SNAP_EVERY, TICK_HZ } from './constants';
 import { clampPaddle, createWorld, spawnPoint, step } from './physics';
 import { decodeInput, encodeSnapshot, parseText } from './protocol';
@@ -39,12 +40,14 @@ const unique = (name: string, taken: string[]): string => {
 };
 
 const fresh = (info: PlayerInfo): Rank => ({ ...info, points: 0, goals: 0, hits: 0 });
-const idle = ({ arena, goals, rounds }: Rules): Match => ({
+const idle = ({ arena, goals, rounds }: Rules, { size, count }: World): Match => ({
   t: 'match',
   phase: 'wait',
   round: 0,
   wins: [0, 0],
   arena,
+  size,
+  count,
   goals,
   rounds,
 });
@@ -81,8 +84,9 @@ export class Room {
   /** Missing rules fall back to RULES. */
   public constructor(rules: Partial<Rules> = {}) {
     this.rules = { ...RULES, ...rules };
-    this.world = createWorld(this.rules.arena);
-    this.m = idle(this.rules);
+    // The rink of layout(0); fit() and next() move the world onto the one the players call for.
+    this.world = createWorld(this.rules.arena, 1, 2);
+    this.m = idle(this.rules, this.world);
   }
 
   /** Number of joined players. */
@@ -107,7 +111,7 @@ export class Room {
     }
     const input = p && decodeInput(data);
     if (input) {
-      [p.paddle.tx, p.paddle.ty] = clampPaddle(p.info.team, input.x, input.y);
+      [p.paddle.tx, p.paddle.ty] = clampPaddle(p.info.team, input.x, input.y, this.world.size);
     }
   }
 
@@ -127,10 +131,12 @@ export class Room {
       this.roster();
     } else {
       // Last one out: the next game starts from 0-0.
-      this.world = createWorld(this.rules.arena);
+      this.world = createWorld(this.rules.arena, 1, 2);
       this.ticks = 0;
     }
-    this.sync();
+    if (!this.sync() && this.fit()) {
+      this.go('wait');
+    }
   }
 
   /** One physics step of 1 / TICK_HZ; a snapshot goes out every SNAP_EVERY ticks. */
@@ -247,7 +253,8 @@ export class Room {
     }
     const n = this.teams();
     const team = n[1] < n[0] ? 1 : 0;
-    const [x, y] = spawnPoint(team, n[team]);
+    // Mid-round, on the rink of the round. In 'wait' fit() may respawn everyone on a new one.
+    const [x, y] = spawnPoint(team, n[team], this.world.size);
     const paddle: Paddle = { id, team, x, y, vx: 0, vy: 0, tx: x, ty: y };
     const info: PlayerInfo = {
       id,
@@ -275,7 +282,11 @@ export class Room {
     this.peers.set(conn, player);
     this.roster();
     if (!this.sync()) {
-      conn.send(JSON.stringify(this.m));
+      if (this.fit()) {
+        this.go('wait');
+      } else {
+        conn.send(JSON.stringify(this.m));
+      }
     }
   }
 
@@ -313,31 +324,58 @@ export class Room {
     if (!due && (on ? phase !== 'wait' : phase === 'wait' || (phase === 'end' && this.size))) {
       return false;
     }
-    this.m = idle(this.rules);
+    this.m = idle(this.rules, this.world);
     if (on) {
       this.stats = this.players().map(p => (p.rank = fresh(p.info)));
       this.next();
     } else {
+      this.fit();
       this.go('wait');
     }
     return true;
   }
 
   /**
-   * Next round: paddles back to their spawn points, puck served, head start for the smaller team.
-   * The world restarts at tick 0, where no penguin stands on the centre spot.
+   * In 'wait' the rink follows arrivals and departures: when the joined players call for another
+   * one, the world moves onto it (see shape), the score kept. The caller tells the clients.
+   * Returns whether it did.
    */
-  private next(): void {
+  private fit(): boolean {
+    const { size, count } = layout(this.size);
     const w = this.world;
+    if (this.m.phase !== 'wait' || (size === w.size && count === w.count)) {
+      return false;
+    }
+    this.shape(w.score);
+    return true;
+  }
+
+  /**
+   * The world on the rink for the joined players (layout), at tick 0, where no penguin stands on
+   * the centre spot: paddles back to their spawn points, puck served, score as given.
+   * Returns the paddles per team.
+   */
+  private shape(score: [number, number]): number[] {
+    const w = this.world;
+    const { size, count } = layout(this.size);
     const n = [0, 0];
     w.paddles.forEach(p => {
-      [p.tx, p.ty] = [p.x, p.y] = spawnPoint(p.team, n[p.team]++);
+      [p.tx, p.ty] = [p.x, p.y] = spawnPoint(p.team, n[p.team]++, size);
     });
-    const [a, b] = n;
-    const { goals, headStart } = this.rules;
-    Object.assign(w, createWorld(this.rules.arena), { paddles: w.paddles });
-    w.score[a < b ? 0 : 1] = Math.min(goals - 1, headStart * Math.abs(a - b));
+    Object.assign(w, createWorld(this.rules.arena, size, count), { paddles: w.paddles, score });
+    Object.assign(this.m, { size, count });
     this.last = undefined;
+    return n;
+  }
+
+  /**
+   * Next round, on the rink for the players joined right now (set until the next round):
+   * paddles back to their spawn points, puck served, head start for the smaller team.
+   */
+  private next(): void {
+    const [a, b] = this.shape([0, 0]);
+    const { goals, headStart } = this.rules;
+    this.world.score[a < b ? 0 : 1] = Math.min(goals - 1, headStart * Math.abs(a - b));
     this.m.round++;
     this.go('play');
   }

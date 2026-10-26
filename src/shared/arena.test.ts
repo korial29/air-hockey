@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { PERIOD, obstacles } from './arena';
+import { PERIOD, layout, obstacles } from './arena';
 import {
   GOAL,
   H,
+  MAX_PLAYERS,
+  MAX_SIZE,
   PADDLE_MAX_SPEED,
   PADDLE_R,
   PUCK_MAX_SPEED,
@@ -154,5 +156,183 @@ describe('obstacles', () => {
     const v = Math.max(...ice(0).map(o => Math.abs(o.vy)));
     expect((PUCK_MAX_SPEED + v) / TICK_HZ).toBeLessThan(r + PUCK_R);
     expect((PADDLE_MAX_SPEED + v) / TICK_HZ).toBeLessThan(r + PADDLE_R);
+  });
+});
+
+describe('layout', () => {
+  it.each([
+    [0, 1, 2],
+    [1, 1, 2],
+    [2, 1, 2],
+    [3, Math.sqrt(1.5), 2],
+    [4, Math.SQRT2, 3],
+    [5, Math.sqrt(2.5), 3],
+    [6, Math.sqrt(3), 4],
+    [7, Math.sqrt(3.5), 4],
+    [8, 2, 5],
+    [10, 2, 6],
+    [12, 2, 7],
+    [16, 2, 7],
+  ])('%i players: size %f, %i obstacles', (players, size, count) => {
+    expect(layout(players)).toEqual({ size, count });
+  });
+
+  it('keeps the area per player from 2 to 8 players', () => {
+    for (let n = 2; n <= 8; n++) {
+      expect((layout(n).size ** 2 * W * H) / n).toBeCloseTo((W * H) / 2, 6);
+    }
+    expect(layout(MAX_PLAYERS).size).toBe(MAX_SIZE);
+  });
+});
+
+describe('obstacles on a scaled rink', () => {
+  /** Every size and count the room can pick. */
+  const RINKS = [...Array(MAX_PLAYERS + 1).keys()].map(n => layout(n));
+  const ALL = [2, 3, 4, 5, 6, 7].flatMap(count =>
+    [1, Math.SQRT2, Math.sqrt(3), MAX_SIZE].map(size => ({ size, count })),
+  );
+  /** A period sampled every 8 ticks, plus fractional ticks. */
+  const SOME = [...Array(PERIOD / 8).keys()].map(t => t * 8).concat([0.5, 1234.25, 2047.9]);
+  const at = (t: number, { size, count }: { size: number; count: number }) =>
+    obstacles('ice', t, size, count);
+
+  it.each([
+    [2, 'ii', [0, 1]],
+    [3, 'iip', [0, 1, 5]],
+    [4, 'iipp', [0, 1, 4, 6]],
+    [5, 'iippp', [0, 1, 4, 5, 6]],
+    [6, 'iiiipp', [0, 1, 2, 3, 4, 6]],
+    [7, 'iiiippp', [0, 1, 2, 3, 4, 5, 6]],
+  ])('keeps %i obstacles of the full layout, in its order', (count, kinds, picked) => {
+    for (const t of [0, 333.5]) {
+      const obs = obstacles('ice', t, 1, count);
+      expect(obs.map(o => o.kind[0]).join('')).toBe(kinds);
+      expect(obs).toEqual(picked.map(i => ice(t)[i]));
+    }
+  });
+
+  it('is the base layout scaled by the size, with the same crossing time', () => {
+    for (const { size, count } of ALL) {
+      for (const t of [0, 100.5, 1500]) {
+        const base = obstacles('ice', t, 1, count);
+        obstacles('ice', t, size, count).forEach((o, i) => {
+          const b = base[i];
+          expect([o.kind, o.vx]).toEqual([b.kind, b.vx]);
+          for (const k of ['x', 'y', 'r', 'vy'] as const) {
+            expect(o[k]).toBeCloseTo(b[k] * size, 9);
+          }
+        });
+      }
+    }
+  });
+
+  it('is mirror-symmetric at every count and size, a penguin on the centre line when odd', () => {
+    for (const rink of ALL) {
+      const X = W * rink.size;
+      for (const t of [0, 0.5, 777, 2000.75]) {
+        const obs = at(t, rink);
+        expect(obs).toHaveLength(rink.count);
+        expect(obs.filter(o => Math.abs(o.x - X / 2) < 1e-9)).toHaveLength(rink.count % 2);
+        for (const o of obs) {
+          const m = obs.find(q => Math.abs(q.x - (X - o.x)) < 1e-9)!;
+          expect([m.kind, m.y, m.r, m.vy]).toEqual([o.kind, o.y, o.r, o.vy]);
+        }
+      }
+    }
+  });
+
+  it('keeps each index on the same obstacle, and repeats every PERIOD ticks', () => {
+    for (const rink of ALL) {
+      const first = at(0, rink);
+      for (const t of [1, 17.5, 1500.25]) {
+        const a = at(t, rink);
+        a.forEach((o, i) =>
+          expect([o.kind, o.x, o.r]).toEqual([first[i].kind, first[i].x, first[i].r]),
+        );
+        at(t + 65536, rink).forEach((o, i) => {
+          expect(o.y).toBeCloseTo(a[i].y, 6);
+          expect(o.vy).toBe(a[i].vy);
+        });
+      }
+    }
+  });
+
+  it('slides penguins board to board of the scaled rink', () => {
+    for (const rink of ALL.filter(r => r.count > 2)) {
+      let top = Infinity;
+      let bottom = 0;
+      for (const t of SOME) {
+        for (const o of at(t, rink).filter(o => o.kind == 'penguin')) {
+          top = Math.min(top, o.y - o.r);
+          bottom = Math.max(bottom, o.y + o.r);
+        }
+      }
+      expect(top).toBeCloseTo(0, 0);
+      expect(bottom).toBeCloseTo(H * rink.size, 0);
+    }
+  });
+
+  it('keeps clear of the serve spots, the spawn points and the goal mouths at every count and size', () => {
+    for (const rink of RINKS) {
+      const { size } = rink;
+      const [X, Y] = [W * size, H * size];
+      for (const t of SOME) {
+        for (const o of at(t, rink)) {
+          for (const x of [X / 4, (3 * X) / 4]) {
+            expect(dist(o, x, Y / 2)).toBeGreaterThan(o.r + PUCK_R + 100);
+          }
+          for (const team of [0, 1] as Team[]) {
+            for (let n = 0; n < MAX_PLAYERS; n++) {
+              const [x, y] = spawnPoint(team, n, size);
+              expect(dist(o, x, y)).toBeGreaterThan(o.r + PADDLE_R + 10);
+            }
+          }
+          expect(Math.min(o.x, X - o.x) - o.r).toBeGreaterThan(300);
+        }
+      }
+      for (const o of at(0, rink)) {
+        expect(dist(o, X / 2, Y / 2)).toBeGreaterThan(o.r + PUCK_R + 100);
+        // A straight shot from the centre spot reaches any point of either mouth.
+        expect(Math.abs(o.y - Y / 2)).toBeGreaterThan(o.r + PUCK_R + (GOAL * size) / 2);
+      }
+    }
+  });
+
+  it('fits a paddle and a puck side by side in every gap at every count and size', () => {
+    for (const rink of ALL) {
+      const X = W * rink.size;
+      const Y = H * rink.size;
+      for (const t of SOME) {
+        const obs = at(t, rink);
+        obs.forEach((o, i) => {
+          if (o.kind == 'iceberg') {
+            expect(Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r)).toBeGreaterThan(
+              FIT,
+            );
+          } else if (o.x != X / 2) {
+            // A side lane to a paddle standing on the centre line, where it cannot yield.
+            expect(Math.abs(X / 2 - o.x) - o.r - 2 * PADDLE_R).toBeGreaterThan(FIT);
+          }
+          for (const q of obs.slice(i + 1)) {
+            expect(dist(o, q.x, q.y) - o.r - q.r).toBeGreaterThan(FIT);
+          }
+        });
+      }
+    }
+  });
+
+  it('cannot be tunnelled at the scaled top speeds, with ceil(size) sub-steps per tick', () => {
+    for (const rink of ALL) {
+      const { size } = rink;
+      const obs = at(0, rink);
+      const r = Math.min(...obs.map(o => o.r));
+      const v = Math.max(...obs.map(o => Math.abs(o.vy)));
+      const per = TICK_HZ * Math.ceil(size);
+      expect((PUCK_MAX_SPEED * size + v) / per).toBeLessThan(r + PUCK_R);
+      expect((PADDLE_MAX_SPEED * size + v) / per).toBeLessThan(r + PADDLE_R);
+      // Puck and paddle per sub-step: no further than at size 1.
+      expect((PUCK_MAX_SPEED * size) / per).toBeLessThanOrEqual(PUCK_MAX_SPEED / TICK_HZ);
+      expect((PADDLE_MAX_SPEED * size) / per).toBeLessThanOrEqual(PADDLE_MAX_SPEED / TICK_HZ);
+    }
   });
 });

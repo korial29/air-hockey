@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { H, SCALE, W } from './constants';
+import { H, MAX_SIZE, PADDLE_MAX_SPEED, PUCK_MAX_SPEED, PUCK_R, SCALE, W } from './constants';
 import {
   decodeInput,
   decodeSnapshot,
@@ -53,6 +53,46 @@ describe('input frames', () => {
     wrongType[0] = MSG_SNAPSHOT;
     expect(decodeInput(wrongType.buffer)).toBeNull();
     expect(decodeInput(encodeSnapshot({ ...snapshot, paddles: [] }))).toBeNull();
+  });
+});
+
+describe('the widest rink', () => {
+  it('fits the u16 fixed point: SCALE 16, up to 4095 units', () => {
+    expect(SCALE).toBe(16);
+    expect(Math.floor(MAX)).toBe(4095);
+    // A puck all the way into the right goal of the widest rink still fits.
+    expect(MAX).toBeGreaterThan(W * MAX_SIZE + PUCK_R);
+    // And so do the scaled top speeds, in whole units per second.
+    expect(Math.max(PUCK_MAX_SPEED, PADDLE_MAX_SPEED) * MAX_SIZE).toBeLessThan(32767);
+  });
+
+  it('round-trips inputs and snapshots within 1 / SCALE up to 4095 units', () => {
+    const X = W * MAX_SIZE;
+    const Y = H * MAX_SIZE;
+    for (const [x, y] of [
+      [X, Y],
+      [X + PUCK_R, Y / 2],
+      [4095, 4095],
+      [MAX, 1234.5678],
+      [X / 2 + 0.03, 0.01],
+    ]) {
+      const i = decodeInput(encodeInput(x, y))!;
+      expect(Math.abs(i.x - x)).toBeLessThanOrEqual(EPS / 2);
+      expect(Math.abs(i.y - y)).toBeLessThanOrEqual(EPS / 2);
+      const s = decodeSnapshot(
+        encodeSnapshot({
+          tick: 7,
+          score: [0, 0],
+          puck: { x, y, vx: PUCK_MAX_SPEED * MAX_SIZE, vy: -PUCK_MAX_SPEED * MAX_SIZE },
+          paddles: [{ id: 3, x: y, y: x }],
+        }),
+      )!;
+      expect(Math.abs(s.puck.x - x)).toBeLessThanOrEqual(EPS / 2);
+      expect(Math.abs(s.puck.y - y)).toBeLessThanOrEqual(EPS / 2);
+      expect([s.puck.vx, s.puck.vy]).toEqual([4800, -4800]);
+      expect(Math.abs(s.paddles[0].x - y)).toBeLessThanOrEqual(EPS / 2);
+      expect(Math.abs(s.paddles[0].y - x)).toBeLessThanOrEqual(EPS / 2);
+    }
   });
 });
 

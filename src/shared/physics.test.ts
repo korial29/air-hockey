@@ -80,6 +80,8 @@ describe('createWorld', () => {
   it('puts the puck at rest in the centre, with no paddles and 0-0, on ice at tick 0', () => {
     expect(createWorld()).toEqual({
       arena: 'ice',
+      size: 1,
+      count: 7,
       tick: 0,
       bumps: [],
       live: false,
@@ -87,6 +89,12 @@ describe('createWorld', () => {
       paddles: [],
       score: [0, 0],
       hit: -1,
+    });
+    expect(createWorld('classic', 2, 3)).toMatchObject({
+      arena: 'classic',
+      size: 2,
+      count: 3,
+      puck: { x: W, y: H, vx: 0, vy: 0 },
     });
   });
 });
@@ -548,4 +556,207 @@ describe('ice arena', () => {
     expect(w.puck.x).toBeGreaterThan(berg.x + 100);
     expect(w.puck.vy).toBe(0);
   });
+});
+
+describe('a rink of size 2', () => {
+  const S = 2;
+  const X = W * S;
+  const Y = H * S;
+  /** A size-2 world, classic unless an arena is given, its puck in play. */
+  const big = (
+    x: number,
+    y: number,
+    vx = 0,
+    vy = 0,
+    paddles: Paddle[] = [],
+    arena: Arena = 'classic',
+    count = 7,
+  ): World => {
+    const w = createWorld(arena, S, count);
+    Object.assign(w.puck, { x, y, vx, vy });
+    w.paddles = paddles;
+    w.live = true;
+    return w;
+  };
+
+  it('clamps paddles to the scaled halves, and spawns them inside, mirrored and apart', () => {
+    expect(clampPaddle(0, X, -10, S)).toEqual([X / 2 - PADDLE_R, PADDLE_R]);
+    expect(clampPaddle(0, -10, Y + 10, S)).toEqual([PADDLE_R, Y - PADDLE_R]);
+    expect(clampPaddle(1, 0, Y / 2, S)).toEqual([X / 2 + PADDLE_R, Y / 2]);
+    expect(clampPaddle(1, X + 10, Y / 2, S)).toEqual([X - PADDLE_R, Y / 2]);
+    for (const team of [0, 1] as Team[]) {
+      const seen = new Set<string>();
+      for (let n = 0; n < 16; n++) {
+        const [x, y] = spawnPoint(team, n, S);
+        expect(clampPaddle(team, x, y, S)).toEqual([x, y]);
+        expect(spawnPoint((1 - team) as Team, n, S)).toEqual([X - x, y]);
+        expect(Math.hypot(x - (team ? 3 * X : X) / 4, y - Y / 2)).toBeGreaterThan(RR);
+        seen.add(`${x},${y}`);
+      }
+      expect(seen.size).toBe(16);
+    }
+  });
+
+  it('moves paddles at twice the top speed, across the whole scaled half', () => {
+    const p = paddle(0, 100, Y / 2);
+    p.tx = X;
+    p.ty = Y;
+    const w = big(X / 2, 100, 0, 0, [p]);
+    step(w, DT);
+    expect(Math.hypot(p.vx, p.vy)).toBeCloseTo(PADDLE_MAX_SPEED * S);
+    run(w, 240);
+    expect([p.x, p.y]).toEqual([X / 2 - PADDLE_R, Y - PADDLE_R]);
+  });
+
+  it('bounces the puck off the scaled walls, posts and goal mouth edges', () => {
+    // Bottom wall at 2H, where the base rink had open ice.
+    const a = big(X / 2, Y - 40, 0, 2000);
+    run(a, 10, () => expect(a.puck.y).toBeLessThanOrEqual(Y - PUCK_R));
+    expect(a.puck.vy).toBeLessThan(0);
+    // The right board beside the scaled mouth.
+    const b = big(X - 60, 200, 2000, 0);
+    expect(run(b, 30)).toBe(-1);
+    expect(b.puck.vx).toBeLessThan(0);
+    expect(b.puck.x).toBeLessThanOrEqual(X - PUCK_R);
+    // A post of the scaled mouth, GOAL below the centre.
+    const c = big(100, Y / 2 - GOAL, -1500, 0);
+    expect(run(c, 30)).toBe(-1);
+    expect(c.puck.vx).toBeGreaterThan(0);
+  });
+
+  it('scores in the scaled goal mouths and serves on the scaled spots', () => {
+    // Within the size-2 mouth, outside the base one.
+    const w = big(X - 200, Y / 2 + GOAL * 0.9, 2000, 0);
+    expect(run(w, 60)).toBe(0);
+    expect(w.puck).toEqual({ x: (3 * X) / 4, y: Y / 2, vx: 0, vy: 0 });
+    const v = big(200, Y / 2 - GOAL * 0.9, -2000, 0);
+    expect(run(v, 60)).toBe(1);
+    expect(w.live || v.live).toBe(false);
+    expect(v.puck).toEqual({ x: X / 4, y: Y / 2, vx: 0, vy: 0 });
+  });
+
+  it('pulls a puck past the line into the slot at twice the slot speed', () => {
+    const w = big(-2, Y / 2, 0, 0);
+    step(w, DT);
+    expect(w.puck.vx).toBeCloseTo(-600);
+    expect(run(w, 60)).toBe(1);
+  });
+
+  it('caps the puck at twice PUCK_MAX_SPEED and keeps the drag per second', () => {
+    const w = big(X / 2, Y / 2, 9000, 0);
+    step(w, DT);
+    // Capped in the first sub-step, slowed by the drag of the second one.
+    expect(speed(w)).toBeLessThanOrEqual(PUCK_MAX_SPEED * S);
+    expect(speed(w)).toBeGreaterThan(PUCK_MAX_SPEED * S * 0.999);
+    const a = big(X / 2, Y / 2, 600, 0);
+    const b = world(W / 2, H / 2, 600, 0);
+    run(a, 120);
+    run(b, 120);
+    expect(a.puck.vx).toBeCloseTo(b.puck.vx, 9);
+  });
+
+  it('counts one tick per step, whatever the sub-steps', () => {
+    const w = big(X / 2, Y / 2);
+    run(w, 10);
+    step(w, 0);
+    expect(w.tick).toBe(10);
+  });
+
+  it.each([0, 7, 13, 19, 31, 47, 59, 71])(
+    'catches a head-on hit at both top speeds, whatever the phase (%i)',
+    off => {
+      // Puck at 4800 units/s and paddle at 14400 run into each other: 80 units a tick, more than
+      // the contact distance, so only the sub-steps catch the contact.
+      const p = paddle(0, X / 2 - 400 - off, Y / 2);
+      p.tx = X / 2;
+      const w = big(X / 2 - 100, Y / 2, -PUCK_MAX_SPEED * S, 0, [p]);
+      let hit = false;
+      run(w, 20, () => {
+        hit ||= w.hit == p.id;
+        expect(w.puck.x - p.x).toBeGreaterThanOrEqual(RR - 1e-6);
+      });
+      expect(hit).toBe(true);
+      expect(w.puck.vx).toBeGreaterThan(0);
+    },
+  );
+
+  it('kicks the puck off a scaled iceberg at twice KICK', () => {
+    const w = big(0, 0, 300, 0, [], 'ice');
+    const [berg] = obstacles('ice', 0, S, 7);
+    Object.assign(w.puck, { x: berg.x - berg.r - PUCK_R - 30, y: berg.y });
+    expect(berg).toMatchObject({ x: 900, y: 540, r: 144 });
+    let after = 0;
+    run(w, 60, () => {
+      if (w.bumps.length && !after) {
+        after = speed(w);
+        expect(w.bumps).toEqual([0]);
+      }
+    });
+    // The kick, maybe minus the drag of a sub-step after it.
+    expect(after).toBeLessThanOrEqual(2000 + 1e-6);
+    expect(after).toBeGreaterThan(2000 * 0.999);
+  });
+
+  it('lets the obstacles leave a served puck alone until a paddle touches it', () => {
+    for (const count of [3, 7]) {
+      const w = createWorld('ice', S, count);
+      for (let i = 0; i < 2 * PERIOD; i++) {
+        expect(step(w, DT)).toBe(-1);
+        expect(w.bumps).toEqual([]);
+      }
+      expect(w.puck).toEqual({ x: X / 2, y: Y / 2, vx: 0, vy: 0 });
+      const p = paddle(0, X / 2 - RR - 40, Y / 2);
+      p.tx = X;
+      w.paddles = [p];
+      run(w, 10);
+      expect(w.live).toBe(true);
+    }
+  });
+
+  it.each([3, 5, 7])(
+    'keeps every invariant through a long scrambled game among %i obstacles',
+    count => {
+      let seed = count;
+      const rnd = (): number => {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        return seed / 2147483648;
+      };
+      const paddles = [...Array(12).keys()].map(i => {
+        const team = (i & 1) as Team;
+        return paddle(team, ...spawnPoint(team, i >> 1, S), i);
+      });
+      const w = big(X / 2, Y / 2, 900, 700, paddles, 'ice', count);
+      let worst = 0;
+      let bumps = 0;
+      let goals = 0;
+      for (let i = 0; i < 10000; i++) {
+        if (i % 20 === 0) {
+          for (const p of paddles) {
+            p.tx = rnd() < 0.5 ? w.puck.x : rnd() * (X + 400) - 200;
+            p.ty = rnd() < 0.5 ? w.puck.y : rnd() * (Y + 400) - 200;
+          }
+        }
+        goals += +(step(w, DT) !== -1);
+        bumps += w.bumps.length;
+        const k = w.puck;
+        expect(Number.isFinite(k.x + k.y + k.vx + k.vy)).toBe(true);
+        for (const o of obstacles(w.arena, w.tick, S, count)) {
+          worst = Math.max(worst, o.r + PUCK_R - Math.hypot(k.x - o.x, k.y - o.y));
+          for (const p of paddles) {
+            worst = Math.max(worst, o.r + PADDLE_R - Math.hypot(p.x - o.x, p.y - o.y));
+          }
+        }
+        for (const p of paddles) {
+          worst = Math.max(worst, RR - Math.hypot(k.x - p.x, k.y - p.y));
+          expect(clampPaddle(p.team, p.x, p.y, S)).toEqual([p.x, p.y]);
+        }
+        expect(speed(w)).toBeLessThanOrEqual(PUCK_MAX_SPEED * S + 1e-6);
+        const mouth = Math.abs(k.y - Y / 2) <= GOAL;
+        expect(k.y < PUCK_R || k.y > Y - PUCK_R || (!mouth && (k.x < 0 || k.x > X))).toBe(false);
+      }
+      expect(worst).toBeLessThan(0.1);
+      expect(bumps).toBeGreaterThan(10);
+      expect(goals).toBeGreaterThan(2);
+    },
+  );
 });
