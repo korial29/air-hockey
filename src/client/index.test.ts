@@ -486,7 +486,7 @@ describe('airHockey', () => {
 
     // Before any match message: the ice arena, at the snapshot tick.
     draw();
-    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7);
+    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7, 0);
     expect(vi.mocked(obstacles).mock.calls[0][1]).toBeGreaterThanOrEqual(42);
     // Pale ice, nets, a penguin (orange beak and feet) and a faceted iceberg; no hit yet.
     expect(texts.styles).toEqual(expect.arrayContaining(['#e6f2f9', '#f39a1c']));
@@ -515,7 +515,7 @@ describe('airHockey', () => {
     socket.onmessage!({ data: JSON.stringify({ t: 'match', arena: 'classic', ...match }) });
     snap(300, 0);
     draw();
-    expect(obstacles).toHaveBeenCalledWith('classic', expect.any(Number), 1, 7);
+    expect(obstacles).toHaveBeenCalledWith('classic', expect.any(Number), 1, 7, 0);
     expect(texts.styles).toContain('#0d2233');
     expect(texts.styles).not.toContain('#f39a1c');
     expect(texts.styles).not.toContain('#e6f2f9');
@@ -552,7 +552,7 @@ describe('airHockey', () => {
           paddles: [{ id: 3, x: 400 * size, y: 450 * size }],
         }),
       });
-    const send = (size?: number, count?: number) =>
+    const send = (size?: number, count?: number, seed?: number) =>
       socket.onmessage!({
         data: JSON.stringify({
           t: 'match',
@@ -560,6 +560,7 @@ describe('airHockey', () => {
           arena: 'ice',
           size,
           count,
+          seed,
           round: 1,
           rounds: 3,
           goals: 10,
@@ -573,7 +574,7 @@ describe('airHockey', () => {
 
     // Size 1: what was drawn before the rink could grow, names in field units above the rink.
     draw();
-    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7);
+    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7, 0);
     expect(texts.styles).toContain('#e6f2f9');
     const [above, name] = label();
     // 1200 px canvas: 0.6 px per unit, the paddle at (TOP + 450) · 0.6 px, the name above it
@@ -582,11 +583,12 @@ describe('airHockey', () => {
     expect(name).toBeCloseTo(21);
     expect(draw().styles).not.toContain('#e6f2f9');
 
-    // Size 2, 5 obstacles: requested as such, the rink is painted again, once.
-    send(2, 5);
+    // Size 2, 5 obstacles, icebergs placed by seed 99: requested as such, the rink is painted
+    // again, once.
+    send(2, 5, 99);
     snap(2);
     draw();
-    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 2, 5);
+    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 2, 5, 99);
     expect(texts.styles).toContain('#e6f2f9');
     // The name keeps its size on screen, the paddle (radius 44) shrinks to half.
     expect(label()[1]).toBeCloseTo(name);
@@ -606,7 +608,7 @@ describe('airHockey', () => {
     send();
     snap(1);
     draw();
-    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7);
+    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7, 0);
     expect(texts.styles).toContain('#e6f2f9');
     expect(label()).toEqual([above, name]);
     move();
@@ -817,7 +819,7 @@ describe('airHockey', () => {
     set([0, -1], [1, sec(0.5)], 0);
     draw();
     // The predicted tick runs on real time: a loaded machine adds a few ticks between steps.
-    expect(obstacles).toHaveBeenCalledWith('ice', expect.closeTo(4000 - sec(0.5), -1), 1, 7);
+    expect(obstacles).toHaveBeenCalledWith('ice', expect.closeTo(4000 - sec(0.5), -1), 1, 7, 0);
     expect(texts.filter(t => t == '★')).toHaveLength(3);
     expect(texts.moves).toContainEqual([1000 + 50 * 24 * 0.5, 500]);
     // Gone for good at 2 s: nothing drawn for it.
@@ -894,7 +896,7 @@ describe('airHockey', () => {
     scene('sea');
     snap();
     expect(() => draw()).not.toThrow();
-    expect(obstacles).toHaveBeenCalledWith('sea', expect.any(Number), 1, 7);
+    expect(obstacles).toHaveBeenCalledWith('sea', expect.any(Number), 1, 7, 0);
     expect(texts.styles).toContain('#0b4d6e');
     expect(texts.strokes).toEqual(expect.arrayContaining(['#a8703c', '#d9bf86', '#ffffff45']));
     expect(texts.styles).not.toContain('#e6f2f9');

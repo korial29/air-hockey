@@ -4,15 +4,15 @@
 // drawn where it is and an own hit redirects it at once. Other paddles stand at their latest
 // snapshot position for collisions; they are drawn interpolated, INTERP_DELAY in the past.
 // Obstacles follow the world tick, rebased on the snapshot tick: the arena is a pure function of
-// it, so the local puck bounces off the same penguins as the host's. The scene, rink size and
-// obstacle count come from the match message, through reset: the own paddle gets the host's clamp
-// and speeds, the local puck the round's obstacles.
+// it, so the local puck bounces off the same penguins as the host's. The scene, rink size,
+// obstacle count and seed come from the match message, through reset: the own paddle gets the
+// host's clamp and speeds, the local puck the round's obstacles, icebergs where the host put them.
 // Which obstacles are in play is the host's call: w.obs is rebuilt from every snapshot, so the
 // local puck goes through what the host removed. Local steps never damage an obstacle; they only
 // bring one back when its RESPAWN is up, as the host does on the same tick.
-// For the renderer: view(...).obs[i] is obstacle i of obstacles(arena, view(...).tick, size, count)
-// (hits; since: ticks since removal, fractional, -1 in play; angle). Removed for since in
-// [0, RESPAWN), a ghost from RESPAWN - GHOST. P.hits keeps the local contact times.
+// For the renderer: view(...).obs[i] is obstacle i of obstacles(arena, view(...).tick, size,
+// count, seed) (hits; since: ticks since removal, fractional, -1 in play; angle). Removed for
+// since in [0, RESPAWN), a ghost from RESPAWN - GHOST. P.hits keeps the local contact times.
 // During the countdown (phase 'ready') the local world moves the paddles only, like the host: the
 // own paddle follows the pointer, the puck, the obstacles and the tick stay on the snapshot's.
 import { GOAL, H, PUCK_R, TICK_HZ, W } from '../shared/constants';
@@ -59,12 +59,12 @@ export interface Prediction {
   score: string;
   /**
    * hits[i]: time (ms, the clock of `now`) of the last local puck contact with obstacle i of
-   * obstacles(w.arena, tick, w.size, w.count), undefined before any. For hit animations.
+   * obstacles(w.arena, tick, w.size, w.count, w.seed), undefined before any. For hit animations.
    */
   hits: number[];
 }
 
-/** w.arena, w.size and w.count come from the match message, through reset. */
+/** w.arena, w.size, w.count and w.seed come from the match message, through reset. */
 export const predict = (): Prediction => ({
   w: createWorld(),
   o: [0, 0],
@@ -151,17 +151,25 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
 
 /**
  * Phase change: the host respawns paddles and maybe serves, so the own paddle and the puck
- * restart from the next snapshot. `arena`, `size` and `count`: the host's rink, from the same
- * match message (the scene changes between rounds). Another scene or obstacle count makes other
- * obstacles: their hit times and states go, all in play until the next snapshot tells.
+ * restart from the next snapshot. `arena`, `size`, `count` and `seed`: the host's rink, from the
+ * same match message (the scene and the icebergs' places change between rounds). Another scene,
+ * obstacle count or seed makes other obstacles: their hit times and states go, all in play until
+ * the next snapshot tells.
  */
-export const reset = (p: Prediction, phase: Phase, arena: Arena, size = 1, count = 7): void => {
+export const reset = (
+  p: Prediction,
+  phase: Phase,
+  arena: Arena,
+  size = 1,
+  count = 7,
+  seed = 0,
+): void => {
   const { w } = p;
-  if (count != w.count || arena != w.arena) {
+  if (count != w.count || arena != w.arena || seed != w.seed) {
     p.hits.length = 0;
     w.obs = [];
   }
-  Object.assign(w, { arena, size, count });
+  Object.assign(w, { arena, size, count, seed });
   p.me = undefined;
   p.score = '';
   p.off = phase == 'break' || phase == 'end';
@@ -172,8 +180,8 @@ export const reset = (p: Prediction, phase: Phase, arena: Arena, size = 1, count
  * The state to draw at now: the snapshot interpolated in the past (s) for the other paddles and
  * the score, the local puck and own paddle in the present. `target`: the clamped pointer.
  * Its tick is the fractional world tick at now: draw obstacles(p.w.arena, tick, p.w.size,
- * p.w.count) with it. Its obs are the host's latest obstacle states, `since` counted up to that
- * tick (fractional): removals, ghosts and returns animate smoothly between snapshots.
+ * p.w.count, p.w.seed) with it. Its obs are the host's latest obstacle states, `since` counted up
+ * to that tick (fractional): removals, ghosts and returns animate smoothly between snapshots.
  * While the host is frozen (break, end) s comes back as is, its tick and obs still. In the
  * countdown (ready) only the own paddle moves: the tick is the snapshot's, not counted up.
  */

@@ -152,14 +152,15 @@ const avoid = (p: Paddle, w: World, obs: Obstacle[]): void =>
   obs.forEach((o, i) => off(w, i) || out(p, o, o.r + PADDLE_R, place, w.size, true));
 
 /** Empty world at tick 0: puck at the centre, no paddles, 0-0, every obstacle in play, intact. */
-export const createWorld = (arena: Arena = 'ice', size = 1, count = 7): World => ({
+export const createWorld = (arena: Arena = 'ice', size = 1, count = 7, seed = 0): World => ({
   arena,
   size,
   count,
+  seed,
   tick: 0,
   bumps: [],
   live: false,
-  obs: obstacles(arena, 0, size, count).map(() => ({ hits: 0, gone: -1, angle: 0 })),
+  obs: obstacles(arena, 0, size, count, seed).map(() => ({ hits: 0, gone: -1, angle: 0 })),
   puck: { x: (W * size) / 2, y: (H * size) / 2, vx: 0, vy: 0 },
   paddles: [],
   score: [0, 0],
@@ -170,10 +171,10 @@ export const createWorld = (arena: Arena = 'ice', size = 1, count = 7): World =>
  * Spawn point for the n-th paddle of a team, spread over its half of a rink of that size.
  * Four columns of three, from the goal outward; the column next to the serve spot
  * (W / 4 from the goal) is 100 units away from it, more than PUCK_R + PADDLE_R. The last two
- * columns stand either side of the icebergs (x 450-460), the last one clear of the nearest
- * penguin lane (x 720): no obstacle ever covers a spawn point. A shark swinging out of that lane
- * grazes the last column at sea (a tenth of a unit clear); it is clear by the full margin at tick
- * 0, when a round starts.
+ * columns stand either side of the icebergs (x 450-460, at least 130 off: clear wherever a round
+ * places them across the width), the last one clear of the nearest penguin lane (x 720): no
+ * obstacle ever covers a spawn point. A shark swinging out of that lane grazes the last column at
+ * sea (a tenth of a unit clear); it is clear by the full margin at tick 0, when a round starts.
  * Past 12 paddles the grid repeats, shifted down by 60 units.
  * All of it is drawn on the base rink and scaled with the obstacles, so every clearance grows.
  */
@@ -211,7 +212,7 @@ export const step = (w: World, dt: number, host = true): Team | -1 => {
   w.bumps = [];
   let goal: Team | -1 = -1;
   const n = Math.ceil(w.size);
-  const at = (i: number) => obstacles(w.arena, w.tick + i / n, w.size, w.count);
+  const at = (i: number) => obstacles(w.arena, w.tick + i / n, w.size, w.count, w.seed);
   if (dt > 0) {
     at(1).forEach((o, i) => {
       const st = w.obs[i];
@@ -261,7 +262,7 @@ const drive = (p: Paddle, w: World, obs: Obstacle[], dt: number): void => {
  */
 export const skate = (w: World, dt: number): void => {
   const n = Math.ceil(w.size);
-  const obs = obstacles(w.arena, w.tick, w.size, w.count);
+  const obs = obstacles(w.arena, w.tick, w.size, w.count, w.seed);
   for (let i = 0; i < n; i++) {
     for (const p of w.paddles) {
       drive(p, w, obs, dt / n);

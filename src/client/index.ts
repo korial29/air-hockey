@@ -149,7 +149,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         // until the pointer moves again, or our paddle would be drawn where it no longer is.
         me = undefined;
       }
-      reset(P, m.phase, m.arena, m.size, m.count);
+      reset(P, m.phase, m.arena, m.size, m.count, m.seed);
       emit('match', (match = rest));
     } else if (m?.t == 'full') {
       msg = 'Room is full';
@@ -200,8 +200,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     const k = canvas.width / W;
     // Font size in field units, never under 12 CSS px.
     const f = Math.max(35, (12 * devicePixelRatio) / k);
-    // Rink size factor of the round and obstacles in play: the defaults before any match message.
-    const { size = 1, count = 7 } = match ?? {};
+    // Rink size factor of the round, obstacles in play and their seed: the defaults before any
+    // match message.
+    const { size = 1, count = 7, seed = 0 } = match ?? {};
     pen(c, f, size);
     c.setTransform(k, 0, 0, k, 0, 0);
     c.textBaseline = 'middle';
@@ -229,7 +230,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     // Time of the puck's last contact with each obstacle; absent before prediction tracks it.
     const hits = P.hits;
     const tick = s?.tick ?? 0;
-    obstacles(arena, tick, size, count).forEach((o, i) => {
+    obstacles(arena, tick, size, count, seed).forEach((o, i) => {
       // Absent: intact and in play. Removed: drawn from where it was then, ghost where it is now.
       const st = s?.obs?.[i];
       const since = st?.since ?? -1;
@@ -244,7 +245,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         now,
         st,
         now - (back[i] ?? -1e9),
-        since >= 0 && since < RESPAWN - GHOST ? obstacles(arena, tick - since, size, count)[i] : o,
+        since >= 0 && since < RESPAWN - GHOST
+          ? obstacles(arena, tick - since, size, count, seed)[i]
+          : o,
       );
     });
     if (s) {

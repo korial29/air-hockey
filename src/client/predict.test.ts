@@ -367,6 +367,33 @@ describe('predict', () => {
     expect(p.hits).toEqual([]);
   });
 
+  it('bounces off the icebergs where the match seed puts them, hit times dropped on a new seed', () => {
+    // Seed 25 draws the bottom pair 102 units above its seed-0 place: out of reach on that row.
+    const [, , berg] = obstacles('ice', 0, 1, 7, 25);
+    const s = {
+      ...snap({ x: berg.x - berg.r - PUCK_R - 20, y: berg.y, vx: 1000 }, []),
+      live: true,
+    };
+    const p = predict();
+    reset(p, 'play', 'ice', 1, 7, 25);
+    expect(p.w).toMatchObject({ arena: 'ice', size: 1, count: 7, seed: 25 });
+    rebase(p, s, ME, 1000);
+    expect(view(p, s, 1050)!.puck.vx).toBeLessThan(0);
+    expect(Object.keys(p.hits)).toEqual(['2']);
+    // Same seed (a refit): kept. Next round, another seed: the hit times and states go.
+    reset(p, 'ready', 'ice', 1, 7, 25);
+    expect(Object.keys(p.hits)).toEqual(['2']);
+    reset(p, 'ready', 'ice', 1, 7, 26);
+    expect(p.hits).toEqual([]);
+    expect(p.w.obs).toEqual([]);
+    // Seed 0 (an older host): the fixed layout, nothing on that row.
+    const q = predict();
+    reset(q, 'play', 'ice');
+    rebase(q, s, ME, 1000);
+    expect(view(q, s, 1050)!.puck.vx).toBeGreaterThan(0);
+    expect(q.hits).toEqual([]);
+  });
+
   describe('breakable obstacles', () => {
     const [berg] = obstacles('ice', 0);
     const intact = { hits: 0, since: -1, angle: 0 };
