@@ -135,7 +135,7 @@ export class Room {
       this.ticks = 0;
     }
     if (!this.sync() && this.fit()) {
-      this.go('wait');
+      this.go(this.m.phase);
     }
   }
 
@@ -183,6 +183,9 @@ export class Room {
           );
           this.timer = Math.round((end ? rules.endSec : rules.breakSec) * TICK_HZ);
           this.go(end ? 'end' : 'break', goal);
+        } else if (this.fit()) {
+          // Served again with more or fewer players than the rink was made for.
+          this.go(phase);
         }
       }
     }
@@ -259,7 +262,7 @@ export class Room {
     }
     const n = this.teams();
     const team = n[1] < n[0] ? 1 : 0;
-    // Mid-round, on the rink of the round. In 'wait' fit() may respawn everyone on a new one.
+    // On the current rink; fit() may then respawn everyone on a new one (waiting, or puck served).
     const [x, y] = spawnPoint(team, n[team], this.world.size);
     const paddle: Paddle = { id, team, x, y, vx: 0, vy: 0, tx: x, ty: y };
     const info: PlayerInfo = {
@@ -289,7 +292,7 @@ export class Room {
     this.roster();
     if (!this.sync()) {
       if (this.fit()) {
-        this.go('wait');
+        this.go(this.m.phase);
       } else {
         conn.send(JSON.stringify(this.m));
       }
@@ -346,13 +349,27 @@ export class Room {
    * one, the world moves onto it (see shape), the score kept. The caller tells the clients.
    * Returns whether it did.
    */
+  /**
+   * Moves the world onto the rink the joined players call for, when that is fair: while waiting,
+   * or mid-round while the puck waits at its serve spot (round start, after a goal) and nobody has
+   * touched it yet. The puck keeps its serve spot, scaled; the score stays.
+   */
   private fit(): boolean {
     const { size, count } = layout(this.size);
     const w = this.world;
-    if (this.m.phase !== 'wait' || (size === w.size && count === w.count)) {
+    const { phase } = this.m;
+    if (
+      !(phase === 'wait' || (phase === 'play' && !w.live)) ||
+      (size === w.size && count === w.count)
+    ) {
       return false;
     }
+    const { x, y } = w.puck;
+    const r = size / w.size;
     this.shape(w.score);
+    if (phase === 'play') {
+      Object.assign(this.world.puck, { x: x * r, y: y * r });
+    }
     return true;
   }
 
