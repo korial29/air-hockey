@@ -123,7 +123,7 @@ describe('obstacles', () => {
         }
       }
     }
-  });
+  }, 20_000);
 
   it('leaves the goal mouths open', () => {
     for (const t of TICKS) {

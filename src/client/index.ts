@@ -6,6 +6,7 @@ import type { ServerText } from '../shared/protocol';
 import type { PlayerInfo, SocketLike } from '../shared/types';
 import { predict, rebase, reset, view } from './predict';
 import {
+  beacon,
   circle,
   countdown,
   hud,
@@ -244,6 +245,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       const { x, y, vx, vy } = s.puck;
       // Top speeds scale with the rink: so does the speed that leaves a trail.
       streak(trail, x, y, Math.hypot(vx, vy) > 1000 * size, ice ? '#2a9df4' : '#fff', pr);
+      beacon(x, y, pr, now);
       circle(x, y, pr, ice ? '#141a24' : '#fff');
       if (ice) {
         circle(x, y, pr * 0.75, '#2b3646');

@@ -577,6 +577,31 @@ export const streak = (
   c.globalAlpha = 1;
 };
 
+/**
+ * Marks the puck so it stays easy to spot on a big rink: a yellow glow breathing slowly (one cycle
+ * every ~2.5 s) and three arcs turning around it (one turn every ~4 s). r is the drawn puck radius.
+ */
+export const beacon = (x: number, y: number, r: number, now: number) => {
+  const b = 0.5 + 0.5 * Math.sin(now / 400);
+  c.beginPath();
+  c.arc(x, y, r * 3.4, 0, 7);
+  fill(
+    '#0000',
+    c.createRadialGradient(x, y, r, x, y, r * 3.4),
+    [0, `rgba(255,204,51,${0.35 + 0.4 * b})`],
+    [1, '#ffcc3300'],
+  );
+  c.strokeStyle = '#fc3';
+  c.lineWidth = r * 0.3;
+  c.lineCap = 'round';
+  for (let i = 0; i < 3; i++) {
+    const a = now / 640 + (i * Math.PI * 2) / 3;
+    c.beginPath();
+    c.arc(x, y, r * 2.4, a, a + 1.2);
+    c.stroke();
+  }
+};
+
 /** Snowflakes drifting down over the rink, in base rink coordinates: the same at any size. */
 export const snow = (now: number) => {
   c.beginPath();
