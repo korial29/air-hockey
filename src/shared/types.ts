@@ -27,11 +27,16 @@ export interface Paddle {
   ty: number;
 }
 
-export type Arena = 'ice' | 'classic';
+/**
+ * The scene of a round. 'ice': icebergs and sliding penguins. 'sea' (sea and pirates): rocks and
+ * mermaids swimming in zig-zag, wooden goals. 'classic': an empty rink.
+ */
+export type Arena = 'ice' | 'sea' | 'classic';
 
 /** A round obstacle the puck bounces off like a pinball bumper. Paddles cannot cross it. */
 export interface Obstacle {
-  kind: 'iceberg' | 'penguin';
+  /** Fixed ones (iceberg, rock) break after ICEBERG_HP hits; movers (penguin, mermaid) on one. */
+  kind: 'iceberg' | 'penguin' | 'rock' | 'mermaid';
   x: number;
   y: number;
   r: number;
@@ -85,8 +90,11 @@ export interface World {
 
 /** Match rules, set by the host. Defaults in constants.ts (RULES). */
 export interface Rules {
-  /** 'ice': icebergs and sliding penguins; 'classic': an empty rink. */
-  arena: Arena;
+  /**
+   * The scene, or scenes taking turns from one round to the next (round 1 the first, round 2 the
+   * second, then round again). Default ['ice', 'sea'].
+   */
+  arena: Arena | Arena[];
   /** Rounds in a match; the first team to win a majority of them wins (3 → best of 3). */
   rounds: number;
   /** Goals that win a round. */
