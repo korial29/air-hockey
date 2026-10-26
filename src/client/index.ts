@@ -1,10 +1,11 @@
-import { GOAL, H, INTERP_DELAY, PADDLE_R, PUCK_R, W } from '../shared/constants';
+import { obstacles } from '../shared/arena';
+import { INTERP_DELAY, PADDLE_R, PUCK_R, W } from '../shared/constants';
 import { clampPaddle } from '../shared/physics';
 import { decodeSnapshot, encodeInput, parseText } from '../shared/protocol';
 import type { ServerText } from '../shared/protocol';
 import type { PlayerInfo, SocketLike } from '../shared/types';
 import { predict, rebase, reset, view } from './predict';
-import { circle, hud, pen, stadium, text, veil } from './render';
+import { circle, hud, obstacle, pen, rink, snow, stadium, streak, text, veil } from './render';
 import { CH, TOP, sample, toField } from './util';
 import type { Stamped } from './util';
 
@@ -59,6 +60,8 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   let raf = 0;
   let dead = false;
   let match: MatchState | undefined;
+  /** Last puck positions drawn, for its trail. */
+  const trail: number[] = [];
 
   const ws = opts.socket ?? (new WebSocket(opts.url!) as unknown as SocketLike);
   ws.binaryType = 'arraybuffer';
@@ -129,7 +132,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   const draw = (c: CanvasRenderingContext2D, now: number) => {
     const k = canvas.width / W;
     // Font size in field units, never under 12 CSS px.
-    const f = Math.max(28, (12 * devicePixelRatio) / k);
+    const f = Math.max(35, (12 * devicePixelRatio) / k);
     pen(c, f);
     c.setTransform(k, 0, 0, k, 0, 0);
     c.textBaseline = 'middle';
@@ -137,31 +140,41 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     c.fillRect(0, 0, W, CH);
     // The rink, between the HUD bands: field coordinates from here on.
     c.setTransform(k, 0, 0, k, 0, k * TOP);
-    c.fillStyle = '#0d2233';
-    c.fillRect(0, 0, W, H);
-    c.strokeStyle = '#fff4';
-    c.lineWidth = 6;
-    c.beginPath();
-    c.moveTo(W / 2, 0);
-    c.lineTo(W / 2, H);
-    c.moveTo(W / 2 + 120, H / 2);
-    c.arc(W / 2, H / 2, 120, 0, 7);
-    c.stroke();
-    c.fillStyle = '#fc3';
-    c.fillRect(0, (H - GOAL) / 2, 12, GOAL);
-    c.fillRect(W - 12, (H - GOAL) / 2, 12, GOAL);
+    const arena = match?.arena ?? 'ice';
+    const ice = arena == 'ice';
+    rink(ice, k);
 
     const s = view(P, sample(buf, now - INTERP_DELAY), now, me);
+    // Time of the puck's last contact with each obstacle; absent before prediction tracks it.
+    const hits = (P as { hits?: number[] }).hits;
+    obstacles(arena, s?.tick ?? 0).forEach((o, i) =>
+      obstacle(o, i, now - (hits?.[i] ?? -1e9), now),
+    );
     if (s) {
-      circle(s.puck.x, s.puck.y, PUCK_R, '#fff');
+      const { x, y, vx, vy } = s.puck;
+      streak(trail, x, y, Math.hypot(vx, vy) > 1000, ice ? '#2a9df4' : '#fff');
+      circle(x, y, PUCK_R, ice ? '#141a24' : '#fff');
+      if (ice) {
+        circle(x, y, PUCK_R * 0.75, '#2b3646');
+      }
       for (const p of s.paddles) {
         const info = players.get(p.id);
         const { x, y } = p;
         circle(x, y, PADDLE_R, info?.color ?? '#888');
         circle(x, y, PADDLE_R / 2, '#0003');
         // Above the paddle, or below it against the top wall.
-        text(info?.name ?? '', x, y < PADDLE_R + f ? y + PADDLE_R + f / 2 : y - PADDLE_R - f / 2);
+        text(
+          info?.name ?? '',
+          x,
+          y < PADDLE_R + f ? y + PADDLE_R + f / 2 : y - PADDLE_R - f / 2,
+          f,
+          'center',
+          ice ? '#163049' : '#fff',
+        );
       }
+    }
+    if (ice) {
+      snow(now);
     }
     const { phase, winner, ranking = [] } = match ?? {};
     const label = msg || (open ? '' : 'Connecting…');

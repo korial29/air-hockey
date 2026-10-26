@@ -8,9 +8,9 @@ export interface Stamped {
   s: Snapshot;
 }
 
-/** HUD bands above and below the rink, in field units. The canvas is W × CH. */
-export const TOP = 160;
-export const BOT = 140;
+/** HUD bands above and below the rink, in field units. The canvas is W × CH, 4:3. */
+export const TOP = 200;
+export const BOT = 175;
 export const CH = TOP + H + BOT;
 
 /**
@@ -52,6 +52,12 @@ export const sample = (buf: Stamped[], t: number): Snapshot | undefined => {
     }
   }
   return buf[0]?.s;
+};
+
+/** Deterministic pseudo-random number in [0, 1) for an index: stable decor, no table. */
+export const rnd = (i: number): number => {
+  const v = Math.sin(i * 127.1 + 311.7) * 43758.5;
+  return v - Math.floor(v);
 };
 
 /** Players split by team: [team 0, team 1], roster order kept. */

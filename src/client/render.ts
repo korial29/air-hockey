@@ -1,8 +1,9 @@
-// Canvas drawing in field units: HUD bands around the rink, and the end-of-match stadium.
-import { H, W } from '../shared/constants';
-import type { PlayerInfo, Rank, Team } from '../shared/types';
+// Canvas drawing in field units: the rink and its obstacles, HUD bands around the rink, and the
+// end-of-match stadium.
+import { GOAL, H, PUCK_R, W } from '../shared/constants';
+import type { Obstacle, PlayerInfo, Rank, Team } from '../shared/types';
 import type { MatchState } from './index';
-import { BOT, CH, TOP, byTeam, flow, podium, shown } from './util';
+import { BOT, CH, TOP, byTeam, flow, podium, rnd, shown } from './util';
 
 let c: CanvasRenderingContext2D;
 /** Base font size in field units, never under 12 CSS px. */
@@ -84,19 +85,331 @@ const ball = (x: number, y: number, r: number, color: string) => {
 };
 
 /** A soft contact shadow on the floor. */
-const shadow = (x: number, y: number, rx: number, ry: number) => {
+const shadow = (x: number, y: number, rx: number, ry: number, color = '#0008') => {
   c.save();
   c.translate(x, y);
   c.scale(1, ry / rx);
   c.beginPath();
   c.arc(0, 0, rx, 0, 7);
-  fill('#0000', c.createRadialGradient(0, 0, 0, 0, 0, rx), [0, '#0008'], [1, '#0000']);
+  fill('#0000', c.createRadialGradient(0, 0, 0, 0, 0, rx), [0, color], [1, '#0000']);
   c.restore();
+};
+
+const ring = (x: number, y: number, r: number, color: string, w: number) => {
+  c.beginPath();
+  c.arc(x, y, r, 0, 7);
+  c.strokeStyle = color;
+  c.lineWidth = w;
+  c.stroke();
+};
+
+const oval = (x: number, y: number, rx: number, ry: number, color: string) => {
+  c.beginPath();
+  c.ellipse(x, y, rx, ry, 0, 0, 7);
+  c.fillStyle = color;
+  c.fill();
+};
+
+const ICE_LINE = '#d8404a66';
+const ICE_BLUE = '#2f6fd466';
+const ORANGE = '#f39a1c';
+const BLACK = '#1d2430';
+
+/**
+ * The rink, in rink coordinates. Ice: pale ice with a sheen and skate marks, faded hockey
+ * markings, blue boards, red-framed nets. Classic: the dark table.
+ */
+const paint = (ice: boolean) => {
+  const m = (H - GOAL) / 2;
+  if (!ice) {
+    rect(0, 0, W, H, '#0d2233');
+    ring(W / 2, H / 2, 150, '#fff4', 6);
+    line('#fff4', 6, W / 2, 0, W / 2, H);
+    rect(0, m, 12, GOAL, '#fc3');
+    rect(W - 12, m, 12, GOAL, '#fc3');
+    return;
+  }
+  c.save();
+  c.beginPath();
+  c.rect(0, 0, W, H);
+  c.clip();
+  // Diagonal sheen bands, a bluer tint toward the boards.
+  fill(
+    '#e6f2f9',
+    c.createLinearGradient(0, 0, W, H),
+    [0.2, '#fff0'],
+    [0.32, '#fff9'],
+    [0.42, '#fff0'],
+    [0.62, '#fff6'],
+    [0.68, '#fff0'],
+  );
+  fill(
+    '#0000',
+    c.createRadialGradient(W / 2, H / 2, H / 3, W / 2, H / 2, W * 0.6),
+    [0, '#9cc8e000'],
+    [1, '#9cc8e099'],
+  );
+  // Skate marks: short arcs, the same every frame.
+  c.beginPath();
+  for (let i = 0; i < 40; i++) {
+    const x = rnd(i) * W;
+    const y = rnd(i + 50) * H;
+    const r = 90 + rnd(i + 99) * 320;
+    const a = rnd(i + 150) * 7;
+    c.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+    c.arc(x, y, r, a, a + 0.2 + rnd(i + 200) * 0.5);
+  }
+  c.strokeStyle = '#a3c9de';
+  c.lineWidth = 2;
+  c.stroke();
+  // Hockey markings, faded: red centre line, blue lines, centre and faceoff circles, creases.
+  line(ICE_LINE, 12, W / 2, 0, W / 2, H);
+  line(ICE_BLUE, 16, W * 0.3, 0, W * 0.3, H);
+  line(ICE_BLUE, 16, W * 0.7, 0, W * 0.7, H);
+  ring(W / 2, H / 2, 160, ICE_BLUE, 8);
+  circle(W / 2, H / 2, 14, ICE_BLUE);
+  for (let i = 0; i < 4; i++) {
+    const x = W / 2 + (i & 1 ? 1 : -1) * W * 0.36;
+    const y = H / 2 + (i & 2 ? 1 : -1) * H * 0.3;
+    ring(x, y, 100, ICE_LINE, 6);
+    circle(x, y, 12, ICE_LINE);
+  }
+  for (const x of [0, W]) {
+    circle(x, H / 2, GOAL / 2 + 20, '#5aa8e833');
+    ring(x, H / 2, GOAL / 2 + 20, ICE_LINE, 6);
+  }
+  c.restore();
+  // Boards, open at the goal mouths; nets with a red frame open toward the rink.
+  line('#2c6cb0', 24, 0, m, 0, 0, W, 0, W, m);
+  line('#2c6cb0', 24, 0, m + GOAL, 0, H, W, H, W, m + GOAL);
+  for (const t of [0, 1]) {
+    const x = t ? W - 50 : 0;
+    rect(x, m, 50, GOAL, '#0c2a4426');
+    c.beginPath();
+    for (let i = 0; i < GOAL; i += 19) {
+      c.moveTo(x, m + i);
+      c.lineTo(x + 50, m + i);
+    }
+    for (let i = 12; i < 50; i += 19) {
+      c.moveTo(x + i, m);
+      c.lineTo(x + i, m + GOAL);
+    }
+    c.strokeStyle = '#5d7a90';
+    c.lineWidth = 2;
+    c.stroke();
+    const [o, b] = t ? [W - 50, W - 5] : [50, 5];
+    line('#d22b2b', 10, o, m, b, m, b, m + GOAL, o, m + GOAL);
+  }
+};
+
+/** Rink images per context, with what they were drawn for: arena and scale. */
+const cache = new WeakMap<object, [string, HTMLCanvasElement]>();
+
+/**
+ * Draws the rink, in rink coordinates, k canvas pixels per unit. Its full-size gradients cost
+ * more than the rest of the frame: it is painted once per arena and size, then copied.
+ */
+export const rink = (ice: boolean, k: number) => {
+  const key = `${ice}${k}`;
+  let img = cache.get(c)?.[0] == key ? cache.get(c)![1] : undefined;
+  if (!img) {
+    const ctx = c;
+    img = document.createElement('canvas');
+    img.width = W * k;
+    img.height = H * k;
+    c = img.getContext('2d')!;
+    c.scale(k, k);
+    paint(ice);
+    c = ctx;
+    cache.set(c, [key, img]);
+  }
+  c.drawImage(img, 0, 0, W, H);
+};
+
+/** An iceberg: facets lit from the top left. e: hit flash, 1 → 0. */
+const berg = (x: number, y: number, r: number, i: number, e: number, age: number) => {
+  x += Math.sin(age / 12) * e * 8;
+  shadow(x + r * 0.25, y + r * 0.3, r * 1.3, r, '#0a4a7a66');
+  const n = 7 + (i % 3);
+  const v: number[] = [];
+  for (let j = 0; j < n; j++) {
+    const a = ((j + rnd(i * 9 + j) * 0.6) / n) * 6.283;
+    const d = r * (1.02 + rnd(i * 7 + j + 50) * 0.22);
+    v.push(x + Math.cos(a) * d, y + Math.sin(a) * d);
+  }
+  // Facets from a peak off-centre: bright toward the top left, shaded toward the bottom right.
+  const px = x - r * 0.18;
+  const py = y - r * 0.22;
+  for (let j = 0; j < n * 2; j += 2) {
+    const k = (j + 2) % (n * 2);
+    c.beginPath();
+    c.moveTo(px, py);
+    c.lineTo(v[j], v[j + 1]);
+    c.lineTo(v[k], v[k + 1]);
+    const m = Math.atan2(v[j + 1] + v[k + 1] - 2 * y, v[j] + v[k] - 2 * x);
+    c.fillStyle = `hsl(196 70% ${76 + 18 * Math.cos(m + 2.36) + 30 * e}%)`;
+    c.fill();
+  }
+  c.beginPath();
+  for (let j = 0; j < n * 2; j += 2) {
+    c.moveTo(px, py);
+    c.lineTo(v[j], v[j + 1]);
+  }
+  c.strokeStyle = '#fffa';
+  c.lineWidth = 2;
+  c.stroke();
+  c.beginPath();
+  for (let j = 0; j < n * 2; j += 2) {
+    c.lineTo(v[j], v[j + 1]);
+  }
+  c.closePath();
+  c.strokeStyle = '#4f9cc4';
+  c.lineWidth = 4;
+  c.lineJoin = 'round';
+  c.stroke();
+  if (e) {
+    // Bumper flash: a ring spreading out, and ice shards flying off.
+    c.globalAlpha = e;
+    ring(x, y, r * (1.3 + (1 - e) * 0.6), '#7fe3ff', 8 * e);
+    for (let j = 0; j < 6; j++) {
+      const a = j * 1.05 + i;
+      const d = r * (1.1 + (1 - e) * 1.4);
+      const sx = x + Math.cos(a) * d;
+      const sy = y + Math.sin(a) * d;
+      const s = r * 0.12 + 3;
+      c.beginPath();
+      c.moveTo(sx, sy - s);
+      c.lineTo(sx + s, sy + s);
+      c.lineTo(sx - s, sy + s * 0.4);
+      c.fillStyle = '#e6faff';
+      c.fill();
+      c.strokeStyle = '#4f9cc4';
+      c.lineWidth = 2;
+      c.stroke();
+    }
+    c.globalAlpha = 1;
+  }
+};
+
+/**
+ * A penguin sliding on its belly, head first, seen from above: a wake behind it on the ice.
+ * e: hit animation, 1 → 0: it spins, flaps its flippers and sees stars.
+ */
+const penguin = (
+  x: number,
+  y: number,
+  r: number,
+  vx: number,
+  vy: number,
+  e: number,
+  now: number,
+) => {
+  shadow(x + r * 0.2, y + r * 0.25, r * 1.1, r * 0.85, '#0a4a7a55');
+  c.save();
+  c.translate(x, y);
+  c.rotate(vx || vy ? Math.atan2(vy, vx) : 1.57);
+  if (vx || vy) {
+    c.beginPath();
+    c.moveTo(-r * 0.6, -r * 0.5);
+    c.lineTo(-r * 3, 0);
+    c.lineTo(-r * 0.6, r * 0.5);
+    fill(
+      '#0000',
+      c.createLinearGradient(-r * 3, 0, -r * 0.6, 0),
+      [0, '#7fb6d600'],
+      [1, '#7fb6d6aa'],
+    );
+  }
+  // Seen three-quarter: the back is off-centre, the white belly shows on one flank.
+  c.rotate(e * e * 12.6);
+  oval(-r * 0.15, r * 0.06, r * 0.85, r * 0.66, '#f7fbff');
+  for (const s of [-1, 1]) {
+    oval(-r * 0.95, s * r * 0.22, r * 0.22, r * 0.12, ORANGE);
+    c.save();
+    c.translate(0, s * r * 0.45);
+    c.rotate(-s * (0.45 + Math.sin(now / 40) * e));
+    oval(-r * 0.35, 0, r * 0.42, r * 0.13, BLACK);
+    c.restore();
+  }
+  oval(-r * 0.2, -r * 0.08, r * 0.72, r * 0.44, BLACK);
+  oval(-r * 0.35, -r * 0.22, r * 0.32, r * 0.09, '#fff3');
+  circle(r * 0.55, 0, r * 0.4, BLACK);
+  for (const s of [-1, 1]) {
+    circle(r * 0.64, s * r * 0.2, r * 0.13, '#fff');
+    circle(r * 0.69, s * r * 0.2, r * 0.06, '#111');
+  }
+  c.beginPath();
+  c.moveTo(r * 0.86, -r * 0.11);
+  c.lineTo(r * 1.15, 0);
+  c.lineTo(r * 0.86, r * 0.11);
+  c.fillStyle = ORANGE;
+  c.fill();
+  c.restore();
+  for (let k = 0; k < 3 && e; k++) {
+    const b = now / 150 + k * 2.1;
+    text(
+      '★',
+      x + Math.cos(b) * r * 0.8,
+      y - r * 0.6 + Math.sin(b) * r * 0.3,
+      r * 0.5,
+      'center',
+      '#ffc21a',
+    );
+  }
+};
+
+/** An obstacle of the ice arena; age: ms since the puck last hit it. */
+export const obstacle = (
+  { kind, x, y, r, vx, vy }: Obstacle,
+  i: number,
+  age: number,
+  now: number,
+) =>
+  kind == 'iceberg'
+    ? berg(x, y, r, i, Math.max(0, 1 - age / 400), age)
+    : penguin(x, y, r, vx, vy, Math.max(0, 1 - age / 800), now);
+
+/**
+ * The puck's trail: p holds the last positions drawn (x, y pairs), the one at x, y is pushed.
+ * Drawn as a fading streak while the puck is fast; a jump (serve) starts it over.
+ */
+export const streak = (p: number[], x: number, y: number, fast: boolean, color: string) => {
+  const n = p.length;
+  if (!fast || Math.hypot(x - p[n - 2], y - p[n - 1]) > 300) {
+    p.length = 0;
+  }
+  p.push(x, y);
+  if (p.length > 20) {
+    p.splice(0, 2);
+  }
+  for (let i = 2; i < p.length; i += 2) {
+    c.globalAlpha = (i / p.length) * 0.5;
+    line(color, (PUCK_R * 2 * i) / p.length, p[i - 2], p[i - 1], p[i], p[i + 1]);
+  }
+  c.globalAlpha = 1;
+};
+
+/** Snowflakes drifting down over the rink. */
+export const snow = (now: number) => {
+  c.beginPath();
+  for (let i = 0; i < 40; i++) {
+    const x = (rnd(i + 300) * W + Math.sin(now / 1500 + i) * 30 + W) % W;
+    const y = (rnd(i + 350) * H + now * (0.015 + rnd(i + 400) * 0.03)) % H;
+    const s = 2 + rnd(i + 400) * 5;
+    c.moveTo(x + s, y);
+    c.arc(x, y, s, 0, 7);
+  }
+  c.fillStyle = '#fffd';
+  c.fill();
+  c.strokeStyle = '#7fb6d655';
+  c.lineWidth = 2;
+  c.stroke();
 };
 
 /** Covers the rink (in rink coordinates) with color, label in the middle. */
 export const veil = (color: string, label = '') => {
   rect(0, 0, W, H, color);
+  text(label, W / 2 + 5, H / 2 + 5, f * 2, 'center', '#0006');
   text(label, W / 2, H / 2, f * 2);
 };
 
@@ -115,7 +428,7 @@ export const hud = (
     brk ? `${side(winner)} wins round ${round}` : score,
     W / 2,
     TOP * 0.36,
-    Math.max(f * 1.5, 72),
+    Math.max(f * 1.5, 90),
     'center',
     '#fff',
     W - f * 2,
@@ -131,7 +444,7 @@ export const hud = (
             : ''),
     W / 2,
     TOP * 0.8,
-    Math.max(f, 36),
+    Math.max(f, 45),
     'center',
     label ? '#fc3' : '#fffb',
     W - f,
@@ -169,7 +482,7 @@ export const hud = (
 
 /** End of match, full canvas: stadium at night, podium of the top scorers, points ranking. */
 export const stadium = (ranking: Rank[], winner: Team | undefined, now: number) => {
-  const u = Math.max(f, 64);
+  const u = Math.max(f, 80);
   const crowd = ranking.map(r => r.color);
   const pick = (i: number) => crowd[i % (crowd.length + 3)] ?? '#3b4870';
   // Night sky, lighter toward the horizon.
@@ -208,7 +521,7 @@ export const stadium = (ranking: Rank[], winner: Team | undefined, now: number) 
     W - u,
   );
   // The winning team's players, in their colours, squeezed to fit the width.
-  const v = Math.max(f, 40);
+  const v = Math.max(f, 50);
   const team = ranking.filter(r => r.team == winner && !r.left);
   const ws = team.map(r => width(r.name, v) + v);
   const z = Math.min(1, (W - v * 2) / ws.reduce((a, b) => a + b, 0));
