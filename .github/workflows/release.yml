@@ -126,6 +126,13 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Publish first: the next bump is computed from the latest tag, so a tag
+      # pushed before a failed publish would skip a version that never shipped.
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+
       # Tags are not subject to branch protection, so GITHUB_TOKEN is enough.
       # The version bump is intentionally NOT committed back to the protected
       # master branch; the tag + the published npm package carry the version.
@@ -134,11 +141,6 @@ jobs:
           VERSION="${{ steps.bump.outputs.version }}"
           git tag -a "${VERSION}" -m "Release ${VERSION}"
           git push origin "${VERSION}"
-
-      - name: Publish to npm
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
 
       - name: Create GitHub Release
         env:
