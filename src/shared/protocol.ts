@@ -32,6 +32,8 @@ export const MSG_SNAPSHOT = 2;
 
 const toWire = (v: number): number => Math.max(0, Math.min(65535, Math.round(v * SCALE)));
 const fromWire = (v: number): number => v / SCALE;
+/** A velocity travels in whole units per second, in an Int16. */
+const speed = (v: number): number => Math.max(-32768, Math.min(32767, Math.round(v)));
 
 /** [type u8][x u16][y u16] = 5 bytes. */
 export const encodeInput = (x: number, y: number): ArrayBuffer => {
@@ -53,9 +55,9 @@ export const decodeInput = (buf: ArrayBuffer): { x: number; y: number } | null =
   return { x: fromWire(v.getUint16(1)), y: fromWire(v.getUint16(3)) };
 };
 
-// [type u8][tick u16][score0 u8][score1 u8][puckX u16][puckY u16][count u8]
-// then count × [id u8][x u16][y u16]
-const SNAP_HEAD = 11;
+// [type u8][tick u16][score0 u8][score1 u8][puckX u16][puckY u16][count u8][flags u8]
+// [puckVx i16][puckVy i16] then count × [id u8][x u16][y u16]
+const SNAP_HEAD = 15;
 const SNAP_PADDLE = 5;
 
 export const encodeSnapshot = (s: Snapshot): ArrayBuffer => {
@@ -68,6 +70,8 @@ export const encodeSnapshot = (s: Snapshot): ArrayBuffer => {
   v.setUint16(7, toWire(s.puck.y));
   v.setUint8(9, s.paddles.length);
   // byte 10 is reserved (flags), kept at 0
+  v.setInt16(11, speed(s.puck.vx));
+  v.setInt16(13, speed(s.puck.vy));
   s.paddles.forEach((p, i) => {
     const o = SNAP_HEAD + i * SNAP_PADDLE;
     v.setUint8(o, p.id);
@@ -98,7 +102,12 @@ export const decodeSnapshot = (buf: ArrayBuffer): Snapshot | null => {
   return {
     tick: v.getUint16(1),
     score: [v.getUint8(3), v.getUint8(4)],
-    puck: { x: fromWire(v.getUint16(5)), y: fromWire(v.getUint16(7)) },
+    puck: {
+      x: fromWire(v.getUint16(5)),
+      y: fromWire(v.getUint16(7)),
+      vx: v.getInt16(11),
+      vy: v.getInt16(13),
+    },
     paddles,
   };
 };

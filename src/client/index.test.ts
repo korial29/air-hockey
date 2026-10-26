@@ -4,7 +4,8 @@ import { decodeInput, encodeSnapshot } from '../shared/protocol';
 import type { Rank, SocketLike } from '../shared/types';
 import { airHockey } from './index';
 
-vi.mock('../shared/physics', () => ({
+vi.mock('../shared/physics', async importOriginal => ({
+  ...(await importOriginal<object>()),
   clampPaddle: (_team: number, x: number, y: number) => [x, y],
 }));
 
@@ -102,7 +103,7 @@ describe('airHockey', () => {
     const score = vi.fn();
     game.on('score', score);
     const snapshot = (s: [number, number]) =>
-      encodeSnapshot({ tick: 1, score: s, puck: { x: 800, y: 450 }, paddles: [] });
+      encodeSnapshot({ tick: 1, score: s, puck: { x: 800, y: 450, vx: 0, vy: 0 }, paddles: [] });
     socket.onmessage!({ data: snapshot([0, 1]) });
     socket.onmessage!({ data: snapshot([0, 1]) });
     socket.onmessage!({ data: snapshot([2, 1]) });
@@ -167,7 +168,12 @@ describe('airHockey', () => {
     const players = [{ id: 3, name: 'Ana', color: '#f00', team: 0 }];
     socket.onmessage!({ data: JSON.stringify({ t: 'roster', you: 3, players }) });
     socket.onmessage!({
-      data: encodeSnapshot({ tick: 1, score: [4, 2], puck: { x: 1, y: 1 }, paddles: [] }),
+      data: encodeSnapshot({
+        tick: 1,
+        score: [4, 2],
+        puck: { x: 1, y: 1, vx: 0, vy: 0 },
+        paddles: [],
+      }),
     });
     send({ phase: 'play', round: 2, rounds: 3, goals: 10, wins: [1, 0] });
     expect(draw()).toEqual(expect.arrayContaining(['4 : 2', 'Round 2/3 · 1–0 · first to 10']));

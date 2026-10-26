@@ -76,11 +76,14 @@ export interface Rank {
   left?: boolean;
 }
 
-/** What a snapshot carries: positions only, the client interpolates. */
+/**
+ * What a snapshot carries: positions, plus the puck velocity so the client can simulate it
+ * forward. Paddles are interpolated.
+ */
 export interface Snapshot {
   tick: number;
   score: [number, number];
-  puck: { x: number; y: number };
+  puck: Puck;
   paddles: { id: number; x: number; y: number }[];
 }
 

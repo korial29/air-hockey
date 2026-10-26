@@ -15,12 +15,15 @@ export const toField = (
   r: { left: number; top: number; width: number; height: number },
 ): [number, number] => [((cx - r.left) * W) / r.width, ((cy - r.top) * H) / r.height];
 
-/** Positions of b, moved back toward a by (1 - f). Paddles new in b stay where b has them. */
+/**
+ * Positions of b, moved back toward a by (1 - f); the puck velocity is b's.
+ * Paddles new in b stay where b has them.
+ */
 export const lerp = (a: Snapshot, b: Snapshot, f: number): Snapshot => {
   const m = (u: number, v: number) => u + (v - u) * f;
   return {
     ...b,
-    puck: { x: m(a.puck.x, b.puck.x), y: m(a.puck.y, b.puck.y) },
+    puck: { ...b.puck, x: m(a.puck.x, b.puck.x), y: m(a.puck.y, b.puck.y) },
     paddles: b.paddles.map(p => {
       const q = a.paddles.find(o => o.id == p.id) ?? p;
       return { id: p.id, x: m(q.x, p.x), y: m(q.y, p.y) };

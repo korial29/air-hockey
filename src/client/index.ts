@@ -3,6 +3,7 @@ import { clampPaddle } from '../shared/physics';
 import { decodeSnapshot, encodeInput, parseText } from '../shared/protocol';
 import type { ServerText } from '../shared/protocol';
 import type { PlayerInfo, SocketLike, Team } from '../shared/types';
+import { predict, rebase, reset, view } from './predict';
 import { byTeam, grid, podium, sample, toField } from './util';
 import type { Stamped } from './util';
 
@@ -45,8 +46,10 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   const buf: Stamped[] = [];
   let players = new Map<number, PlayerInfo>();
   let you = -1;
-  /** Own paddle, predicted from the pointer. */
+  /** Pointer, clamped to the own half: the own paddle's target. */
   let me: [number, number] | undefined;
+  /** Local simulation of the puck and the own paddle. */
+  const P = predict();
   let dirty = false;
   let open = false;
   let score = '';
@@ -72,7 +75,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     if (typeof data != 'string') {
       const s = decodeSnapshot(data);
       if (s) {
-        buf.push({ t: performance.now(), s });
+        const now = performance.now();
+        buf.push({ t: now, s });
+        rebase(P, s, you, now);
         if (buf.length > 8) {
           buf.shift();
         }
@@ -96,6 +101,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       // The host puts paddles back on their spawn points at round start: drop the prediction
       // until the pointer moves again, or our paddle would be drawn where it no longer is.
       me = undefined;
+      reset(P, m.phase);
       emit('match', (match = rest));
     } else if (m?.t == 'full') {
       msg = 'Room is full';
@@ -166,12 +172,12 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     c.fillRect(0, (H - GOAL) / 2, 12, GOAL);
     c.fillRect(W - 12, (H - GOAL) / 2, 12, GOAL);
 
-    const s = sample(buf, now - INTERP_DELAY);
+    const s = view(P, sample(buf, now - INTERP_DELAY), now, me);
     if (s) {
       circle(s.puck.x, s.puck.y, PUCK_R, '#fff');
       for (const p of s.paddles) {
         const info = players.get(p.id);
-        const [x, y] = p.id == you && me ? me : [p.x, p.y];
+        const { x, y } = p;
         circle(x, y, PADDLE_R, info?.color ?? '#888');
         circle(x, y, PADDLE_R / 2, '#0003');
         // Above the paddle, or below it against the top wall.

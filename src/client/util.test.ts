@@ -5,7 +5,7 @@ import { byTeam, grid, podium, sample, toField } from './util';
 const snap = (x: number, paddles: { id: number; x: number; y: number }[] = []): Snapshot => ({
   tick: 0,
   score: [0, 0],
-  puck: { x, y: x },
+  puck: { x, y: x, vx: x, vy: 0 },
   paddles,
 });
 
@@ -37,7 +37,7 @@ describe('sample', () => {
 
   it('interpolates the puck and paddles between the bracketing snapshots', () => {
     const s = sample(buf, 25)!;
-    expect(s.puck).toEqual({ x: 25, y: 25 });
+    expect(s.puck).toEqual({ x: 25, y: 25, vx: 100, vy: 0 });
     expect(s.paddles).toEqual([
       { id: 1, x: 25, y: 12.5 },
       { id: 2, x: 7, y: 8 },

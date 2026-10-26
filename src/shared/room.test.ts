@@ -137,6 +137,32 @@ describe('Room', () => {
     expect(me(join(room, raw)).name).toBe(name);
   });
 
+  it('suffixes a name a present player already has, within MAX_NAME', () => {
+    const names = ['Ann', 'Ann', 'Ann', 'Ann 2', 'x'.repeat(40), 'x'.repeat(16), '   ', 'Player 6'];
+    const conns = names.map(n => join(room, n));
+    expect(conns.map(c => me(c).name)).toEqual([
+      'Ann',
+      'Ann 2',
+      'Ann 3',
+      'Ann 2 2',
+      'x'.repeat(MAX_NAME),
+      `${'x'.repeat(MAX_NAME - 2)} 2`,
+      'Player 6',
+      'Player 6 2',
+    ]);
+    // A free name is free again: the leaver's is reused, nobody else is renamed.
+    room.disconnect(conns[1]);
+    expect(me(join(room, 'Ann')).name).toBe('Ann 2');
+    expect(me(conns[2]).name).toBe('Ann 3');
+  });
+
+  it('cuts the base so the suffix fits, never leaving a double space', () => {
+    const names = Array.from({ length: 10 }, () => me(join(room, 'abcdefghijklm no')).name);
+    expect(names.slice(0, 3)).toEqual(['abcdefghijklm no', 'abcdefghijklm 2', 'abcdefghijklm 3']);
+    expect(names.at(-1)).toBe('abcdefghijklm 10');
+    expect(names.every(n => n.length <= MAX_NAME)).toBe(true);
+  });
+
   it('answers full past MAX_PLAYERS', () => {
     for (let i = 0; i < MAX_PLAYERS; i++) {
       join(room);
@@ -279,18 +305,18 @@ describe('Room', () => {
       elapse(dt * 1.5);
       elapse(dt * 0.6);
       elapse(dt * 2);
-      expect(binaries(a)).toHaveLength(1);
-      expect(decodeSnapshot(binaries(a)[0])!.tick).toBe(SNAP_EVERY);
+      expect(binaries(a)).toHaveLength(4 / SNAP_EVERY);
+      expect(decodeSnapshot(binaries(a).at(-1)!)!.tick).toBe(4);
     });
 
     it('caps the catch-up after a stall', () => {
       const a = join(room);
       room.start();
       elapse(5001);
-      // 10 ticks replayed at most: snapshots at ticks 4 and 8.
-      expect(binaries(a)).toHaveLength(2);
+      // 10 ticks replayed at most.
+      expect(binaries(a)).toHaveLength(Math.floor(10 / SNAP_EVERY));
       elapse(dt * 2);
-      expect(decodeSnapshot(binaries(a)[2])!.tick).toBe(12);
+      expect(decodeSnapshot(binaries(a).at(-1)!)!.tick).toBe(12);
     });
 
     it('starts and stops idempotently', () => {
@@ -522,6 +548,21 @@ describe('Room tournament', () => {
     winRound(a, 0);
     expect(lastMatch(a).phase).toBe('end');
     expect(line(a, 'C')).toEqual({ ...me(c2), points: 1 + 10 + 30, goals: 0, hits: 1 });
+    expect(lastMatch(a).ranking).toHaveLength(3);
+  });
+
+  it('gives the stats back on rejoin under the deduplicated name', () => {
+    const a = join(room, 'A');
+    join(room, 'B');
+    const a2 = join(room, 'A');
+    expect(me(a2).name).toBe('A 2');
+    touch(me(a2).id);
+    room.disconnect(a2);
+    // The same raw name comes back while 'A' is still here: it lands on 'A 2' and its stats.
+    const back = join(room, 'A');
+    expect(me(back).name).toBe('A 2');
+    winRound(a, 0);
+    expect(line(a, 'A 2')).toMatchObject({ hits: 1 });
     expect(lastMatch(a).ranking).toHaveLength(3);
   });
 

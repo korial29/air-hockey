@@ -15,10 +15,13 @@ export const PADDLE_MAX_SPEED = 3000;
 
 /** Physics steps per second (fixed step, server or local host). */
 export const TICK_HZ = 120;
-/** A snapshot goes out every SNAP_EVERY ticks: 120 / 4 = 30 Hz. */
-export const SNAP_EVERY = 4;
-/** Client render delay used for interpolation, in ms. */
-export const INTERP_DELAY = 100;
+/** A snapshot goes out every SNAP_EVERY ticks: 120 / 2 = 60 Hz. */
+export const SNAP_EVERY = 2;
+/**
+ * Client render delay of the other paddles, interpolated between snapshots, in ms: about two
+ * snapshot intervals. The puck and the own paddle are predicted, drawn in the present.
+ */
+export const INTERP_DELAY = 35;
 
 /** Network fixed point: a coordinate travels as round(v * SCALE) in a Uint16. */
 export const SCALE = 32;

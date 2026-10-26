@@ -17,16 +17,26 @@ interface Player {
 /** Ticks run at most this many times per timer callback, so a stalled host does not spiral. */
 const MAX_CATCH_UP = 10;
 
+/** First n characters (code points) of s, trimmed. */
+const cut = (s: string, n: number): string => Array.from(s).slice(0, n).join('').trim();
+
 const cleanName = (raw: unknown): string =>
-  Array.from(
+  cut(
     (typeof raw === 'string' ? raw : '')
       .replace(/\s+/g, ' ')
       .replace(/\p{Cc}/gu, '')
       .trim(),
-  )
-    .slice(0, MAX_NAME)
-    .join('')
-    .trim();
+    MAX_NAME,
+  );
+
+/** name, or name 2, name 3… (base cut to stay within MAX_NAME) when it is taken. */
+const unique = (name: string, taken: string[]): string => {
+  let out = name;
+  for (let n = 2; taken.includes(out); n++) {
+    out = `${cut(name, MAX_NAME - 1 - `${n}`.length)} ${n}`;
+  }
+  return out;
+};
 
 const fresh = (info: PlayerInfo): Rank => ({ ...info, points: 0, goals: 0, hits: 0 });
 const idle = ({ goals, rounds }: Rules): Match => ({
@@ -231,7 +241,11 @@ export class Room {
     const paddle: Paddle = { id, team, x, y, vx: 0, vy: 0, tx: x, ty: y };
     const info: PlayerInfo = {
       id,
-      name: cleanName(name) || `Player ${id}`,
+      // Two present players never share a name.
+      name: unique(
+        cleanName(name) || `Player ${id}`,
+        players.map(p => p.info.name),
+      ),
       color: `hsl(${Math.round((id * 137.508) % 360)} 80% 55%)`,
       team,
     };
