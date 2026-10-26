@@ -6,19 +6,25 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 
 const isBuildingDemo = process.env.BUILD_DEMO === 'true';
 const isBuildingServer = process.env.BUILD_SERVER === 'true';
+const isBuildingLocal = process.env.BUILD_LOCAL === 'true';
 
-// Three builds share this file:
-// - default: the browser library (client + local), size-gated by scripts/size.mjs
+// Four builds share this file:
+// - default: the browser client (dist/index.js)
+// - BUILD_LOCAL: the same-browser host (dist/local.js). Built apart from the client so
+//   neither carries the other's code in a shared chunk; both are size-gated by scripts/size.mjs
 // - BUILD_SERVER: the Node WebSocket adapter and its CLI
 // - BUILD_DEMO: the static demo deployed to gh-pages
 const libBuild = {
   lib: {
     entry: {
-      index: resolve(root, 'src/client/index.ts'),
-      local: resolve(root, 'src/local/index.ts'),
+      [isBuildingLocal ? 'local' : 'index']: resolve(
+        root,
+        isBuildingLocal ? 'src/local/index.ts' : 'src/client/index.ts',
+      ),
     },
     formats: ['es' as const],
   },
+  emptyOutDir: false,
   target: 'es2022',
   minify: true,
 };

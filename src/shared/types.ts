@@ -54,6 +54,9 @@ export interface SocketLike {
   close(): void;
 }
 
+/** Calls cb every ms milliseconds until the returned function is called. */
+export type Every = (cb: () => void, ms: number) => () => void;
+
 /** One connected peer, as the room sees it. Transport-agnostic. */
 export interface Conn {
   send(data: string | ArrayBuffer): void;

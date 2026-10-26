@@ -4,9 +4,124 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Air Hockey</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f4f6f8;
+        --fg: #14202b;
+        --muted: #5b6875;
+        --field: #fff;
+        --line: #c9d2da;
+        --accent: #0d6efd;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0e151c;
+          --fg: #e6edf3;
+          --muted: #8b98a5;
+          --field: #18222c;
+          --line: #2c3a47;
+          --accent: #4d94ff;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px 16px;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          16px/1.5 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 24px;
+      }
+      p {
+        margin: 0 0 16px;
+        color: var(--muted);
+      }
+      form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: end;
+      }
+      label {
+        display: grid;
+        gap: 4px;
+        font-size: 14px;
+        color: var(--muted);
+        flex: 1 1 200px;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        min-height: 40px;
+        padding: 6px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--field);
+        color: var(--fg);
+        min-width: 0;
+      }
+      button {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+        font-weight: 600;
+        padding: 6px 20px;
+        cursor: pointer;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      #bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      #bar p {
+        margin: 0;
+      }
+    </style>
   </head>
   <body>
-    <div id="game"></div>
+    <main>
+      <h1>Air Hockey</h1>
+      <p>Open this page in another tab to play together.</p>
+      <form id="form">
+        <label>Name <input name="name" maxlength="16" required autocomplete="nickname" /></label>
+        <label
+          >Mode
+          <select name="mode">
+            <option value="local">Local (tabs of this browser)</option>
+            <option value="server">Server</option>
+          </select>
+        </label>
+        <label id="url" hidden
+          >Server URL <input name="url" type="url" value="ws://localhost:8787/demo"
+        /></label>
+        <button>Join</button>
+      </form>
+      <div id="play" hidden>
+        <div id="bar">
+          <p id="status"></p>
+          <button id="leave" type="button">Leave</button>
+        </div>
+        <div id="game"></div>
+      </div>
+    </main>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

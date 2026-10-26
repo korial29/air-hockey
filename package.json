@@ -50,7 +50,7 @@
   "scripts": {
     "start": "vite demo --config vite.config.ts",
     "dev:server": "tsx watch src/server/cli.ts",
-    "build": "rm -rf dist && vite build && BUILD_SERVER=true vite build && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && vite build && BUILD_LOCAL=true vite build && BUILD_SERVER=true vite build && tsc -p tsconfig.build.json",
     "build:demo": "BUILD_DEMO=true vite build",
     "size": "node scripts/size.mjs",
     "lint:eslint": "eslint .",
