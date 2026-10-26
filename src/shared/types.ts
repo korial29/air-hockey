@@ -27,7 +27,25 @@ export interface Paddle {
   ty: number;
 }
 
+export type Arena = 'ice' | 'classic';
+
+/** A round obstacle the puck bounces off like a pinball bumper. Paddles cannot cross it. */
+export interface Obstacle {
+  kind: 'iceberg' | 'penguin';
+  x: number;
+  y: number;
+  r: number;
+  /** Units per second: 0 for icebergs, the slide of a penguin. */
+  vx: number;
+  vy: number;
+}
+
 export interface World {
+  arena: Arena;
+  /** Physics steps since the world was created; obstacles(arena, tick) gives the obstacles. */
+  tick: number;
+  /** Indices in obstacles(arena, tick) the puck touched during the last step. */
+  bumps: number[];
   puck: Puck;
   paddles: Paddle[];
   score: [number, number];
@@ -37,6 +55,8 @@ export interface World {
 
 /** Match rules, set by the host. Defaults in constants.ts (RULES). */
 export interface Rules {
+  /** 'ice': icebergs and sliding penguins; 'classic': an empty rink. */
+  arena: Arena;
   /** Rounds in a match; the first team to win a majority of them wins (3 → best of 3). */
   rounds: number;
   /** Goals that win a round. */

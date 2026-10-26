@@ -2,7 +2,7 @@
 // Paddles are kinematic (infinite mass): they push the puck, the puck never pushes them,
 // except when it is pinned against a wall (see the last pass of `step`).
 import { GOAL, H, PADDLE_MAX_SPEED, PADDLE_R, PUCK_MAX_SPEED, PUCK_R, W } from './constants';
-import type { Paddle, Team, World } from './types';
+import type { Arena, Paddle, Team, World } from './types';
 
 /** Restitution of walls, posts and paddle hits. */
 const E = 0.9;
@@ -30,7 +30,10 @@ const place = (p: Paddle, x: number, y: number): void => {
 };
 
 /** Empty world: puck at the centre, no paddles, 0-0. */
-export const createWorld = (): World => ({
+export const createWorld = (arena: Arena = 'ice'): World => ({
+  arena,
+  tick: 0,
+  bumps: [],
   puck: { x: W / 2, y: H / 2, vx: 0, vy: 0 },
   paddles: [],
   score: [0, 0],
