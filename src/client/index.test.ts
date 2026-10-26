@@ -14,7 +14,10 @@ vi.mock('../shared/physics', async importOriginal => ({
 }));
 
 // The ice layout and the hit times belong to the physics: a fixed fake of each.
-const fake = vi.hoisted(() => ({ hits: [] as number[] }));
+const fake = vi.hoisted(() => ({
+  hits: [] as number[],
+  obs: undefined as { hits: number; since: number; angle: number }[] | undefined,
+}));
 vi.mock('../shared/arena', () => ({
   obstacles: vi.fn((arena: string): Obstacle[] =>
     arena == 'ice'
@@ -27,7 +30,15 @@ vi.mock('../shared/arena', () => ({
 }));
 vi.mock('./predict', async importOriginal => {
   const m = await importOriginal<typeof Predict>();
-  return { ...m, predict: () => Object.assign(m.predict(), { hits: fake.hits }) };
+  return {
+    ...m,
+    predict: () => Object.assign(m.predict(), { hits: fake.hits }),
+    // The obstacle states the rules side will fill, on the drawn snapshot.
+    view: (...a: Parameters<typeof m.view>) => {
+      const s = m.view(...a);
+      return s && fake.obs ? { ...s, obs: fake.obs } : s;
+    },
+  };
 });
 
 const fakeSocket = () => {
@@ -60,13 +71,17 @@ beforeAll(() => {
 /**
  * A 2D context that accepts every call and records the text drawn, the canvas y of each
  * text in field units (through setTransform), the fill styles set, and in `at` each text
- * with its canvas y and font size in canvas pixels.
+ * with its canvas y and font size in canvas pixels. Also the stroke styles, the alphas and
+ * the translations.
  */
 const fakeContext = () => {
   const texts: string[] = [];
   const ys = new Map<string, number>();
   const at: [string, number, number][] = [];
   const styles: string[] = [];
+  const strokes: string[] = [];
+  const alphas: number[] = [];
+  const moves: [number, number][] = [];
   let m = [1, 0];
   const ctx = new Proxy({} as Record<string | symbol, unknown>, {
     get: (t, k) =>
@@ -80,21 +95,29 @@ const fakeContext = () => {
             }
           : k == 'setTransform'
             ? (a: number, ...r: number[]) => (m = [a, r[4]])
-            : k == 'measureText'
-              ? (s: string) => ({ width: s.length * 10 })
-              : String(k).startsWith('create')
-                ? () => ({ addColorStop: () => {} })
-                : () => {},
+            : k == 'translate'
+              ? (x: number, y: number) => moves.push([x, y])
+              : k == 'measureText'
+                ? (s: string) => ({ width: s.length * 10 })
+                : String(k).startsWith('create')
+                  ? () => ({ addColorStop: () => {} })
+                  : () => {},
     set: (t, k, v) => {
       if (k == 'fillStyle') {
         styles.push(v);
+      }
+      if (k == 'strokeStyle') {
+        strokes.push(v);
+      }
+      if (k == 'globalAlpha') {
+        alphas.push(v);
       }
       t[k] = v;
       return true;
     },
   });
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as never);
-  return Object.assign(texts, { ys, at, styles });
+  return Object.assign(texts, { ys, at, styles, strokes, alphas, moves });
 };
 
 const rank = (id: number, team: 0 | 1, goals: number, left?: boolean): Rank => ({
@@ -439,6 +462,102 @@ describe('airHockey', () => {
     move();
     frame(0);
     expect(decodeInput(socket.sent.at(-1) as ArrayBuffer)).toEqual({ x: 500, y: 250 });
+    game.destroy();
+  });
+
+  it('draws damage, removal, ghosts and returns from the obstacle states', () => {
+    const texts = fakeContext();
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    const draw = () => {
+      texts.length = texts.styles.length = texts.strokes.length = 0;
+      texts.alphas.length = texts.moves.length = 0;
+      vi.mocked(obstacles).mockClear();
+      frame(0);
+      return texts;
+    };
+    socket.onopen!();
+    socket.onmessage!({
+      data: encodeSnapshot({
+        tick: 4000,
+        score: [0, 0],
+        puck: { x: 300, y: 600, vx: 0, vy: 0 },
+        paddles: [],
+      }),
+    });
+    // Ticks (240 Hz): seconds since removal. Iceberg 0, penguin 1.
+    const sec = (v: number) => v * 240;
+    const set = (berg: [number, number], pen: [number, number], angle = 0) =>
+      (fake.obs = [
+        { hits: berg[0], since: berg[1], angle: 0 },
+        { hits: pen[0], since: pen[1], angle },
+      ]);
+    const facets = () => texts.styles.filter(v => String(v).startsWith('hsl(196')).length;
+    const cracks = () => texts.strokes.filter(v => v == '#2b6d96').length;
+
+    // Missing states: intact and in play.
+    fake.obs = undefined;
+    draw();
+    expect(facets()).toBeGreaterThan(0);
+    expect(cracks()).toBe(0);
+    expect(texts.styles).toContain('#f39a1c');
+
+    // In play: one hit, a crack; two, branching cracks and a chipped corner (darker facets).
+    set([0, -1], [0, -1]);
+    const intact = draw().styles.filter(v => String(v).startsWith('hsl(196'));
+    expect(cracks()).toBe(0);
+    set([1, -1], [0, -1]);
+    draw();
+    expect(cracks()).toBe(1);
+    set([2, -1], [0, -1]);
+    draw();
+    expect(cracks()).toBe(3);
+    expect(texts.styles.filter(v => String(v).startsWith('hsl(196'))).not.toEqual(intact);
+
+    // Shattered 0.3 s ago: shards and ice dust, no whole iceberg (no outline); at 5 s, nothing.
+    set([3, sec(0.3)], [0, -1]);
+    draw();
+    expect(texts.styles).toContain('#f8fdff');
+    expect(facets()).toBeGreaterThan(0);
+    expect(texts.strokes).not.toContain('#fffa');
+    set([3, sec(5)], [0, -1]);
+    draw();
+    expect(facets()).toBe(0);
+    expect(texts.styles).not.toContain('#f8fdff');
+
+    // Penguin shot out 0.5 s ago along +x: it flies from where it was at removal, stars around it.
+    set([0, -1], [1, sec(0.5)], 0);
+    draw();
+    expect(obstacles).toHaveBeenCalledWith('ice', expect.closeTo(4000 - sec(0.5), 0), 1, 7);
+    expect(texts.filter(t => t == '★')).toHaveLength(3);
+    expect(texts.moves).toContainEqual([1000 + 50 * 24 * 0.5, 500]);
+    // Gone for good at 2 s: nothing drawn for it.
+    set([0, -1], [1, sec(2)]);
+    expect(draw().styles).not.toContain('#f39a1c');
+
+    // Ghosts at 8 s and 9.5 s: see-through (25 to 45 %), at their place, with a ring.
+    for (const t of [8, 9.5]) {
+      set([3, sec(t)], [1, sec(t)]);
+      draw();
+      expect(facets()).toBeGreaterThan(0);
+      expect(texts.styles).toContain('#f39a1c');
+      expect(texts.strokes).toContain('#7fe3ff');
+      const a = texts.alphas.filter(v => v < 1);
+      expect(a.some(v => v >= 0.25 && v <= 0.45)).toBe(true);
+      expect(cracks()).toBe(0);
+    }
+
+    // Back in play: a pop (white ring) for 300 ms, then the plain obstacle.
+    const now = performance.now();
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(now);
+    set([0, -1], [0, -1]);
+    expect(draw().strokes).toContain('#fff');
+    clock.mockReturnValue(now + 400);
+    expect(draw().strokes).not.toContain('#fff');
+    expect(texts.alphas.filter(v => v > 0 && v < 1)).toEqual([]);
+    fake.obs = undefined;
     game.destroy();
   });
 });
