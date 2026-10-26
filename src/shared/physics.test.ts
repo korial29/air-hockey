@@ -53,6 +53,7 @@ describe('createWorld', () => {
       puck: { x: W / 2, y: H / 2, vx: 0, vy: 0 },
       paddles: [],
       score: [0, 0],
+      hit: -1,
     });
   });
 });
@@ -216,7 +217,8 @@ describe('paddle hits', () => {
     p.tx = 700;
     const w = world(420, H / 2, 0, 0, [p]);
     run(w, 10);
-    expect(w.puck.vx).toBeGreaterThan(PADDLE_MAX_SPEED * 0.75);
+    // Faster than the puck may go: it leaves at the cap.
+    expect(w.puck.vx).toBeGreaterThan(Math.min(PADDLE_MAX_SPEED, PUCK_MAX_SPEED) * 0.75);
     expect(Math.abs(w.puck.vy)).toBeLessThan(1);
   });
 
@@ -278,5 +280,46 @@ describe('paddle hits', () => {
       }
     }
     expect(w.score[0] + w.score[1]).toBeGreaterThan(0);
+  });
+});
+
+describe('hit', () => {
+  it('is -1 when no paddle touches the puck', () => {
+    const w = world(W / 2, H / 2, 600, 0, [paddle(0, 100, 100)]);
+    w.hit = 5;
+    run(w, 10, () => expect(w.hit).toBe(-1));
+  });
+
+  it('names the paddle that hit the puck, on the contact step only', () => {
+    const w = world(400, H / 2, -1000, 0, [paddle(0, 300, H / 2, 7)]);
+    const hits: number[] = [];
+    run(w, 10, () => hits.push(w.hit));
+    expect(hits.filter(h => h === 7)).toHaveLength(1);
+    expect(hits.filter(h => h !== 7 && h !== -1)).toEqual([]);
+  });
+
+  it.each([
+    [2, 3],
+    [3, 2],
+  ])('keeps the last paddle when several touch the puck in one step (%i then %i)', (i, j) => {
+    // One paddle above the puck, one on its right, both overlapping it a little.
+    const w = world(400, H / 2, 0, 0, [paddle(0, 400, H / 2 - 70, i), paddle(0, 470, H / 2, j)]);
+    step(w, DT);
+    expect(w.hit).toBe(j);
+  });
+
+  it('counts a puck pinned against a wall', () => {
+    // The paddle stays still against a puck resting on the top wall: only the pinned pass sees it.
+    const p = paddle(0, 400, PUCK_R + RR - 5, 4);
+    const w = world(400, PUCK_R, 0, 0, [p]);
+    step(w, DT);
+    expect(w.hit).toBe(4);
+  });
+
+  it('is reset by a step that does nothing', () => {
+    const w = world(W / 2, H / 2);
+    w.hit = 2;
+    step(w, 0);
+    expect(w.hit).toBe(-1);
   });
 });

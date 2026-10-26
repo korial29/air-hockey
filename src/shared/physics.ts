@@ -34,6 +34,7 @@ export const createWorld = (): World => ({
   puck: { x: W / 2, y: H / 2, vx: 0, vy: 0 },
   paddles: [],
   score: [0, 0],
+  hit: -1,
 });
 
 /** Clamps a paddle centre to its team's half and inside the walls. */
@@ -58,12 +59,14 @@ export const spawnPoint = (team: Team, n: number): [number, number] => {
  * Advances the world by dt seconds (always 1 / TICK_HZ in practice).
  * Moves paddles toward their target, moves the puck, resolves collisions.
  * On a goal it bumps the score, re-serves the puck and returns the scoring team; -1 otherwise.
+ * Sets w.hit to the paddle that touched the puck during the step (the last one if several), or -1.
  *
- * No tunnelling at 120 Hz: the puck moves at most 2400 / 120 = 20 units per step (< PUCK_R = 28
- * against walls and posts), a paddle 3000 / 120 = 25, so the closing distance per step is at
- * most 45 < PUCK_R + PADDLE_R = 72: an overlap is always caught before the centres cross.
+ * No tunnelling at 240 Hz: the puck moves at most 2400 / 240 = 10 units per step (< PUCK_R = 28
+ * against walls and posts), a paddle 7200 / 240 = 30, so the closing distance per step is at
+ * most 40 < PUCK_R + PADDLE_R = 72: an overlap is always caught before the centres cross.
  */
 export const step = (w: World, dt: number): Team | -1 => {
+  w.hit = -1;
   if (!(dt > 0)) {
     return -1;
   }
@@ -100,6 +103,7 @@ export const step = (w: World, dt: number): Team | -1 => {
     let ny = k.y - p.y;
     let d = Math.hypot(nx, ny);
     if (d < RR) {
+      w.hit = p.id;
       if (!d) {
         nx = 1 - 2 * p.team;
         d = 1;
@@ -127,7 +131,11 @@ export const step = (w: World, dt: number): Team | -1 => {
   const u = (k.x - gx) * i;
   if (u < PUCK_R) {
     const dy = k.y - H / 2;
-    if (u < 0) {
+    if (Math.abs(dy) > G) {
+      // Beside the mouth: a plain wall, even for a puck a paddle squeezed past the line.
+      k.x = gx + PUCK_R * i;
+      k.vx = bounce(k.vx, i);
+    } else if (u < 0) {
       // Past the goal line, inside the mouth: the slot walls hold it, and it keeps going in.
       if (Math.abs(dy) > G - PUCK_R) {
         k.y = H / 2 + Math.sign(dy) * (G - PUCK_R);
@@ -141,9 +149,6 @@ export const step = (w: World, dt: number): Team | -1 => {
         k.y = H / 2;
         k.vx = k.vy = 0;
       }
-    } else if (Math.abs(dy) > G) {
-      k.x = gx + PUCK_R * i;
-      k.vx = bounce(k.vx, i);
     } else {
       // In front of the mouth: only the posts (its corners) bounce, as points.
       const py = H / 2 + (dy < 0 ? -G : G);
@@ -180,6 +185,7 @@ export const step = (w: World, dt: number): Team | -1 => {
       let ny = p.y - k.y;
       let d = Math.hypot(nx, ny);
       if (d < RR && d) {
+        w.hit = p.id;
         place(p, k.x + (nx / d) * RR, k.y + (ny / d) * RR);
         // Stopped by the centre line or a side wall: slide along it to the contact distance.
         d = p.x - k.x;

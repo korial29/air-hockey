@@ -1,13 +1,15 @@
 import type { Server } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { Room } from '../shared/room';
-import type { Conn } from '../shared/types';
+import type { Conn, Rules } from '../shared/types';
 
 export interface ServeOptions {
   /** Listen on this port (ignored when server is given). */
   port?: number;
   /** Attach to an existing HTTP server instead. */
   server?: Server;
+  /** Match rules for every room; missing ones fall back to RULES. */
+  rules?: Partial<Rules>;
 }
 
 /** `/demo` → "demo", `/` → "default". Undecodable paths are kept as is. */
@@ -38,7 +40,7 @@ export const serve = (opts: ServeOptions): (() => Promise<void>) => {
   wss.on('connection', (ws, req) => {
     const name = roomName(req.url);
     // Rooms are dropped as soon as they empty, so conns === 0 means a new one.
-    const entry = rooms.get(name) ?? { room: new Room(), conns: 0 };
+    const entry = rooms.get(name) ?? { room: new Room(opts.rules), conns: 0 };
     const { room } = entry;
     if (!entry.conns++) {
       rooms.set(name, entry);

@@ -17,7 +17,7 @@ const MAX = 65535 / SCALE;
 const snapshot: Snapshot = {
   tick: 1234,
   score: [3, 7],
-  puck: { x: 812.345, y: 450.01 },
+  puck: { x: 812.345, y: 450.01, vx: -2399.6, vy: 1234.4 },
   paddles: [
     { id: 1, x: 44, y: 856 },
     { id: 7, x: W - 44.123, y: 123.456 },
@@ -63,6 +63,7 @@ describe('snapshot frames', () => {
     expect(out.score).toEqual([3, 7]);
     expect(Math.abs(out.puck.x - snapshot.puck.x)).toBeLessThanOrEqual(EPS);
     expect(Math.abs(out.puck.y - snapshot.puck.y)).toBeLessThanOrEqual(EPS);
+    expect([out.puck.vx, out.puck.vy]).toEqual([-2400, 1234]);
     expect(out.paddles).toHaveLength(3);
     out.paddles.forEach((p, i) => {
       const s = snapshot.paddles[i];
@@ -74,29 +75,29 @@ describe('snapshot frames', () => {
 
   it('carry an empty paddle list', () => {
     const buf = encodeSnapshot({ ...snapshot, paddles: [] });
-    expect(buf.byteLength).toBe(11);
+    expect(buf.byteLength).toBe(15);
     expect(decodeSnapshot(buf)!.paddles).toEqual([]);
   });
 
-  it('wrap the tick, cap the score and clamp coordinates', () => {
+  it('wrap the tick, cap the score and clamp coordinates and velocities', () => {
     const out = decodeSnapshot(
       encodeSnapshot({
         tick: 65536 + 5,
         score: [300, 0],
-        puck: { x: -10, y: 1e9 },
+        puck: { x: -10, y: 1e9, vx: -1e6, vy: 40000 },
         paddles: [{ id: 2, x: -1, y: 1e6 }],
       }),
     )!;
     expect(out.tick).toBe(5);
     expect(out.score).toEqual([255, 0]);
-    expect(out.puck).toEqual({ x: 0, y: MAX });
+    expect(out.puck).toEqual({ x: 0, y: MAX, vx: -32768, vy: 32767 });
     expect(out.paddles).toEqual([{ id: 2, x: 0, y: MAX }]);
   });
 
   it('reject malformed buffers', () => {
     const good = new Uint8Array(encodeSnapshot(snapshot));
     expect(decodeSnapshot(new ArrayBuffer(0))).toBeNull();
-    expect(decodeSnapshot(new ArrayBuffer(10))).toBeNull();
+    expect(decodeSnapshot(new ArrayBuffer(14))).toBeNull();
     expect(decodeSnapshot(good.slice(0, good.length - 1).buffer)).toBeNull();
     expect(decodeSnapshot(new Uint8Array([...good, 0]).buffer)).toBeNull();
     const wrongType = good.slice();

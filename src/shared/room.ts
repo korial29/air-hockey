@@ -1,28 +1,52 @@
-import { MAX_NAME, MAX_PLAYERS, SNAP_EVERY, TICK_HZ } from './constants';
+import { MAX_NAME, MAX_PLAYERS, RULES, SNAP_EVERY, TICK_HZ } from './constants';
 import { clampPaddle, createWorld, spawnPoint, step } from './physics';
 import { decodeInput, encodeSnapshot, parseText } from './protocol';
 import type { ClientText, ServerText } from './protocol';
-import type { Conn, Every, Paddle, PlayerInfo, World } from './types';
+import type { Conn, Every, Paddle, Phase, PlayerInfo, Rank, Rules, Team, World } from './types';
+
+type Match = Extract<ServerText, { t: 'match' }>;
 
 interface Player {
   conn: Conn;
   info: PlayerInfo;
   paddle: Paddle;
+  /** Stats of the current match; absent until the player is part of one. */
+  rank?: Rank;
 }
 
 /** Ticks run at most this many times per timer callback, so a stalled host does not spiral. */
-const MAX_CATCH_UP = 10;
+const MAX_CATCH_UP = 20;
+
+/** First n characters (code points) of s, trimmed. */
+const cut = (s: string, n: number): string => Array.from(s).slice(0, n).join('').trim();
 
 const cleanName = (raw: unknown): string =>
-  Array.from(
+  cut(
     (typeof raw === 'string' ? raw : '')
       .replace(/\s+/g, ' ')
       .replace(/\p{Cc}/gu, '')
       .trim(),
-  )
-    .slice(0, MAX_NAME)
-    .join('')
-    .trim();
+    MAX_NAME,
+  );
+
+/** name, or name 2, name 3… (base cut to stay within MAX_NAME) when it is taken. */
+const unique = (name: string, taken: string[]): string => {
+  let out = name;
+  for (let n = 2; taken.includes(out); n++) {
+    out = `${cut(name, MAX_NAME - 1 - `${n}`.length)} ${n}`;
+  }
+  return out;
+};
+
+const fresh = (info: PlayerInfo): Rank => ({ ...info, points: 0, goals: 0, hits: 0 });
+const idle = ({ goals, rounds }: Rules): Match => ({
+  t: 'match',
+  phase: 'wait',
+  round: 0,
+  wins: [0, 0],
+  goals,
+  rounds,
+});
 
 const setEvery: Every = (cb, ms) => {
   const id = setInterval(cb, ms);
@@ -39,6 +63,24 @@ export class Room {
   private world: World = createWorld();
   private ticks = 0;
   private halt: (() => void) | undefined;
+  private rules: Rules;
+  /** The match state, as broadcast. */
+  private m: Match;
+  /** Ticks left in 'break' or 'end'. */
+  private timer = 0;
+  /** Last toucher of the puck; none after a serve or a goal. */
+  private last: Player | undefined;
+  /**
+   * Everyone who played the current match, left ones included, in the order their points last
+   * changed: the stable sort of the ranking then puts whoever reached a total first ahead.
+   */
+  private stats: Rank[] = [];
+
+  /** Missing rules fall back to RULES. */
+  public constructor(rules: Partial<Rules> = {}) {
+    this.rules = { ...RULES, ...rules };
+    this.m = idle(this.rules);
+  }
 
   /** Number of joined players. */
   public get size(): number {
@@ -75,6 +117,9 @@ export class Room {
     }
     const w = this.world;
     w.paddles = w.paddles.filter(q => q !== p.paddle);
+    if (p.rank) {
+      p.rank.left = true;
+    }
     if (this.size) {
       this.roster();
     } else {
@@ -82,6 +127,7 @@ export class Room {
       this.world = createWorld();
       this.ticks = 0;
     }
+    this.sync();
   }
 
   /** One physics step of 1 / TICK_HZ; a snapshot goes out every SNAP_EVERY ticks. */
@@ -89,12 +135,47 @@ export class Room {
     if (!this.size) {
       return;
     }
-    const w = this.world;
-    const goal = step(w, 1 / TICK_HZ);
-    if (goal !== -1) {
-      this.broadcast(
-        JSON.stringify({ t: 'goal', team: goal, score: [...w.score] } satisfies ServerText),
-      );
+    const { rules, m, world: w } = this;
+    const { phase } = m;
+    if (phase === 'break' || phase === 'end') {
+      // Frozen: no physics, snapshots still go out.
+      if (--this.timer < 1) {
+        if (phase === 'break') {
+          this.next();
+        } else {
+          this.sync(true);
+        }
+      }
+    } else {
+      const goal = step(w, 1 / TICK_HZ);
+      // Counted in 'wait' too, on stale or missing ranks that nobody sees.
+      const p = this.players().find(p => p.info.id === w.hit);
+      if (p && p !== this.last) {
+        this.add((this.last = p), rules.hit, 'hits');
+      }
+      if (goal !== -1) {
+        // Own goals and goals nobody touched credit nobody.
+        if (this.last?.info.team === goal) {
+          this.add(this.last, rules.goal, 'goals');
+        }
+        this.last = undefined;
+        this.broadcast(
+          JSON.stringify({ t: 'goal', team: goal, score: [...w.score] } satisfies ServerText),
+        );
+        if (phase === 'play' && w.score[goal] >= rules.goals) {
+          // Round won, maybe the match. Upset bonus: a smaller team that wins the match
+          // gets bigger / smaller times the points.
+          const n = this.teams();
+          const end = ++m.wins[goal] >= Math.ceil(rules.rounds / 2);
+          const k = Math.round(n[1 - goal] / n[goal]) || 1;
+          this.players().forEach(
+            p =>
+              p.info.team === goal && this.add(p, rules.roundWin + (end ? rules.matchWin * k : 0)),
+          );
+          this.timer = Math.round((end ? rules.endSec : rules.breakSec) * TICK_HZ);
+          this.go(end ? 'end' : 'break', goal);
+        }
+      }
     }
     if (++this.ticks % SNAP_EVERY === 0) {
       // One buffer for everyone: transports must not mutate it.
@@ -154,19 +235,113 @@ export class Room {
     while (players.some(p => p.info.id === id)) {
       id++;
     }
-    const n0 = players.filter(p => p.info.team === 0).length;
-    const team = players.length - n0 < n0 ? 1 : 0;
-    const [x, y] = spawnPoint(team, team ? players.length - n0 : n0);
+    const n = this.teams();
+    const team = n[1] < n[0] ? 1 : 0;
+    const [x, y] = spawnPoint(team, n[team]);
     const paddle: Paddle = { id, team, x, y, vx: 0, vy: 0, tx: x, ty: y };
     const info: PlayerInfo = {
       id,
-      name: cleanName(name) || `Player ${id}`,
+      // Two present players never share a name.
+      name: unique(
+        cleanName(name) || `Player ${id}`,
+        players.map(p => p.info.name),
+      ),
       color: `hsl(${Math.round((id * 137.508) % 360)} 80% 55%)`,
       team,
     };
+    const player: Player = { conn, info, paddle };
+    const { phase } = this.m;
+    if (phase === 'play' || phase === 'break') {
+      // Back in the same match under the same name: the stats come back.
+      let r = this.stats.find(r => r.left && r.name === info.name);
+      if (r) {
+        delete r.left;
+      } else {
+        this.stats.push((r = fresh(info)));
+      }
+      player.rank = Object.assign(r, info);
+    }
     this.world.paddles.push(paddle);
-    this.peers.set(conn, { conn, info, paddle });
+    this.peers.set(conn, player);
     this.roster();
+    if (!this.sync()) {
+      conn.send(JSON.stringify(this.m));
+    }
+  }
+
+  private add(p: Player | undefined, points: number, stat?: 'goals' | 'hits'): void {
+    const r = p?.rank;
+    // Gone players keep their points, and earn no more.
+    if (r && !r.left) {
+      if (stat) {
+        r[stat]++;
+      }
+      if (points) {
+        const s = this.stats;
+        r.points += points;
+        s.push(...s.splice(s.indexOf(r), 1));
+      }
+    }
+  }
+
+  /** Players per team. */
+  private teams(): number[] {
+    const n = [0, 0];
+    this.world.paddles.forEach(p => n[p.team]++);
+    return n;
+  }
+
+  /**
+   * Starts a match once both teams have a player, drops back to 'wait' when one empties.
+   * The final ranking stays up for endSec unless the room empties; `due` ends it.
+   * Returns whether the phase changed.
+   */
+  private sync(due?: boolean): boolean {
+    const [a, b] = this.teams();
+    const { phase } = this.m;
+    const on = a && b;
+    if (!due && (on ? phase !== 'wait' : phase === 'wait' || (phase === 'end' && this.size))) {
+      return false;
+    }
+    this.m = idle(this.rules);
+    if (on) {
+      this.stats = this.players().map(p => (p.rank = fresh(p.info)));
+      this.next();
+    } else {
+      this.go('wait');
+    }
+    return true;
+  }
+
+  /** Next round: paddles back to their spawn points, puck served, head start for the smaller team. */
+  private next(): void {
+    const w = this.world;
+    const n = [0, 0];
+    w.paddles.forEach(p => {
+      [p.tx, p.ty] = [p.x, p.y] = spawnPoint(p.team, n[p.team]++);
+    });
+    const [a, b] = n;
+    const { goals, headStart } = this.rules;
+    Object.assign(w, createWorld(), { paddles: w.paddles });
+    w.score[a < b ? 0 : 1] = Math.min(goals - 1, headStart * Math.abs(a - b));
+    this.last = undefined;
+    this.m.round++;
+    this.go('play');
+  }
+
+  /** Phase change, broadcast. 'break' and 'end' carry the winner and the ranking at that time. */
+  private go(phase: Phase, winner?: Team): void {
+    Object.assign(this.m, {
+      phase,
+      winner,
+      ranking:
+        winner === undefined
+          ? winner
+          : [...this.stats].sort(
+              (a, b) => b.points - a.points || b.goals - a.goals || b.hits - a.hits,
+            ),
+    });
+    this.broadcast(JSON.stringify(this.m));
   }
 
   /** Each joined peer gets the full roster with its own id. */

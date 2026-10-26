@@ -3,10 +3,15 @@ import { clampPaddle } from '../shared/physics';
 import { decodeSnapshot, encodeInput, parseText } from '../shared/protocol';
 import type { ServerText } from '../shared/protocol';
 import type { PlayerInfo, SocketLike } from '../shared/types';
-import { byTeam, sample, toField } from './util';
+import { predict, rebase, reset, view } from './predict';
+import { circle, hud, pen, stadium, text, veil } from './render';
+import { CH, TOP, sample, toField } from './util';
 import type { Stamped } from './util';
 
-export type { PlayerInfo, SocketLike } from '../shared/types';
+export type { Phase, PlayerInfo, Rank, SocketLike, Team } from '../shared/types';
+
+/** Payload of the 'match' event: the host's match message, without its type tag. */
+export type MatchState = Omit<Extract<ServerText, { t: 'match' }>, 't'>;
 
 export interface AirHockeyOptions {
   /** Player name shown on screen. */
@@ -17,7 +22,7 @@ export interface AirHockeyOptions {
   socket?: SocketLike;
 }
 
-export type AirHockeyEvent = 'roster' | 'score' | 'goal' | 'open' | 'close';
+export type AirHockeyEvent = 'roster' | 'score' | 'goal' | 'match' | 'open' | 'close';
 
 export interface AirHockey {
   on(event: AirHockeyEvent, cb: (payload: unknown) => void): () => void;
@@ -30,7 +35,7 @@ type Listener = [AirHockeyEvent, (payload: unknown) => void];
 export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHockey => {
   const wrap = document.createElement('div');
   const root = wrap.attachShadow({ mode: 'open' });
-  root.innerHTML = `<style>canvas{display:block;width:100%;aspect-ratio:${W}/${H};touch-action:none;border-radius:16px}</style><canvas></canvas>`;
+  root.innerHTML = `<style>canvas{display:block;width:100%;aspect-ratio:${W}/${CH};touch-action:none;border-radius:16px}</style><canvas></canvas>`;
   container.append(wrap);
   const canvas = root.querySelector('canvas')!;
   const c = canvas.getContext('2d');
@@ -42,8 +47,10 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   const buf: Stamped[] = [];
   let players = new Map<number, PlayerInfo>();
   let you = -1;
-  /** Own paddle, predicted from the pointer. */
+  /** Pointer, clamped to the own half: the own paddle's target. */
   let me: [number, number] | undefined;
+  /** Local simulation of the puck and the own paddle. */
+  const P = predict();
   let dirty = false;
   let open = false;
   let score = '';
@@ -51,6 +58,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   let msg = '';
   let raf = 0;
   let dead = false;
+  let match: MatchState | undefined;
 
   const ws = opts.socket ?? (new WebSocket(opts.url!) as unknown as SocketLike);
   ws.binaryType = 'arraybuffer';
@@ -68,7 +76,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     if (typeof data != 'string') {
       const s = decodeSnapshot(data);
       if (s) {
-        buf.push({ t: performance.now(), s });
+        const now = performance.now();
+        buf.push({ t: now, s });
+        rebase(P, s, you, now);
         if (buf.length > 8) {
           buf.shift();
         }
@@ -86,6 +96,14 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     } else if (m?.t == 'goal') {
       goalAt = performance.now();
       emit('goal', { team: m.team, score: m.score });
+    } else if (m?.t == 'match') {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { t, ...rest } = m;
+      // The host puts paddles back on their spawn points at round start: drop the prediction
+      // until the pointer moves again, or our paddle would be drawn where it no longer is.
+      me = undefined;
+      reset(P, m.phase);
+      emit('match', (match = rest));
     } else if (m?.t == 'full') {
       msg = 'Room is full';
     }
@@ -104,7 +122,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
 
   const ro = new ResizeObserver(() => {
     canvas.width = canvas.clientWidth * devicePixelRatio;
-    canvas.height = (canvas.width * H) / W;
+    canvas.height = (canvas.width * CH) / W;
   });
   ro.observe(canvas);
 
@@ -112,26 +130,13 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     const k = canvas.width / W;
     // Font size in field units, never under 12 CSS px.
     const f = Math.max(28, (12 * devicePixelRatio) / k);
-    const circle = (x: number, y: number, r: number, color: string) => {
-      c.fillStyle = color;
-      c.beginPath();
-      c.arc(x, y, r, 0, 7);
-      c.fill();
-    };
-    const text = (s: string, x: number, y: number, size = f, align: CanvasTextAlign = 'center') => {
-      c.font = `bold ${size}px sans-serif`;
-      c.textAlign = align;
-      c.fillStyle = '#fff';
-      c.fillText(s, x, y);
-    };
-    const veil = (color: string, label: string) => {
-      c.fillStyle = color;
-      c.fillRect(0, 0, W, H);
-      text(label, W / 2, H / 2, f * 2);
-    };
-
+    pen(c, f);
     c.setTransform(k, 0, 0, k, 0, 0);
     c.textBaseline = 'middle';
+    c.fillStyle = '#08131d';
+    c.fillRect(0, 0, W, CH);
+    // The rink, between the HUD bands: field coordinates from here on.
+    c.setTransform(k, 0, 0, k, 0, k * TOP);
     c.fillStyle = '#0d2233';
     c.fillRect(0, 0, W, H);
     c.strokeStyle = '#fff4';
@@ -146,34 +151,31 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     c.fillRect(0, (H - GOAL) / 2, 12, GOAL);
     c.fillRect(W - 12, (H - GOAL) / 2, 12, GOAL);
 
-    const s = sample(buf, now - INTERP_DELAY);
+    const s = view(P, sample(buf, now - INTERP_DELAY), now, me);
     if (s) {
       circle(s.puck.x, s.puck.y, PUCK_R, '#fff');
       for (const p of s.paddles) {
         const info = players.get(p.id);
-        const [x, y] = p.id == you && me ? me : [p.x, p.y];
+        const { x, y } = p;
         circle(x, y, PADDLE_R, info?.color ?? '#888');
         circle(x, y, PADDLE_R / 2, '#0003');
-        text(info?.name ?? '', x, y - PADDLE_R - f / 2);
+        // Above the paddle, or below it against the top wall.
+        text(info?.name ?? '', x, y < PADDLE_R + f ? y + PADDLE_R + f / 2 : y - PADDLE_R - f / 2);
       }
-      text(s.score.join(' : '), W / 2, f * 1.5, f * 2);
     }
-    byTeam([...players.values()]).forEach((team, t) =>
-      team.forEach((p, i) => {
-        const x = t ? W - f : f;
-        const y = f * (1.2 + i * 1.2);
-        circle(x, y, f / 3, p.color);
-        text(p.name, x + (t ? -f / 1.5 : f / 1.5), y, f * 0.8, t ? 'right' : 'left');
-      }),
-    );
-
+    const { phase, winner, ranking = [] } = match ?? {};
+    const label = msg || (open ? '' : 'Connecting…');
     const a = 1 - (now - goalAt) / 600;
-    if (a > 0) {
+    if (a > 0 && phase != 'break' && phase != 'end') {
       veil(`rgba(255,204,51,${a / 2})`, 'GOAL!');
     }
-    const label = msg || (open ? '' : 'Connecting…');
-    if (label) {
-      veil('#000a', label);
+    if (label || phase == 'break') {
+      veil('#000a');
+    }
+    c.setTransform(k, 0, 0, k, 0, 0);
+    hud([...players.values()], you, s ? s.score.join(' : ') : '', label, match ?? {});
+    if (phase == 'end' && !label) {
+      stadium(ranking, winner, now);
     }
   };
 
