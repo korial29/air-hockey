@@ -94,10 +94,14 @@ describe('podium', () => {
     expect(podium(r).map(p => p.id)).toEqual([2, 3, 4]);
   });
 
-  it('skips players without a goal, leaving steps empty', () => {
-    expect(podium([rank(1, 0), rank(2, 3), rank(3, 0)]).map(p => p.id)).toEqual([2]);
-    expect(podium([rank(1, 0)])).toEqual([]);
+  it('keeps players without a goal, in ranking order, and leaves missing steps empty', () => {
+    expect(podium([rank(1, 0), rank(2, 3), rank(3, 0)]).map(p => p.id)).toEqual([2, 1, 3]);
+    expect(podium([rank(1, 0)]).map(p => p.id)).toEqual([1]);
     expect(podium([])).toEqual([]);
+  });
+
+  it('leaves out players who left', () => {
+    expect(podium([{ ...rank(1, 9), left: true }, rank(2, 0)]).map(p => p.id)).toEqual([2]);
   });
 
   it('does not reorder the ranking it reads', () => {

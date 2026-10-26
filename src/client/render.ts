@@ -262,7 +262,15 @@ export const stadium = (ranking: Rank[], winner: Team | undefined, now: number) 
     text(n, m, ny, u * 1.1, 'center', '#2a4170');
     const r = top[i];
     if (r) {
-      text(`${r.goals} goal${r.goals > 1 ? 's' : ''}`, m, ny + u * 0.9, f, 'center', '#2a4170', sw);
+      text(
+        `${r.goals} goal${r.goals == 1 ? '' : 's'}`,
+        m,
+        ny + u * 0.9,
+        f,
+        'center',
+        '#2a4170',
+        sw,
+      );
     }
   }
   // The players, once every block is drawn, about 6.5 heads tall: shadow, shoes, legs, shirt in

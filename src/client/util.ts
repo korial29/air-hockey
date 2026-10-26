@@ -58,10 +58,13 @@ export const sample = (buf: Stamped[], t: number): Snapshot | undefined => {
 export const byTeam = (players: PlayerInfo[]): PlayerInfo[][] =>
   [0, 1].map(t => players.filter(p => p.team == t));
 
-/** Top 3 scorers, most goals first. Ties keep the ranking order; nobody without a goal. */
+/**
+ * The 3 players on the podium: most goals first, ties (0 goals included) keep the ranking order,
+ * i.e. points. Players who left are not on it.
+ */
 export const podium = (ranking: Rank[]): Rank[] =>
   ranking
-    .filter(r => r.goals > 0)
+    .filter(r => !r.left)
     .sort((a, b) => b.goals - a.goals)
     .slice(0, 3);
 
