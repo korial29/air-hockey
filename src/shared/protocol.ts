@@ -18,6 +18,9 @@ export type ServerText =
       round: number;
       /** Effective rules: the arena, goals that win a round, rounds in a match (best of). */
       arena: Arena;
+      /** Rink geometry of the current round: World.size and World.count. */
+      size: number;
+      count: number;
       goals: number;
       rounds: number;
       /** Rounds won by each team. */

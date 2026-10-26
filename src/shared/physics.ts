@@ -110,8 +110,10 @@ const avoid = (p: Paddle, obs: Obstacle[]): void =>
   obs.forEach(o => out(p, o, o.r + PADDLE_R, place));
 
 /** Empty world at tick 0: puck at the centre, no paddles, 0-0. */
-export const createWorld = (arena: Arena = 'ice'): World => ({
+export const createWorld = (arena: Arena = 'ice', size = 1, count = 7): World => ({
   arena,
+  size,
+  count,
   tick: 0,
   bumps: [],
   live: false,
@@ -122,7 +124,7 @@ export const createWorld = (arena: Arena = 'ice'): World => ({
 });
 
 /** Clamps a paddle centre to its team's half and inside the walls. */
-export const clampPaddle = (team: Team, x: number, y: number): [number, number] => {
+export const clampPaddle = (team: Team, x: number, y: number, _size = 1): [number, number] => {
   const l = lo(team);
   return [cl(x, l, l + X_SPAN), cl(y, PADDLE_R, H - PADDLE_R)];
 };
@@ -135,7 +137,7 @@ export const clampPaddle = (team: Team, x: number, y: number): [number, number] 
  * penguin lane (x 720): no obstacle ever covers a spawn point.
  * Past 12 paddles the grid repeats, shifted down by 60 units.
  */
-export const spawnPoint = (team: Team, n: number): [number, number] => {
+export const spawnPoint = (team: Team, n: number, _size = 1): [number, number] => {
   const x = [100, 210, 320, 600][((n / 3) | 0) % 4];
   const y = H / 2 + [0, -0.3, 0.3][n % 3] * H + 60 * ((n / 12) | 0);
   return clampPaddle(team, team ? W - x : x, y);

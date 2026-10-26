@@ -42,6 +42,13 @@ export interface Obstacle {
 
 export interface World {
   arena: Arena;
+  /**
+   * Rink size factor on each side, 1 to MAX_SIZE: the rink is W · size × H · size, the goals
+   * GOAL · size, top speeds scale too. Puck and paddle radii do not. Set at round start.
+   */
+  size: number;
+  /** How many obstacles of the arena are in play (see obstacles). Set at round start. */
+  count: number;
   /** Physics steps since the world was created; obstacles(arena, tick) gives the obstacles. */
   tick: number;
   /** Indices in obstacles(arena, tick) the puck touched during the last step. */
