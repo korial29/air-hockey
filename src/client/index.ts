@@ -116,10 +116,11 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   const onPointer = (e: PointerEvent) => {
     const team = players.get(you)?.team;
     if (team != null) {
+      const z = P.w.size;
       me = clampPaddle(
         team,
-        ...toField(e.clientX, e.clientY, canvas.getBoundingClientRect()),
-        P.w.size,
+        ...toField(e.clientX, e.clientY, canvas.getBoundingClientRect(), z),
+        z,
       );
       dirty = true;
     }
@@ -137,7 +138,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     const k = canvas.width / W;
     // Font size in field units, never under 12 CSS px.
     const f = Math.max(35, (12 * devicePixelRatio) / k);
-    pen(c, f);
+    // Rink size factor of the round and obstacles in play: the defaults before any match message.
+    const { size = 1, count = 7 } = match ?? {};
+    pen(c, f, size);
     c.setTransform(k, 0, 0, k, 0, 0);
     c.textBaseline = 'middle';
     c.fillStyle = '#08131d';
@@ -147,16 +150,21 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     const arena = match?.arena ?? 'ice';
     const ice = arena == 'ice';
     rink(ice, k);
+    // The world, W · size × H · size, on the same rink area: puck and paddles look smaller on a
+    // bigger rink. Names keep their size on screen: g world units.
+    c.setTransform(k / size, 0, 0, k / size, 0, k * TOP);
+    const g = f * size;
 
     const s = view(P, sample(buf, now - INTERP_DELAY), now, me);
     // Time of the puck's last contact with each obstacle; absent before prediction tracks it.
     const hits = P.hits;
-    obstacles(arena, s?.tick ?? 0).forEach((o, i) =>
+    obstacles(arena, s?.tick ?? 0, size, count).forEach((o, i) =>
       obstacle(o, i, now - (hits?.[i] ?? -1e9), now),
     );
     if (s) {
       const { x, y, vx, vy } = s.puck;
-      streak(trail, x, y, Math.hypot(vx, vy) > 1000, ice ? '#2a9df4' : '#fff');
+      // Top speeds scale with the rink: so does the speed that leaves a trail.
+      streak(trail, x, y, Math.hypot(vx, vy) > 1000 * size, ice ? '#2a9df4' : '#fff');
       circle(x, y, PUCK_R, ice ? '#141a24' : '#fff');
       if (ice) {
         circle(x, y, PUCK_R * 0.75, '#2b3646');
@@ -170,13 +178,15 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         text(
           info?.name ?? '',
           x,
-          y < PADDLE_R + f ? y + PADDLE_R + f / 2 : y - PADDLE_R - f / 2,
-          f,
+          y < PADDLE_R + g ? y + PADDLE_R + g / 2 : y - PADDLE_R - g / 2,
+          g,
           'center',
           ice ? '#163049' : '#fff',
         );
       }
     }
+    // Back to base rink coordinates: snow and veils cover the rink area whatever its size.
+    c.setTransform(k, 0, 0, k, 0, k * TOP);
     if (ice) {
       snow(now);
     }

@@ -2,6 +2,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { decodeInput, encodeSnapshot } from '../shared/protocol';
 import { obstacles } from '../shared/arena';
+import { clampPaddle } from '../shared/physics';
 import type { Obstacle, Rank, SocketLike } from '../shared/types';
 import { airHockey } from './index';
 import type * as Predict from './predict';
@@ -9,7 +10,7 @@ import { TOP } from './util';
 
 vi.mock('../shared/physics', async importOriginal => ({
   ...(await importOriginal<object>()),
-  clampPaddle: (_team: number, x: number, y: number) => [x, y],
+  clampPaddle: vi.fn((_team: number, x: number, y: number) => [x, y]),
 }));
 
 // The ice layout and the hit times belong to the physics: a fixed fake of each.
@@ -58,11 +59,13 @@ beforeAll(() => {
 
 /**
  * A 2D context that accepts every call and records the text drawn, the canvas y of each
- * text in field units (through setTransform), and the fill styles set.
+ * text in field units (through setTransform), the fill styles set, and in `at` each text
+ * with its canvas y and font size in canvas pixels.
  */
 const fakeContext = () => {
   const texts: string[] = [];
   const ys = new Map<string, number>();
+  const at: [string, number, number][] = [];
   const styles: string[] = [];
   let m = [1, 0];
   const ctx = new Proxy({} as Record<string | symbol, unknown>, {
@@ -73,6 +76,7 @@ const fakeContext = () => {
           ? (s: string, _x: number, y: number) => {
               texts.push(s);
               ys.set(s, y + m[1] / m[0]);
+              at.push([s, y * m[0] + m[1], parseFloat(String(t.font).split(' ')[1]) * m[0]]);
             }
           : k == 'setTransform'
             ? (a: number, ...r: number[]) => (m = [a, r[4]])
@@ -90,7 +94,7 @@ const fakeContext = () => {
     },
   });
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as never);
-  return Object.assign(texts, { ys, styles });
+  return Object.assign(texts, { ys, at, styles });
 };
 
 const rank = (id: number, team: 0 | 1, goals: number, left?: boolean): Rank => ({
@@ -312,7 +316,7 @@ describe('airHockey', () => {
 
     // Before any match message: the ice arena, at the snapshot tick.
     draw();
-    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number));
+    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7);
     expect(vi.mocked(obstacles).mock.calls[0][1]).toBeGreaterThanOrEqual(42);
     // Pale ice, nets, a penguin (orange beak and feet) and a faceted iceberg; no hit yet.
     expect(texts.styles).toEqual(expect.arrayContaining(['#e6f2f9', '#f39a1c']));
@@ -341,10 +345,100 @@ describe('airHockey', () => {
     socket.onmessage!({ data: JSON.stringify({ t: 'match', arena: 'classic', ...match }) });
     snap(300, 0);
     draw();
-    expect(obstacles).toHaveBeenCalledWith('classic', expect.any(Number));
+    expect(obstacles).toHaveBeenCalledWith('classic', expect.any(Number), 1, 7);
     expect(texts.styles).toContain('#0d2233');
     expect(texts.styles).not.toContain('#f39a1c');
     expect(texts.styles).not.toContain('#e6f2f9');
+    game.destroy();
+  });
+
+  it('draws a bigger rink: world in world units, names at their size, rink repainted', () => {
+    const texts = fakeContext();
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    const canvas = document.body.firstElementChild!.shadowRoot!.querySelector('canvas')!;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 }) as DOMRect;
+    const draw = () => {
+      texts.length = texts.styles.length = texts.at.length = 0;
+      vi.mocked(obstacles).mockClear();
+      frame(0);
+      return texts;
+    };
+    // The paddle name on the rink (the first one drawn, the HUD lists it too): canvas y, px.
+    const label = () => {
+      const [, y, px] = texts.at.find(([s]) => s == 'Ana')!;
+      return [y, px];
+    };
+    const snap = (size: number) =>
+      socket.onmessage!({
+        data: encodeSnapshot({
+          tick: 42,
+          score: [0, 0],
+          puck: { x: 1000 * size, y: 560 * size, vx: 0, vy: 0 },
+          paddles: [{ id: 3, x: 400 * size, y: 450 * size }],
+        }),
+      });
+    const send = (size?: number, count?: number) =>
+      socket.onmessage!({
+        data: JSON.stringify({
+          t: 'match',
+          phase: 'play',
+          arena: 'ice',
+          size,
+          count,
+          round: 1,
+          rounds: 3,
+          goals: 10,
+          wins: [0, 0],
+        }),
+      });
+    socket.onopen!();
+    const players = [{ id: 3, name: 'Ana', color: '#f00', team: 0 }];
+    socket.onmessage!({ data: JSON.stringify({ t: 'roster', you: 3, players }) });
+    snap(1);
+
+    // Size 1: what was drawn before the rink could grow, names in field units above the rink.
+    draw();
+    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7);
+    expect(texts.styles).toContain('#e6f2f9');
+    const [above, name] = label();
+    // 300 px canvas: 0.15 px per unit, the paddle at (TOP + 450) · 0.15 px, the name above it.
+    expect(above).toBeCloseTo((TOP + 450 - 44 - 40) * 0.15);
+    expect(name).toBeCloseTo(12);
+    expect(draw().styles).not.toContain('#e6f2f9');
+
+    // Size 2, 5 obstacles: requested as such, the rink is painted again, once.
+    send(2, 5);
+    snap(2);
+    draw();
+    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 2, 5);
+    expect(texts.styles).toContain('#e6f2f9');
+    // The name keeps its size on screen, the paddle (radius 44) shrinks to half.
+    expect(label()[1]).toBeCloseTo(name);
+    expect(label()[0]).toBeCloseTo((TOP + 450 - 22 - 40) * 0.15);
+    expect(texts.styles).toContain('#f00');
+    expect(draw().styles).not.toContain('#e6f2f9');
+
+    // The pointer maps to world units, and the clamp gets the size.
+    const move = () =>
+      canvas.dispatchEvent(new MouseEvent('pointermove', { clientX: 200, clientY: 180 }));
+    move();
+    frame(0);
+    expect(decodeInput(socket.sent.at(-1) as ArrayBuffer)).toEqual({ x: 1000, y: 500 });
+    expect(clampPaddle).toHaveBeenLastCalledWith(0, 1000, 500, 2);
+
+    // Back to the defaults (no size in the message): size 1, repainted, same name size.
+    send();
+    snap(1);
+    draw();
+    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7);
+    expect(texts.styles).toContain('#e6f2f9');
+    expect(label()).toEqual([above, name]);
+    move();
+    frame(0);
+    expect(decodeInput(socket.sent.at(-1) as ArrayBuffer)).toEqual({ x: 500, y: 250 });
     game.destroy();
   });
 });

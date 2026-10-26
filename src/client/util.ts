@@ -14,14 +14,19 @@ export const BOT = 175;
 export const CH = TOP + H + BOT;
 
 /**
- * Client (CSS px) coordinates → field units, given the canvas bounding rect.
- * y is measured from the rink's top edge: the HUD bands give negative y or y past H.
+ * Client (CSS px) coordinates → world units, given the canvas bounding rect and the rink size
+ * factor: the rink always fills the same part of the canvas, W · size × H · size world units.
+ * y is measured from the rink's top edge: the HUD bands give negative y or y past H · size.
  */
 export const toField = (
   cx: number,
   cy: number,
   r: { left: number; top: number; width: number; height: number },
-): [number, number] => [((cx - r.left) * W) / r.width, ((cy - r.top) * CH) / r.height - TOP];
+  size = 1,
+): [number, number] => [
+  ((cx - r.left) * W * size) / r.width,
+  (((cy - r.top) * CH) / r.height - TOP) * size,
+];
 
 /**
  * Positions of b, moved back toward a by (1 - f); the puck velocity is b's.
