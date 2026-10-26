@@ -14,7 +14,7 @@ vi.mock('../shared/physics', async importOriginal => ({
   clampPaddle: vi.fn((_team: number, x: number, y: number) => [x, y]),
 }));
 
-// The ice layout and the hit times belong to the physics: a fixed fake of each.
+// The ice and sea layouts and the hit times belong to the physics: a fixed fake of each.
 const fake = vi.hoisted(() => ({
   hits: [] as number[],
   obs: undefined as { hits: number; since: number; angle: number }[] | undefined,
@@ -26,7 +26,12 @@ vi.mock('../shared/arena', () => ({
           { kind: 'iceberg', x: 700, y: 300, r: 70, vx: 0, vy: 0 },
           { kind: 'penguin', x: 1000, y: 500, r: 50, vx: 0, vy: 180 },
         ]
-      : [],
+      : arena == 'sea'
+        ? [
+            { kind: 'rock', x: 700, y: 300, r: 70, vx: 0, vy: 0 },
+            { kind: 'mermaid', x: 1000, y: 500, r: 50, vx: 120, vy: 180 },
+          ]
+        : [],
   ),
 }));
 vi.mock('./predict', async importOriginal => {
@@ -839,6 +844,193 @@ describe('airHockey', () => {
     clock.mockReturnValue(now + 400);
     expect(draw().strokes).not.toContain('#fff');
     expect(texts.alphas.filter(v => v > 0 && v < 1)).toEqual([]);
+    fake.obs = undefined;
+    game.destroy();
+  });
+  it('draws the sea scene: water and waves, rocks, mermaids, the doubloon; the rink repainted per scene', () => {
+    const texts = fakeContext();
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    const draw = () => {
+      texts.length = texts.styles.length = texts.strokes.length = 0;
+      vi.mocked(obstacles).mockClear();
+      frame(0);
+      return texts;
+    };
+    const scene = (arena: string) =>
+      socket.onmessage!({
+        data: JSON.stringify({
+          t: 'match',
+          phase: 'play',
+          arena,
+          round: 1,
+          rounds: 3,
+          goals: 10,
+          wins: [0, 0],
+        }),
+      });
+    socket.onopen!();
+    const players = [{ id: 3, name: 'Ana', color: '#f00', team: 0 }];
+    socket.onmessage!({ data: JSON.stringify({ t: 'roster', you: 3, players }) });
+    const snap = () =>
+      socket.onmessage!({
+        data: encodeSnapshot({
+          tick: 42,
+          score: [0, 0],
+          puck: { x: 300, y: 600, vx: 0, vy: 0 },
+          paddles: [{ id: 3, x: 400, y: 450 }],
+        }),
+      });
+    const facets = (h: string) => texts.styles.filter(v => String(v).startsWith(h)).length;
+    snap();
+
+    // Round 1 on the ice, painted once.
+    expect(draw().styles).toContain('#e6f2f9');
+    expect(draw().styles).not.toContain('#e6f2f9');
+
+    // Round 2 at sea: the rink is painted again (deep water, rope, rail), waves on top.
+    scene('sea');
+    snap();
+    expect(() => draw()).not.toThrow();
+    expect(obstacles).toHaveBeenCalledWith('sea', expect.any(Number), 1, 7);
+    expect(texts.styles).toContain('#0b4d6e');
+    expect(texts.strokes).toEqual(expect.arrayContaining(['#a8703c', '#d9bf86', '#ffffff45']));
+    expect(texts.styles).not.toContain('#e6f2f9');
+    // A rock (grey-brown facets, moss, barnacles, a foam ring), no iceberg facet.
+    expect(facets('hsl(30')).toBeGreaterThan(0);
+    expect(facets('hsl(196')).toBe(0);
+    expect(texts.styles).toEqual(expect.arrayContaining(['#6f8f3acc', '#e8e0cc']));
+    expect(texts.strokes).toContain('#fffc');
+    // A mermaid (skin, tail, hair), no penguin.
+    expect(texts.styles).toEqual(expect.arrayContaining(['#f3c9a4', '#3f8fe0', '#f4c542']));
+    expect(texts.styles).not.toContain('#f39a1c');
+    // The puck is a gold doubloon, the beacon kept; the name over a dark shadow.
+    expect(texts.styles).toContain('#e9b52c');
+    expect(texts.strokes).toEqual(expect.arrayContaining(['#a87314', '#fc3']));
+    expect(texts.styles).not.toContain('#141a24');
+    expect(texts.styles).toContain('#000a');
+    expect(texts.filter(t => t == 'Ana')).toHaveLength(3);
+    // Painted once: the water is copied, the waves drawn every frame.
+    expect(draw().styles).not.toContain('#0b4d6e');
+    expect(texts.strokes).toContain('#ffffff45');
+
+    // Hit: the rock flashes and throws stone chips; the mermaid spins, sees stars, bubbles burst.
+    fake.hits.splice(0, 2, performance.now(), performance.now());
+    expect(draw().filter(t => t == '★')).toHaveLength(3);
+    expect(texts.styles).toContain('#8f8475');
+    expect(texts.strokes).toEqual(expect.arrayContaining(['#fff', '#e8fdff']));
+    fake.hits.splice(0, 2, -5000, -5000);
+    expect(draw()).not.toContain('★');
+    expect(texts.strokes).not.toContain('#e8fdff');
+
+    // Back on the ice: painted again, no sea drawing left.
+    scene('ice');
+    snap();
+    draw();
+    expect(texts.styles).toContain('#e6f2f9');
+    expect(texts.strokes).not.toContain('#ffffff45');
+    expect(texts.styles).not.toContain('#e9b52c');
+    expect(texts.styles).toContain('#141a24');
+    game.destroy();
+  });
+
+  it('draws rock and mermaid damage, removal, ghosts and returns from the obstacle states', () => {
+    const texts = fakeContext();
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    const draw = () => {
+      texts.length = texts.styles.length = texts.strokes.length = 0;
+      texts.alphas.length = texts.moves.length = 0;
+      frame(0);
+      return texts;
+    };
+    socket.onopen!();
+    socket.onmessage!({
+      data: JSON.stringify({
+        t: 'match',
+        phase: 'play',
+        arena: 'sea',
+        round: 2,
+        rounds: 3,
+        goals: 10,
+        wins: [1, 0],
+      }),
+    });
+    socket.onmessage!({
+      data: encodeSnapshot({
+        tick: 4000,
+        score: [0, 0],
+        puck: { x: 300, y: 600, vx: 0, vy: 0 },
+        paddles: [],
+      }),
+    });
+    const sec = (v: number) => v * 240;
+    const set = (rock: [number, number], mer: [number, number], angle = 0) =>
+      (fake.obs = [
+        { hits: rock[0], since: rock[1], angle: 0 },
+        { hits: mer[0], since: mer[1], angle },
+      ]);
+    const facets = () => texts.styles.filter(v => String(v).startsWith('hsl(30')).length;
+    const cracks = () => texts.strokes.filter(v => v == '#1e1712').length;
+
+    // In play: one hit, a crack; two, branching cracks and a chipped corner.
+    set([0, -1], [0, -1]);
+    const intact = draw().styles.filter(v => String(v).startsWith('hsl(30'));
+    expect(cracks()).toBe(0);
+    expect(texts.strokes).toContain('#fff3');
+    set([1, -1], [0, -1]);
+    draw();
+    expect(cracks()).toBe(1);
+    set([2, -1], [0, -1]);
+    draw();
+    expect(cracks()).toBe(3);
+    expect(texts.styles.filter(v => String(v).startsWith('hsl(30'))).not.toEqual(intact);
+
+    // Crumbled 0.3 s ago: stones sinking in ripples, no whole rock (no ridges); at 5 s, nothing.
+    set([3, sec(0.3)], [0, -1]);
+    draw();
+    expect(facets()).toBeGreaterThan(0);
+    expect(texts.strokes).toEqual(expect.arrayContaining(['#fff', '#3b3129']));
+    expect(texts.strokes).not.toContain('#fff3');
+    expect(texts.styles).not.toContain('#6f8f3acc');
+    set([3, sec(5)], [0, -1]);
+    draw();
+    expect(facets()).toBe(0);
+
+    // Mermaid shot out 0.5 s ago along +x: she flies off in a splash of droplets, stars around her.
+    set([0, -1], [1, sec(0.5)], 0);
+    draw();
+    expect(texts.filter(t => t == '★')).toHaveLength(3);
+    expect(texts.moves).toContainEqual([1000 + 50 * 24 * 0.5, 500]);
+    expect(texts.styles).toContain('#bdf3ff');
+    set([0, -1], [1, sec(2)]);
+    expect(draw().styles).not.toContain('#f3c9a4');
+
+    // Ghosts at 8 s and 9.5 s: see-through, a ring, bubbles rising, no crack.
+    for (const t of [8, 9.5]) {
+      set([3, sec(t)], [1, sec(t)]);
+      draw();
+      expect(facets()).toBeGreaterThan(0);
+      expect(texts.styles).toContain('#f3c9a4');
+      expect(texts.strokes.filter(v => v == '#e0fbff').length).toBeGreaterThan(2);
+      expect(texts.strokes).not.toContain('#7fe3ff');
+      const a = texts.alphas.filter(v => v < 1);
+      expect(a.some(v => v >= 0.25 && v <= 0.45)).toBe(true);
+      expect(cracks()).toBe(0);
+    }
+
+    // Back in play: a pop (white ring) for 300 ms, then the plain rock and mermaid.
+    const now = performance.now();
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(now);
+    set([0, -1], [0, -1]);
+    expect(draw().strokes).toContain('#fff');
+    clock.mockReturnValue(now + 400);
+    expect(draw().strokes).not.toContain('#fff');
+    expect(texts.strokes).not.toContain('#e0fbff');
     fake.obs = undefined;
     game.destroy();
   });
