@@ -479,7 +479,7 @@ describe('predict', () => {
       reset(p, 'ready', 'sea');
       expect(p.w).toMatchObject({ arena: 'sea', size: 1, count: 7, obs: [] });
       expect(p.hits).toEqual([]);
-      // In play: the local puck bounces off the first rock, and off the centre mermaid.
+      // In play: the local puck bounces off the first rock, and off the centre shark.
       reset(p, 'play', 'sea');
       const [rock] = obstacles('sea', 0);
       const s = {
@@ -490,9 +490,9 @@ describe('predict', () => {
       rebase(p, s, ME, 2000);
       expect(view(p, s, 2050)!.puck.vx).toBeLessThan(0);
       expect(Object.keys(p.hits)).toEqual(['0']);
-      const mermaid = obstacles('sea', 512)[5];
+      const shark = obstacles('sea', 512)[5];
       const m = {
-        ...snap({ x: mermaid.x, y: mermaid.y + mermaid.r + PUCK_R + 10, vy: -1000 }, []),
+        ...snap({ x: shark.x, y: shark.y + shark.r + PUCK_R + 10, vy: -1000 }, []),
         live: true,
         tick: 500,
         obs: Array(7).fill(intact),

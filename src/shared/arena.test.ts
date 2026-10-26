@@ -278,8 +278,8 @@ describe('obstacles on a scaled rink', () => {
   it.each(['ice', 'sea'] as Arena[])(
     'keeps clear of the serve spots, the spawn points and the goal mouths at every count and size (%s)',
     arena => {
-      // At sea a mermaid swinging out of its lane passes a few units from the outer spawn column:
-      // never over a spawned paddle, and clear by the full margin at tick 0, when a round starts.
+      // At sea a shark swinging out of its lane grazes the outer spawn column: never over a
+      // spawned paddle, and clear by the full margin at tick 0, when a round starts.
       const spare = arena == 'sea' ? 0 : 10;
       for (const rink of RINKS) {
         const { size } = rink;
@@ -344,7 +344,7 @@ describe('obstacles on a scaled rink', () => {
         const { size } = rink;
         const all = SOME.flatMap(t => obstacles(arena, t, size, rink.count));
         const r = Math.min(...all.map(o => o.r));
-        // Both components: a mermaid zig-zags.
+        // Both components: a shark zig-zags.
         const v = Math.max(...all.map(o => Math.hypot(o.vx, o.vy)));
         const per = TICK_HZ * Math.ceil(size);
         expect((PUCK_MAX_SPEED * size + v) / per).toBeLessThan(r + PUCK_R);
@@ -363,17 +363,17 @@ describe('the sea arena', () => {
   );
   /** Every tick of a crossing, board to board. */
   const CROSSING = [...Array(PERIOD / 2).keys()];
-  /** Lane centres of the side and centre mermaids, from the penguins'. */
+  /** Lane centres of the side and centre sharks, from the penguins'. */
   const LANES = ice(0)
     .slice(4)
     .map(o => o.x);
 
-  it('is the ice layout slot for slot: rocks for icebergs, mermaids for penguins', () => {
+  it('is the ice layout slot for slot: rocks for icebergs, sharks for penguins', () => {
     for (const { size, count } of ALL) {
       for (const t of [0, 100.5, 777, 1500]) {
         const a = obstacles('ice', t, size, count);
         const b = obstacles('sea', t, size, count);
-        expect(b.map(o => o.kind)).toEqual(a.map(o => (o.kind == 'iceberg' ? 'rock' : 'mermaid')));
+        expect(b.map(o => o.kind)).toEqual(a.map(o => (o.kind == 'iceberg' ? 'rock' : 'shark')));
         b.forEach((o, i) => {
           const c = a[i];
           if (fixed(o)) {
@@ -386,14 +386,15 @@ describe('the sea arena', () => {
               9,
             );
             expect(Math.sign(o.vy)).toBe(Math.sign(c.vy));
-            expect(o.r).toBeGreaterThanOrEqual(30 * size);
+            // Big: wider than the penguin of the same slot.
+            expect(o.r).toBeGreaterThan(c.r);
           }
         });
       }
     }
   });
 
-  it('zig-zags each mermaid across its lane, within its corridor, a few times per crossing', () => {
+  it('zig-zags each shark across its lane, within its corridor, a few times per crossing', () => {
     const swims = sea(0).slice(4);
     swims.forEach((_, i) => {
       const xs = CROSSING.map(t => sea(t)[4 + i].x - LANES[i]);
@@ -448,7 +449,7 @@ describe('the sea arena', () => {
     }
   });
 
-  it('mirrors the side mermaids at every instant, and the centre one over time', () => {
+  it('mirrors the side sharks at every instant, and the centre one over time', () => {
     for (const rink of ALL) {
       const X = W * rink.size;
       let left = 0;
@@ -459,7 +460,7 @@ describe('the sea arena', () => {
         expect(obs).toHaveLength(rink.count);
         for (const o of obs) {
           if (Math.abs(o.x - X / 2) <= (ZA + 1) * rink.size) {
-            // The centre mermaid, counted over the ticks of a period.
+            // The centre shark, counted over the ticks of a period.
             if (t % 1) {
               continue;
             }
@@ -518,7 +519,7 @@ describe('the sea arena', () => {
     }
   });
 
-  it('narrows a gap below a paddle and a puck only while a mermaid swings toward it', () => {
+  it('narrows a gap below a paddle and a puck only while a shark swings toward it', () => {
     const [a, , b, , { r }] = sea(0);
     const lane = LANES[0];
     /** Every quarter tick of a period. */
@@ -528,17 +529,16 @@ describe('the sea arena', () => {
     let toLine = Infinity;
     let rockTight = 0;
     let lineTight = 0;
+    let laneTight = 0;
     for (const t of QUARTERS) {
       const [, , , , left, mid, right] = sea(t);
       const rock = Math.min(...[a, b].map(o => dist(o, left.x, left.y) - o.r - left.r));
       const line = W / 2 - 2 * PADDLE_R - (left.x + left.r);
+      const lanes = [left, right].map(o => dist(o, mid.x, mid.y) - o.r - mid.r);
       rockToLane = Math.min(rockToLane, rock);
       toLine = Math.min(toLine, line);
-      laneToLane = Math.min(
-        laneToLane,
-        ...[left, right].map(o => dist(o, mid.x, mid.y) - o.r - mid.r),
-      );
-      // A squeeze only on the side the mermaid swings to.
+      laneToLane = Math.min(laneToLane, ...lanes);
+      // A squeeze only on the side the shark swings to.
       if (rock < FIT) {
         rockTight++;
         expect(left.x).toBeLessThan(lane);
@@ -547,32 +547,43 @@ describe('the sea arena', () => {
         lineTight++;
         expect(left.x).toBeGreaterThan(lane);
       }
+      lanes.forEach((g, k) => {
+        if (g < FIT) {
+          // Two sharks swinging toward each other.
+          laneTight++;
+          const o = [left, right][k];
+          expect(Math.sign(o.x - LANES[2 * k])).toBe(Math.sign(mid.x - o.x));
+          expect(Math.sign(mid.x - LANES[1])).toBe(Math.sign(o.x - mid.x));
+        }
+      });
     }
-    // Rocks to the nearest lane: down to about 96, the full outward swing side on, in the rocks'
-    // rows only: under 1/8 of the period.
+    // Rocks to the nearest lane: down to about 87, the full outward swing side on, in the rocks'
+    // rows only: under 1/4 of the period.
     expect(rockToLane).toBeLessThan(FIT);
     expect(rockToLane).toBeGreaterThanOrEqual(
       lane - ZA - r - Math.max(a.x + a.r, b.x + b.r) - 1e-9,
     );
-    expect(rockTight / QUARTERS.length).toBeLessThan(1 / 8);
-    // The pair's lanes to a centre-line paddle: 90 at the full inward swing, below a paddle and a
+    expect(rockTight / QUARTERS.length).toBeLessThan(1 / 4);
+    // The pair's lanes to a centre-line paddle: 78 at the full inward swing, below a paddle and a
     // puck once the swing passes d, on every inward half-zig: (1 - d / ZA) / 2 of the period.
     const d = W / 2 - 2 * PADDLE_R - FIT - r - lane;
     expect(toLine).toBeCloseTo(W / 2 - 2 * PADDLE_R - (lane + ZA + r), 6);
     expect(lineTight / QUARTERS.length).toBeCloseTo((1 - d / ZA) / 2, 2);
-    // Lane to lane: a paddle and a puck at every instant.
-    expect(laneToLane).toBeGreaterThan(FIT);
+    // Lane to lane: down to about 129, under 1/16 of the period.
+    expect(laneToLane).toBeLessThan(FIT);
+    expect(laneToLane).toBeGreaterThan(125);
+    expect(laneTight / QUARTERS.length).toBeLessThan(1 / 16);
     // The puck alone, always.
-    expect(Math.min(rockToLane, toLine)).toBeGreaterThan(SLIP);
+    expect(Math.min(rockToLane, toLine, laneToLane)).toBeGreaterThan(SLIP);
   });
 
   it.each([
     [2, 'rr'],
-    [3, 'rrm'],
-    [4, 'rrmm'],
-    [5, 'rrmmm'],
-    [6, 'rrrrmm'],
-    [7, 'rrrrmmm'],
+    [3, 'rrs'],
+    [4, 'rrss'],
+    [5, 'rrsss'],
+    [6, 'rrrrss'],
+    [7, 'rrrrsss'],
   ])('keeps %i obstacles, in the slots of the ice', (count, kinds) => {
     expect(
       obstacles('sea', 333.5, 1, count)
@@ -583,12 +594,12 @@ describe('the sea arena', () => {
 });
 
 describe('fixed', () => {
-  it('is true for icebergs and rocks, false for penguins and mermaids', () => {
+  it('is true for icebergs and rocks, false for penguins and sharks', () => {
     expect([...ice(), ...sea()].map(o => [o.kind, fixed(o)])).toEqual([
       ...Array(4).fill(['iceberg', true]),
       ...Array(3).fill(['penguin', false]),
       ...Array(4).fill(['rock', true]),
-      ...Array(3).fill(['mermaid', false]),
+      ...Array(3).fill(['shark', false]),
     ]);
   });
 });

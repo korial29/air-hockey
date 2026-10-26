@@ -6,18 +6,20 @@
 // there slides out sideways. A shot from the centre spot along the long axis reaches every point
 // of either goal mouth without meeting an iceberg.
 // The sea arena (sea and pirates) is the same layout, slot for slot: rocks where the icebergs
-// are, same size, and mermaids in the penguin lanes, swimming board to board in the same period
-// and zig-zagging across their lane: a triangle wave of ZA units either side, ZN back-and-forths
-// per crossing, on the lane at the boards and at mid-height. The swing is wide on purpose, so the
-// sea drops the paddle-and-puck rule while a mermaid swings toward a neighbour: rocks to the
-// nearest lane narrow down to 96 (about 1/9 of the period), the pair's lanes to a centre-line
-// paddle down to 90 (about 2/5 of it, on every inward swing). Lane to lane stays ≥ 155.
-// The puck alone always fits (every gap ≥ 90 > 2 · PUCK_R), so no obstacle traps it, and a paddle
-// caught in a squeeze is pushed out like anywhere else; cornered where a board meets the centre
-// line, it slips past the mermaid (see out in physics.ts). The serve spots stay ≥ 114 clear, as
-// on the ice. A swing passes a few units from the outer spawn column, never over it.
-// Mermaids are smaller (MR) to leave room for the swing.
-// The pair zig-zags in mirror, the centre mermaid across the centre line: half a zig on each
+// are, same size, and big sharks (SR, wider than a penguin) in the penguin lanes, swimming board
+// to board in the same period and zig-zagging across their lane: a triangle wave of ZA units
+// either side, ZN back-and-forths per crossing, on the lane at the boards and at mid-height. The
+// swing is wide on purpose, so the sea drops the paddle-and-puck rule while a shark swings by:
+// rocks to the nearest lane narrow down to 87 (about 1/5 of the period), the pair's lanes to a
+// centre-line paddle down to 78 (nearly half of it, on every inward swing), lane to lane down to
+// 129 (about 1/20 of it).
+// The puck alone always fits (every gap ≥ 78 > 2 · PUCK_R + 20), so no obstacle traps it, and a
+// paddle caught in a squeeze is pushed out like anywhere else; cornered where a board meets the
+// centre line, it slips past the shark (see out in physics.ts). The serve spots stay ≥ 101 clear,
+// as on the ice. A swing grazes the outer spawn column, never over a spawned paddle; at tick 0,
+// when a round starts, every spawn point is clear by the full margin. SR and ZA are as big as
+// the serve spots and the centre-line gap allow together: SR + ZA = 114.
+// The pair zig-zags in mirror, the centre shark across the centre line: half a zig on each
 // side, so it favours neither team over time.
 // A bigger rink scales all of it while paddle and puck keep their size, and fewer obstacles leave
 // wider gaps: every guarantee holds at every size and count.
@@ -34,12 +36,12 @@ const BERGS = [
 ];
 /** Penguin radius. */
 const PR = 40;
-/** Mermaid radius. */
-const MR = 32;
+/** Shark radius: big, as wide as the gaps it swings across allow (see top). */
+const SR = 44;
 /**
  * Penguin lanes, [x, phase, zig-zag sign]: a pair 280 units off the centre line, in step, and one
  * on the line, half a period apart. At t = 0 the pair is at the bottom board, the middle one at
- * the top board. The pair's mermaids zig-zag in mirror (opposite signs).
+ * the top board. The pair's sharks zig-zag in mirror (opposite signs).
  */
 const LANES = [
   [W / 2 - 280, 0.5, 1],
@@ -49,25 +51,25 @@ const LANES = [
 /** Ticks for a penguin to slide there and back: 2048 divides 65536, 8.5 s at 240 Hz. */
 export const PERIOD = 2048;
 /**
- * Mermaid zig-zag: amplitude either side of its lane, and back-and-forths per crossing. Wide enough
+ * Shark zig-zag: amplitude either side of its lane, and back-and-forths per crossing. Wide enough
  * to read at a glance: it narrows some gaps below a paddle and a puck while it swings (see top).
  */
 export const ZA = 70;
 export const ZN = 3;
-/** Sideways speed of a mermaid, units per second: 4 · ZA per back-and-forth, about 197. */
+/** Sideways speed of a shark, units per second: 4 · ZA per back-and-forth, about 197. */
 const ZV = (8 * ZA * ZN * TICK_HZ) / PERIOD;
 /** Obstacles kept for a count of 2 to 7 (see obstacles): bit i keeps index i of the full layout. */
 const MASKS = [0b11, 0b100011, 0b1010011, 0b1110011, 0b1011111, 0b1111111];
 
-/** Icebergs and rocks: they break after ICEBERG_HP hits. Penguins and mermaids move, go on one. */
+/** Icebergs and rocks: they break after ICEBERG_HP hits. Penguins and sharks move, go on one. */
 export const fixed = (o: Obstacle): boolean => o.kind == 'iceberg' || o.kind == 'rock';
 
 /**
- * The obstacles of an arena at tick t: icebergs (rocks) first, fixed, then penguins (mermaids),
+ * The obstacles of an arena at tick t: icebergs (rocks) first, fixed, then penguins (sharks),
  * moving. 'classic' has none. t may be fractional, for drawing between steps. The motion repeats
  * with a period that divides 65536 ticks, so the wrap of the u16 snapshot tick is seamless.
- * vx and vy are the velocity, units per second (a mermaid's heading). The layout is
- * mirror-symmetric across the centre line (the centre mermaid over time): neither team is favoured.
+ * vx and vy are the velocity, units per second (a shark's heading). The layout is
+ * mirror-symmetric across the centre line (the centre shark over time): neither team is favoured.
  *
  * The layout is drawn for the base rink and scaled by `size` (positions, radii, speeds: the
  * crossing time stays the same). `count` picks which obstacles stay, in the order above and
@@ -78,7 +80,7 @@ export const fixed = (o: Obstacle): boolean => o.kind == 'iceberg' || o.kind == 
  */
 export const obstacles = (arena: Arena, t: number, size = 1, count = 7): Obstacle[] => {
   const sea = arena == 'sea';
-  const r = sea ? MR : PR;
+  const r = sea ? SR : PR;
   // Travel of a centre, board to board, and the speed to cover it twice per PERIOD (about 245).
   const span = H - 2 * r;
   const v = (2 * span * TICK_HZ) / PERIOD;
@@ -102,7 +104,7 @@ export const obstacles = (arena: Arena, t: number, size = 1, count = 7): Obstacl
           // Zig-zag: share of a back-and-forth, a quarter in at the boards (on the lane).
           const z = (2 * ZN * u + 0.25) % 1;
           return {
-            kind: sea ? 'mermaid' : 'penguin',
+            kind: sea ? 'shark' : 'penguin',
             x: sea ? x + m * ZA * (1 - 4 * Math.abs(z - 0.5)) : x,
             y: r + span * (up ? 2 - 2 * u : 2 * u),
             r,

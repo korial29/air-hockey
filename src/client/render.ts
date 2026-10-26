@@ -658,16 +658,17 @@ const stars = (x: number, y: number, r: number, e: number, now: number, sea = 0)
   }
 };
 
-const HAIR = ['#e0452b', '#f4c542', '#7a3b1c', '#2c1d3c'];
-const TAIL = ['#1fb59a', '#3f8fe0', '#9b5de5', '#e05a9b'];
-const SKIN = '#f3c9a4';
+const SHARK = '#7f8e9a';
+const BELLY = '#e3ebef';
+const FIN = '#5d6b77';
 
 /**
- * A mermaid swimming toward its heading, seen from above: a foam wake, a scaled fish tail beating,
- * its fins flapping, arms in a breaststroke, long hair waving down the back. i picks her colours.
- * e: hit animation, 1 → 0: she spins, sees stars, bubbles burst out.
+ * A big grey shark swimming toward its heading, seen from above: a foam wake, a torpedo body over
+ * its pale belly, bending as the tail beats side to side, swept pectoral fins, a dorsal fin with
+ * its shadow, gills, small eyes and a toothy grin. i offsets its beat. e: hit animation, 1 → 0:
+ * it jolts, spins, gapes, sees stars, bubbles burst out. All of it within 1.6 r of its centre.
  */
-const mermaid = (
+const shark = (
   x: number,
   y: number,
   r: number,
@@ -677,69 +678,93 @@ const mermaid = (
   now: number,
   i: number,
 ) => {
-  const w = Math.sin(now / 110 + i);
-  const hair = HAIR[i % 4];
-  const tail = TAIL[i % 4];
+  const w = Math.sin(now / 130 + i);
+  // Tail base, swinging side to side.
+  const b = w * r * 0.22;
   heading(x, y, r, vx, vy, e, '#fff');
-  c.save();
-  c.translate(-r * 0.15, 0);
-  c.rotate(w * 0.3);
-  c.beginPath();
-  c.moveTo(0, -r * 0.34);
-  c.quadraticCurveTo(-r * 0.8, -r * 0.3, -r * 1.15, 0);
-  c.quadraticCurveTo(-r * 0.8, r * 0.3, 0, r * 0.34);
-  fill(
-    tail,
-    c.createLinearGradient(0, -r * 0.34, 0, r * 0.34),
-    [0, '#fff6'],
-    [0.5, '#fff0'],
-    [1, '#0005'],
-  );
-  // Scales: rows of little arcs down the tail.
-  c.beginPath();
-  for (let k = 0; k < 6; k++) {
-    const sx = -r * (0.2 + (k >> 1) * 0.24);
-    const sy = r * ((k & 1) - 0.5) * 0.24;
-    c.moveTo(sx, sy - r * 0.09);
-    c.arc(sx, sy, r * 0.09, -1.57, 1.57);
+  c.translate(Math.sin(now / 20) * e * r * 0.15, 0);
+  for (const s of [-1, 1]) {
+    c.beginPath();
+    c.moveTo(r * 0.55, s * r * 0.35);
+    c.quadraticCurveTo(r * 0.2, s * r * 1.05, -r * 0.3, s * r * (1.1 + 0.08 * w * s));
+    c.quadraticCurveTo(0, s * r * 0.55, -r * 0.1, s * r * 0.35);
+    c.fillStyle = FIN;
+    c.fill();
   }
-  c.strokeStyle = '#fff7';
-  c.lineWidth = r * 0.04;
-  c.stroke();
-  // Fins at the tip, flapping.
-  c.translate(-r * 1.08, 0);
+  // Tail fin: a crescent, the upper lobe longer, beating wider than the body.
+  c.save();
+  c.translate(-r * 1.1, b);
   c.rotate(w * 0.5);
   c.beginPath();
-  c.moveTo(r * 0.1, 0);
-  c.quadraticCurveTo(-r * 0.15, -r * 0.6, -r * 0.6, -r * 0.5);
-  c.quadraticCurveTo(-r * 0.35, 0, -r * 0.6, r * 0.5);
-  c.quadraticCurveTo(-r * 0.15, r * 0.6, r * 0.1, 0);
-  fill(tail, c.createLinearGradient(0, 0, -r * 0.6, 0), [0, '#0003'], [1, '#fff8']);
-  c.restore();
-  oval(r * 0.12, 0, r * 0.36, r * 0.32, SKIN);
-  for (const s of [-1, 1]) {
-    const a = Math.sin(now / 180 + s);
-    line(
-      SKIN,
-      r * 0.12,
-      r * 0.25,
-      s * r * 0.26,
-      r * (0.55 + 0.12 * a),
-      s * r * (0.5 + 0.1 * a),
-      r * 0.9,
-      s * r * (0.22 - 0.1 * a),
-    );
-  }
-  c.beginPath();
-  c.moveTo(r * 0.6, -r * 0.17);
-  c.quadraticCurveTo(r * 0.05, -r * 0.2 - w * r * 0.12, -r * 0.45, -r * 0.08 + w * r * 0.14);
-  c.lineTo(-r * 0.42, r * 0.08 + w * r * 0.14);
-  c.quadraticCurveTo(r * 0.05, r * 0.2 - w * r * 0.12, r * 0.6, r * 0.17);
-  c.fillStyle = hair;
+  c.moveTo(r * 0.05, 0);
+  c.quadraticCurveTo(-r * 0.15, -r * 0.25, -r * 0.5, -r * 0.5);
+  c.quadraticCurveTo(-r * 0.28, -r * 0.05, -r * 0.42, r * 0.35);
+  c.quadraticCurveTo(-r * 0.12, r * 0.15, r * 0.05, 0);
+  c.fillStyle = FIN;
   c.fill();
-  circle(r * 0.68, 0, r * 0.22, SKIN);
-  circle(r * 0.6, 0, r * 0.23, hair);
-  circle(r * 0.55, r * 0.14, r * 0.07, '#ff9ec4');
+  c.restore();
+  // The belly, then the back over it a little narrower: a pale edge all round.
+  for (const k of [1, 0.8]) {
+    c.beginPath();
+    const h = k * r;
+    c.moveTo(r * 1.5, 0);
+    c.bezierCurveTo(r * 1.4, -h * 0.5, r * 0.6, -h * 0.62, 0, -h * 0.58);
+    c.quadraticCurveTo(-r * 0.7, b * 0.5 - h * 0.42, -r * 1.1, b - h * 0.1);
+    c.lineTo(-r * 1.1, b + h * 0.1);
+    c.quadraticCurveTo(-r * 0.7, b * 0.5 + h * 0.42, 0, h * 0.58);
+    c.bezierCurveTo(r * 0.6, h * 0.62, r * 1.4, h * 0.5, r * 1.5, 0);
+    if (k < 1) {
+      fill(
+        SHARK,
+        c.createLinearGradient(0, -r * 0.5, 0, r * 0.5),
+        [0, '#fff4'],
+        [0.5, '#fff0'],
+        [1, '#0003'],
+      );
+    } else {
+      c.fillStyle = BELLY;
+      c.fill();
+    }
+  }
+  // Gills, three slits a side.
+  c.beginPath();
+  for (let k = 0; k < 6; k++) {
+    const gx = r * (0.7 + (k >> 1) * 0.11);
+    const s = k & 1 ? 1 : -1;
+    c.moveTo(gx, s * r * 0.28);
+    c.lineTo(gx - r * 0.06, s * r * 0.42);
+  }
+  c.strokeStyle = '#3c4852';
+  c.lineWidth = r * 0.035;
+  c.lineCap = 'round';
+  c.stroke();
+  // Dorsal fin, swept back along the spine, its shadow on the back.
+  for (const [o, color] of [
+    [r * 0.1, '#0003'],
+    [0, '#4a5863'],
+  ] as const) {
+    c.beginPath();
+    c.moveTo(r * 0.35 - o, o);
+    c.quadraticCurveTo(-r * 0.05 - o, -r * 0.16 + o, -r * 0.5 - o, b * 0.3 - r * 0.04 + o);
+    c.quadraticCurveTo(-r * 0.05 - o, r * 0.1 + o, r * 0.35 - o, o);
+    c.fillStyle = color;
+    c.fill();
+  }
+  // A grin under the snout, gaping on a hit, a row of teeth showing.
+  const g = r * (0.05 + 0.12 * e);
+  oval(r * 1.22, 0, g, r * 0.2, '#3a1a20');
+  c.beginPath();
+  for (let k = -2; k <= 2; k++) {
+    c.moveTo(r * 1.22 + g, k * r * 0.075 - r * 0.03);
+    c.lineTo(r * 1.15 + g, k * r * 0.075);
+    c.lineTo(r * 1.22 + g, k * r * 0.075 + r * 0.03);
+  }
+  c.fillStyle = '#f4f2e8';
+  c.fill();
+  for (const s of [-1, 1]) {
+    circle(r * 1.05, s * r * 0.27, r * 0.065, '#111');
+    circle(r * 1.07, s * r * 0.255, r * 0.022, '#fffc');
+  }
   c.restore();
   stars(x, y, r, e, now, 1);
 };
@@ -801,7 +826,7 @@ const shatter = (x: number, y: number, r: number, i: number, q: number, sea = 0)
 /**
  * A penguin shot out, q: 0 → 1 over 1 s, from where the puck hit it (x, y) along a. It flies off,
  * spinning and shrinking, stars around its head, feathers left behind; gone past the boards. A
- * mermaid (sea, i her colours) leaves a splash: a ring of foam and droplets.
+ * shark (sea) leaves a splash: a ring of foam and droplets.
  */
 const shot = (
   x: number,
@@ -832,7 +857,7 @@ const shot = (
   const d = r * 24 * q;
   const vx = Math.cos(a);
   const vy = Math.sin(a);
-  (sea ? mermaid : penguin)(x + vx * d, y + vy * d, r * (1 - 0.35 * q), vx, vy, 1 - q, now, i);
+  (sea ? shark : penguin)(x + vx * d, y + vy * d, r * (1 - 0.35 * q), vx, vy, 1 - q, now, i);
   c.globalAlpha = 1;
 };
 
@@ -842,7 +867,7 @@ export type ObstacleView = NonNullable<Snapshot['obs']>[number];
 /**
  * An obstacle, in world units; age: ms since the puck last hit it, back: ms since it came back in
  * play. st: its state, absent while intact and in play. Once removed (st.since ≥ 0), from where it
- * was then: an iceberg shatters, a rock crumbles, a penguin or a mermaid is shot out. Then nothing
+ * was then: an iceberg shatters, a rock crumbles, a penguin or a shark is shot out. Then nothing
  * until its ghost, at o (its lane goes on): see-through, beating faster and faster, a ring
  * closing on it, bubbles rising at sea. Back in play it pops in.
  */
@@ -858,7 +883,7 @@ export const obstacle = (
   const ms = st && st.since >= 0 ? (st.since * 1000) / TICK_HZ : -1;
   const { kind, x, y, r, vx, vy } = o;
   const fixed = kind == 'iceberg' || kind == 'rock';
-  const sea = kind == 'rock' || kind == 'mermaid' ? 1 : 0;
+  const sea = kind == 'rock' || kind == 'shark' ? 1 : 0;
   if (ms >= 0 && ms < SHOW) {
     if (ms < (fixed ? 800 : 1000)) {
       if (fixed) {
@@ -898,7 +923,7 @@ export const obstacle = (
   if (fixed) {
     berg(x, y, r, i, Math.max(0, 1 - age / 400), age, ms < 0 ? st?.hits : 0, sea, now);
   } else {
-    (sea ? mermaid : penguin)(x, y, r, vx, vy, Math.max(0, 1 - age / 800), now, i);
+    (sea ? shark : penguin)(x, y, r, vx, vy, Math.max(0, 1 - age / 800), now, i);
   }
   c.restore();
   if (ms < 0 && q < 1) {

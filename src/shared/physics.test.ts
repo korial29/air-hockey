@@ -48,7 +48,7 @@ const world = (
 
 /**
  * Longest stretches, in steps, a live puck stays within PUCK_R of one spot: `still` anywhere,
- * `pinned` touching an obstacle all along (held against a rock or a mermaid by a paddle).
+ * `pinned` touching an obstacle all along (held against a rock or a shark by a paddle).
  */
 const stillness = () => {
   const m = { still: 0, pinned: 0 };
@@ -1054,7 +1054,7 @@ describe('breakable obstacles', () => {
 describe('sea arena', () => {
   /** Minimum speed of a puck leaving an obstacle (physics.ts). */
   const KICK = 1000;
-  /** The centre mermaid crosses the middle of the rink at this tick, swimming down. */
+  /** The centre shark crosses the middle of the rink at this tick, swimming down. */
   const MID = PERIOD / 4;
   const sea = (x: number, y: number, vx = 0, vy = 0, paddles: Paddle[] = []): World =>
     world(x, y, vx, vy, paddles, 'sea');
@@ -1084,7 +1084,7 @@ describe('sea arena', () => {
     expect(w.puck.x).toBeGreaterThan(rock.x + rock.r);
   });
 
-  it('shoots a mermaid out on the first hit, like a penguin, toward where the puck sent it', () => {
+  it('shoots a shark out on the first hit, like a penguin, toward where the puck sent it', () => {
     for (const [dx, dy] of [
       [-1, 0],
       [-1, -1],
@@ -1105,14 +1105,14 @@ describe('sea arena', () => {
       expect(w.obs[5].hits).toBe(1);
       expect(w.obs[5].gone).toBeGreaterThan(MID - 30);
       expect(w.obs[5].gone).toBeLessThan(w.tick);
-      // From the puck to the mermaid's centre at impact: roughly the way the puck came.
+      // From the puck to the shark's centre at impact: roughly the way the puck came.
       const a = w.obs[5].angle;
       expect(Math.cos(a) * -dx + Math.sin(a) * -dy).toBeGreaterThan(0.9 * Math.hypot(dx, dy));
     }
   });
 
-  it('lets a swimming mermaid carry a resting puck along, its sideways swim included', () => {
-    // The centre mermaid leaves the top board at tick 0, swimming down in zig-zag.
+  it('lets a swimming shark carry a resting puck along, its sideways swim included', () => {
+    // The centre shark leaves the top board at tick 0, swimming down in zig-zag.
     for (const dx of [-20, 0, 20]) {
       const w = sea(W / 2 + dx, 400);
       for (let i = 0; i < 600 && !w.bumps.length; i++) {
@@ -1120,7 +1120,7 @@ describe('sea arena', () => {
       }
       expect(w.bumps).toEqual([5]);
       const m = obs(w)[5];
-      expect(m.kind).toBe('mermaid');
+      expect(m.kind).toBe('shark');
       expect(m.vy).toBeGreaterThan(0);
       expect(m.vx).not.toBe(0);
       expect(w.puck.vy).toBeGreaterThan(m.vy);
@@ -1128,9 +1128,9 @@ describe('sea arena', () => {
     }
   });
 
-  it('bounces the puck on its velocity relative to the mermaid, sideways swim included', () => {
+  it('bounces the puck on its velocity relative to the shark, sideways swim included', () => {
     /**
-     * A puck at 2000 units/s head-on into the left mermaid at tick t, from its right: its vx after.
+     * A puck at 2000 units/s head-on into the left shark at tick t, from its right: its vx after.
      * Fast enough to leave above the kick either way, which would hide the difference.
      */
     const shot = (t: number): [number, number] => {
@@ -1150,7 +1150,7 @@ describe('sea arena', () => {
     expect(toward - away).toBeCloseTo(1.9 * (v1 - v2), -1);
   });
 
-  it('cannot be tunnelled by a puck at top speed across a mermaid swimming toward it', () => {
+  it('cannot be tunnelled by a puck at top speed across a shark swimming toward it', () => {
     for (let t = 0; t < PERIOD; t += 37) {
       const m = obstacles('sea', t + 1)[4];
       const w = sea(m.x - m.r - PUCK_R - 5, m.y, PUCK_MAX_SPEED, 0);
@@ -1160,8 +1160,8 @@ describe('sea arena', () => {
     }
   });
 
-  it('slips a paddle cornered at the centre line past a mermaid swinging into it at a board', () => {
-    // The centre mermaid reaches either board from team 0's side, swinging back to its lane.
+  it('slips a paddle cornered at the centre line past a shark swinging into it at a board', () => {
+    // The centre shark reaches either board from team 0's side, swinging back to its lane.
     for (const [y, t] of [
       [PADDLE_R, PERIOD - 200],
       [H - PADDLE_R, PERIOD / 2 - 200],
@@ -1189,7 +1189,7 @@ describe('sea arena', () => {
     }
   });
 
-  it('makes paddles slide around rocks and mermaids, never into them', () => {
+  it('makes paddles slide around rocks and sharks, never into them', () => {
     const p = paddle(0, 100, H / 2);
     const w = sea(W / 2, H - 100, 0, 0, [p]);
     for (let i = 0; i < 4; i++) {

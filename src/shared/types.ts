@@ -29,14 +29,14 @@ export interface Paddle {
 
 /**
  * The scene of a round. 'ice': icebergs and sliding penguins. 'sea' (sea and pirates): rocks and
- * mermaids swimming in zig-zag, wooden goals. 'classic': an empty rink.
+ * sharks swimming in zig-zag, wooden goals. 'classic': an empty rink.
  */
 export type Arena = 'ice' | 'sea' | 'classic';
 
 /** A round obstacle the puck bounces off like a pinball bumper. Paddles cannot cross it. */
 export interface Obstacle {
-  /** Fixed ones (iceberg, rock) break after ICEBERG_HP hits; movers (penguin, mermaid) on one. */
-  kind: 'iceberg' | 'penguin' | 'rock' | 'mermaid';
+  /** Fixed ones (iceberg, rock) break after ICEBERG_HP hits; movers (penguin, shark) on one. */
+  kind: 'iceberg' | 'penguin' | 'rock' | 'shark';
   x: number;
   y: number;
   r: number;

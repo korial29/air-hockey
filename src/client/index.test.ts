@@ -29,7 +29,7 @@ vi.mock('../shared/arena', () => ({
       : arena == 'sea'
         ? [
             { kind: 'rock', x: 700, y: 300, r: 70, vx: 0, vy: 0 },
-            { kind: 'mermaid', x: 1000, y: 500, r: 50, vx: 120, vy: 180 },
+            { kind: 'shark', x: 1000, y: 500, r: 50, vx: 120, vy: 180 },
           ]
         : [],
   ),
@@ -847,7 +847,7 @@ describe('airHockey', () => {
     fake.obs = undefined;
     game.destroy();
   });
-  it('draws the sea scene: water and waves, rocks, mermaids, the doubloon; the rink repainted per scene', () => {
+  it('draws the sea scene: water and waves, rocks, big sharks, the doubloon; the rink repainted per scene', () => {
     const texts = fakeContext();
     let frame: FrameRequestCallback = () => {};
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
@@ -903,8 +903,21 @@ describe('airHockey', () => {
     expect(facets('hsl(196')).toBe(0);
     expect(texts.styles).toEqual(expect.arrayContaining(['#6f8f3acc', '#e8e0cc']));
     expect(texts.strokes).toContain('#fffc');
-    // A mermaid (skin, tail, hair), no penguin.
-    expect(texts.styles).toEqual(expect.arrayContaining(['#f3c9a4', '#3f8fe0', '#f4c542']));
+    // A shark (grey back over a pale belly, fins, dorsal fin and its shadow, mouth, teeth, eyes),
+    // its gills, no penguin.
+    expect(texts.styles).toEqual(
+      expect.arrayContaining([
+        '#7f8e9a',
+        '#e3ebef',
+        '#5d6b77',
+        '#4a5863',
+        '#0003',
+        '#3a1a20',
+        '#f4f2e8',
+        '#111',
+      ]),
+    );
+    expect(texts.strokes).toContain('#3c4852');
     expect(texts.styles).not.toContain('#f39a1c');
     // The puck is a gold doubloon, the beacon kept; the name over a dark shadow.
     expect(texts.styles).toContain('#e9b52c');
@@ -916,13 +929,19 @@ describe('airHockey', () => {
     expect(draw().styles).not.toContain('#0b4d6e');
     expect(texts.strokes).toContain('#ffffff45');
 
-    // Hit: the rock flashes and throws stone chips; the mermaid spins, sees stars, bubbles burst.
+    // Hit: the rock flashes and throws stone chips; the shark jolts, spins, sees stars, bubbles
+    // burst.
+    const jolt = () => texts.moves.filter(([x, y]) => x && !y && Math.abs(x) <= 50 * 0.15);
     fake.hits.splice(0, 2, performance.now(), performance.now());
+    texts.moves.length = 0;
     expect(draw().filter(t => t == '★')).toHaveLength(3);
+    expect(jolt()).toHaveLength(1);
     expect(texts.styles).toContain('#8f8475');
     expect(texts.strokes).toEqual(expect.arrayContaining(['#fff', '#e8fdff']));
     fake.hits.splice(0, 2, -5000, -5000);
+    texts.moves.length = 0;
     expect(draw()).not.toContain('★');
+    expect(jolt()).toEqual([]);
     expect(texts.strokes).not.toContain('#e8fdff');
 
     // Back on the ice: painted again, no sea drawing left.
@@ -936,7 +955,7 @@ describe('airHockey', () => {
     game.destroy();
   });
 
-  it('draws rock and mermaid damage, removal, ghosts and returns from the obstacle states', () => {
+  it('draws rock and shark damage, removal, ghosts and returns from the obstacle states', () => {
     const texts = fakeContext();
     let frame: FrameRequestCallback = () => {};
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
@@ -1001,21 +1020,21 @@ describe('airHockey', () => {
     draw();
     expect(facets()).toBe(0);
 
-    // Mermaid shot out 0.5 s ago along +x: she flies off in a splash of droplets, stars around her.
+    // Shark shot out 0.5 s ago along +x: it flies off spinning in a splash of droplets, stars round it.
     set([0, -1], [1, sec(0.5)], 0);
     draw();
     expect(texts.filter(t => t == '★')).toHaveLength(3);
     expect(texts.moves).toContainEqual([1000 + 50 * 24 * 0.5, 500]);
     expect(texts.styles).toContain('#bdf3ff');
     set([0, -1], [1, sec(2)]);
-    expect(draw().styles).not.toContain('#f3c9a4');
+    expect(draw().styles).not.toContain('#7f8e9a');
 
     // Ghosts at 8 s and 9.5 s: see-through, a ring, bubbles rising, no crack.
     for (const t of [8, 9.5]) {
       set([3, sec(t)], [1, sec(t)]);
       draw();
       expect(facets()).toBeGreaterThan(0);
-      expect(texts.styles).toContain('#f3c9a4');
+      expect(texts.styles).toContain('#7f8e9a');
       expect(texts.strokes.filter(v => v == '#e0fbff').length).toBeGreaterThan(2);
       expect(texts.strokes).not.toContain('#7fe3ff');
       const a = texts.alphas.filter(v => v < 1);
@@ -1023,7 +1042,7 @@ describe('airHockey', () => {
       expect(cracks()).toBe(0);
     }
 
-    // Back in play: a pop (white ring) for 300 ms, then the plain rock and mermaid.
+    // Back in play: a pop (white ring) for 300 ms, then the plain rock and shark.
     const now = performance.now();
     const clock = vi.spyOn(performance, 'now').mockReturnValue(now);
     set([0, -1], [0, -1]);
