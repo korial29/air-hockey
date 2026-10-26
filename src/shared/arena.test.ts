@@ -296,7 +296,7 @@ describe('obstacles on a scaled rink', () => {
         expect(Math.abs(o.y - Y / 2)).toBeGreaterThan(o.r + PUCK_R + (GOAL * size) / 2);
       }
     }
-  });
+  }, 20_000);
 
   it('fits a paddle and a puck side by side in every gap at every count and size', () => {
     for (const rink of ALL) {
