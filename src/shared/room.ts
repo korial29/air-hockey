@@ -2,7 +2,7 @@ import { MAX_NAME, MAX_PLAYERS, SNAP_EVERY, TICK_HZ } from './constants';
 import { clampPaddle, createWorld, spawnPoint, step } from './physics';
 import { decodeInput, encodeSnapshot, parseText } from './protocol';
 import type { ClientText, ServerText } from './protocol';
-import type { Conn, Paddle, PlayerInfo, World } from './types';
+import type { Conn, Every, Paddle, PlayerInfo, World } from './types';
 
 interface Player {
   conn: Conn;
@@ -24,6 +24,11 @@ const cleanName = (raw: unknown): string =>
     .join('')
     .trim();
 
+const setEvery: Every = (cb, ms) => {
+  const id = setInterval(cb, ms);
+  return () => clearInterval(id);
+};
+
 /**
  * One game, transport-agnostic. The Node server and the local host tab both
  * drive a Room: they feed it connections and frames, the room answers through Conn.send.
@@ -33,7 +38,7 @@ export class Room {
   private peers = new Map<Conn, Player | null>();
   private world: World = createWorld();
   private ticks = 0;
-  private timer: ReturnType<typeof setInterval> | undefined;
+  private halt: (() => void) | undefined;
 
   /** Number of joined players. */
   public get size(): number {
@@ -103,15 +108,17 @@ export class Room {
    * Drives tick() with a timer. An accumulator on performance.now() keeps the
    * simulation at TICK_HZ whatever the timer jitter; after a stall at most
    * MAX_CATCH_UP ticks are replayed and the rest of the backlog is dropped.
+   * `every` replaces setInterval, e.g. with a Worker-backed timer that
+   * background tabs do not throttle.
    */
-  public start(): void {
-    if (this.timer) {
+  public start(every: Every = setEvery): void {
+    if (this.halt) {
       return;
     }
     const dt = 1000 / TICK_HZ;
     let last = performance.now();
     let acc = 0;
-    this.timer = setInterval(() => {
+    this.halt = every(() => {
       const now = performance.now();
       acc += now - last;
       last = now;
@@ -124,8 +131,8 @@ export class Room {
   }
 
   public stop(): void {
-    clearInterval(this.timer);
-    this.timer = undefined;
+    this.halt?.();
+    this.halt = undefined;
   }
 
   private players(): Player[] {

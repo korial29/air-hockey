@@ -1,7 +1,7 @@
 import { parseText } from '../shared/protocol';
 import type { ClientText } from '../shared/protocol';
 import { Room } from '../shared/room';
-import type { Conn, SocketLike } from '../shared/types';
+import type { Conn, Every, SocketLike } from '../shared/types';
 
 type Data = string | ArrayBuffer;
 
@@ -15,6 +15,34 @@ interface Msg {
   kind: 'q' | 'h' | 'm' | 'b';
   data?: Data;
 }
+
+/**
+ * The host tab is often a hidden tab, and browsers throttle its setInterval to
+ * ~1 Hz. A dedicated worker's timer is not throttled and its messages still
+ * reach the hidden page. Falls back to setInterval when no worker can start
+ * (no Worker, or a CSP without blob: in worker-src).
+ */
+const workerEvery: Every = (cb, ms) => {
+  let stop = (): void => {};
+  const fallback = (): void => {
+    stop();
+    const t = setInterval(cb, ms);
+    stop = () => clearInterval(t);
+  };
+  try {
+    const url = URL.createObjectURL(new Blob([`setInterval(()=>postMessage(0),${ms})`]));
+    const w = new Worker(url);
+    w.onmessage = cb;
+    w.onerror = fallback;
+    stop = () => {
+      w.terminate();
+      URL.revokeObjectURL(url);
+    };
+  } catch {
+    fallback();
+  }
+  return () => stop();
+};
 
 /**
  * Same-browser multiplayer: tabs of one origin play together over a
@@ -60,7 +88,7 @@ export const localSocket = (room: string): SocketLike => {
     hostId = id;
     remotes = new Map();
     game = new Room();
-    game.start();
+    game.start(workerEvery);
     game.connect(self);
     pending().forEach(d => game!.receive(self, d));
     post({ kind: 'h' });
