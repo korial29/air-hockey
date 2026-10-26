@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PERIOD, layout, obstacles } from './arena';
+import { PERIOD, fixed, layout, obstacles, scene } from './arena';
 import {
   GOAL,
   H,
@@ -13,7 +13,7 @@ import {
   W,
 } from './constants';
 import { spawnPoint } from './physics';
-import type { Obstacle, Team } from './types';
+import type { Arena, Obstacle, Team } from './types';
 
 /** A paddle and a puck side by side: the width every gap must leave. */
 const FIT = 2 * PADDLE_R + 2 * PUCK_R;
@@ -21,6 +21,7 @@ const FIT = 2 * PADDLE_R + 2 * PUCK_R;
 const TICKS = [...Array(PERIOD).keys(), 0.5, 1234.25, 2047.9];
 
 const ice = (t = 0): Obstacle[] => obstacles('ice', t);
+const sea = (t = 0): Obstacle[] => obstacles('sea', t);
 const dist = (o: Obstacle, x: number, y: number): number => Math.hypot(o.x - x, o.y - y);
 
 describe('obstacles', () => {
@@ -272,67 +273,288 @@ describe('obstacles on a scaled rink', () => {
     }
   });
 
-  it('keeps clear of the serve spots, the spawn points and the goal mouths at every count and size', () => {
-    for (const rink of RINKS) {
-      const { size } = rink;
-      const [X, Y] = [W * size, H * size];
-      for (const t of SOME) {
-        for (const o of at(t, rink)) {
-          for (const x of [X / 4, (3 * X) / 4]) {
-            expect(dist(o, x, Y / 2)).toBeGreaterThan(o.r + PUCK_R + 100);
-          }
-          for (const team of [0, 1] as Team[]) {
-            for (let n = 0; n < MAX_PLAYERS; n++) {
-              const [x, y] = spawnPoint(team, n, size);
-              expect(dist(o, x, y)).toBeGreaterThan(o.r + PADDLE_R + 10);
+  it.each(['ice', 'sea'] as Arena[])(
+    'keeps clear of the serve spots, the spawn points and the goal mouths at every count and size (%s)',
+    arena => {
+      for (const rink of RINKS) {
+        const { size } = rink;
+        const [X, Y] = [W * size, H * size];
+        for (const t of SOME) {
+          for (const o of obstacles(arena, t, size, rink.count)) {
+            for (const x of [X / 4, (3 * X) / 4]) {
+              expect(dist(o, x, Y / 2)).toBeGreaterThan(o.r + PUCK_R + 100);
             }
+            for (const team of [0, 1] as Team[]) {
+              for (let n = 0; n < MAX_PLAYERS; n++) {
+                const [x, y] = spawnPoint(team, n, size);
+                expect(dist(o, x, y)).toBeGreaterThan(o.r + PADDLE_R + 10);
+              }
+            }
+            expect(Math.min(o.x, X - o.x) - o.r).toBeGreaterThan(300);
           }
-          expect(Math.min(o.x, X - o.x) - o.r).toBeGreaterThan(300);
+        }
+        for (const o of obstacles(arena, 0, size, rink.count)) {
+          expect(dist(o, X / 2, Y / 2)).toBeGreaterThan(o.r + PUCK_R + 100);
+          // A straight shot from the centre spot reaches any point of either mouth.
+          expect(Math.abs(o.y - Y / 2)).toBeGreaterThan(o.r + PUCK_R + (GOAL * size) / 2);
         }
       }
-      for (const o of at(0, rink)) {
-        expect(dist(o, X / 2, Y / 2)).toBeGreaterThan(o.r + PUCK_R + 100);
-        // A straight shot from the centre spot reaches any point of either mouth.
-        expect(Math.abs(o.y - Y / 2)).toBeGreaterThan(o.r + PUCK_R + (GOAL * size) / 2);
-      }
-    }
-  }, 20_000);
+    },
+    20_000,
+  );
 
-  it('fits a paddle and a puck side by side in every gap at every count and size', () => {
-    for (const rink of ALL) {
-      const X = W * rink.size;
-      const Y = H * rink.size;
-      for (const t of SOME) {
-        const obs = at(t, rink);
-        obs.forEach((o, i) => {
-          if (o.kind == 'iceberg') {
-            expect(Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r)).toBeGreaterThan(
-              FIT,
+  it.each(['ice', 'sea'] as Arena[])(
+    'fits a paddle and a puck side by side in every gap at every count and size (%s)',
+    arena => {
+      for (const rink of ALL) {
+        const X = W * rink.size;
+        const Y = H * rink.size;
+        for (const t of SOME) {
+          const obs = obstacles(arena, t, rink.size, rink.count);
+          obs.forEach((o, i) => {
+            if (fixed(o)) {
+              expect(Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r)).toBeGreaterThan(
+                FIT,
+              );
+            } else if (Math.abs(X / 2 - o.x) > 100 * rink.size) {
+              // A side lane to a paddle standing on the centre line, where it cannot yield.
+              expect(Math.abs(X / 2 - o.x) - o.r - 2 * PADDLE_R).toBeGreaterThan(FIT);
+            }
+            for (const q of obs.slice(i + 1)) {
+              expect(dist(o, q.x, q.y) - o.r - q.r).toBeGreaterThan(FIT);
+            }
+          });
+        }
+      }
+    },
+  );
+
+  it.each(['ice', 'sea'] as Arena[])(
+    'cannot be tunnelled at the scaled top speeds, with ceil(size) sub-steps per tick (%s)',
+    arena => {
+      for (const rink of ALL) {
+        const { size } = rink;
+        const all = SOME.flatMap(t => obstacles(arena, t, size, rink.count));
+        const r = Math.min(...all.map(o => o.r));
+        // Both components: a mermaid zig-zags.
+        const v = Math.max(...all.map(o => Math.hypot(o.vx, o.vy)));
+        const per = TICK_HZ * Math.ceil(size);
+        expect((PUCK_MAX_SPEED * size + v) / per).toBeLessThan(r + PUCK_R);
+        expect((PADDLE_MAX_SPEED * size + v) / per).toBeLessThan(r + PADDLE_R);
+        // Puck and paddle per sub-step: no further than at size 1.
+        expect((PUCK_MAX_SPEED * size) / per).toBeLessThanOrEqual(PUCK_MAX_SPEED / TICK_HZ);
+        expect((PADDLE_MAX_SPEED * size) / per).toBeLessThanOrEqual(PADDLE_MAX_SPEED / TICK_HZ);
+      }
+    },
+  );
+});
+
+describe('the sea arena', () => {
+  const ALL = [2, 3, 4, 5, 6, 7].flatMap(count =>
+    [1, Math.SQRT2, Math.sqrt(3), MAX_SIZE].map(size => ({ size, count })),
+  );
+  /** Every tick of a crossing, board to board. */
+  const CROSSING = [...Array(PERIOD / 2).keys()];
+  /** Lane centres of the side and centre mermaids, from the penguins'. */
+  const LANES = ice(0)
+    .slice(4)
+    .map(o => o.x);
+
+  it('is the ice layout slot for slot: rocks for icebergs, mermaids for penguins', () => {
+    for (const { size, count } of ALL) {
+      for (const t of [0, 100.5, 777, 1500]) {
+        const a = obstacles('ice', t, size, count);
+        const b = obstacles('sea', t, size, count);
+        expect(b.map(o => o.kind)).toEqual(a.map(o => (o.kind == 'iceberg' ? 'rock' : 'mermaid')));
+        b.forEach((o, i) => {
+          const c = a[i];
+          if (fixed(o)) {
+            expect(o).toEqual({ ...c, kind: 'rock' });
+          } else {
+            // Same lane (give or take the zig-zag), same share of the crossing, same direction.
+            expect(Math.abs(o.x - c.x)).toBeLessThan(20 * size);
+            expect((o.y - o.r) / (H * size - 2 * o.r)).toBeCloseTo(
+              (c.y - c.r) / (H * size - 2 * c.r),
+              9,
             );
-          } else if (o.x != X / 2) {
-            // A side lane to a paddle standing on the centre line, where it cannot yield.
-            expect(Math.abs(X / 2 - o.x) - o.r - 2 * PADDLE_R).toBeGreaterThan(FIT);
-          }
-          for (const q of obs.slice(i + 1)) {
-            expect(dist(o, q.x, q.y) - o.r - q.r).toBeGreaterThan(FIT);
+            expect(Math.sign(o.vy)).toBe(Math.sign(c.vy));
+            expect(o.r).toBeGreaterThanOrEqual(30 * size);
           }
         });
       }
     }
   });
 
-  it('cannot be tunnelled at the scaled top speeds, with ceil(size) sub-steps per tick', () => {
+  it('zig-zags each mermaid across its lane, within its corridor, a few times per crossing', () => {
+    const swims = sea(0).slice(4);
+    swims.forEach((_, i) => {
+      const xs = CROSSING.map(t => sea(t)[4 + i].x - LANES[i]);
+      const vx = CROSSING.map(t => sea(t)[4 + i].vx);
+      // Out to about 14 units either side, evenly.
+      expect(Math.max(...xs)).toBeCloseTo(14, 6);
+      expect(Math.min(...xs)).toBeCloseTo(-14, 6);
+      // On the lane where it touches a board.
+      expect(xs[0]).toBeCloseTo(0, 9);
+      expect(sea(PERIOD / 2)[4 + i].x).toBeCloseTo(LANES[i], 9);
+      // Turns: four back-and-forths per crossing.
+      const turns = vx.filter((v, t) => t && Math.sign(v) != Math.sign(vx[t - 1])).length;
+      expect(turns).toBe(8);
+    });
+  });
+
+  it('reports its velocity, both components, matching its motion at every size', () => {
+    for (const { size } of ALL) {
+      let sideways = 0;
+      for (const t of [...CROSSING, 1234.25, 2047.5]) {
+        const now = obstacles('sea', t, size);
+        const next = obstacles('sea', t + 0.25, size);
+        now.slice(4).forEach((o, i) => {
+          const n = next[4 + i];
+          // Away from the turns, the next quarter tick moves it by its velocity.
+          if (o.vx == n.vx && o.vy == n.vy) {
+            expect((n.x - o.x) * 4 * TICK_HZ).toBeCloseTo(o.vx, 6);
+            expect((n.y - o.y) * 4 * TICK_HZ).toBeCloseTo(o.vy, 6);
+          }
+          sideways = Math.max(sideways, Math.abs(o.vx));
+        });
+      }
+      // About 52 units/s sideways, 250 board to board, scaled.
+      expect(sideways / size).toBeCloseTo(52.5, 6);
+    }
+  });
+
+  it('swims board to board of the scaled rink', () => {
+    for (const rink of ALL.filter(r => r.count > 2)) {
+      let top = Infinity;
+      let bottom = 0;
+      for (const t of CROSSING.filter(t => t % 4 == 0).concat(PERIOD / 2)) {
+        for (const o of obstacles('sea', t, rink.size, rink.count).filter(o => !fixed(o))) {
+          top = Math.min(top, o.y - o.r);
+          bottom = Math.max(bottom, o.y + o.r);
+        }
+      }
+      expect(top).toBeCloseTo(0, 6);
+      expect(bottom).toBeCloseTo(H * rink.size, 6);
+    }
+  });
+
+  it('mirrors the side mermaids at every instant, and the centre one over time', () => {
     for (const rink of ALL) {
-      const { size } = rink;
-      const obs = at(0, rink);
-      const r = Math.min(...obs.map(o => o.r));
-      const v = Math.max(...obs.map(o => Math.abs(o.vy)));
-      const per = TICK_HZ * Math.ceil(size);
-      expect((PUCK_MAX_SPEED * size + v) / per).toBeLessThan(r + PUCK_R);
-      expect((PADDLE_MAX_SPEED * size + v) / per).toBeLessThan(r + PADDLE_R);
-      // Puck and paddle per sub-step: no further than at size 1.
-      expect((PUCK_MAX_SPEED * size) / per).toBeLessThanOrEqual(PUCK_MAX_SPEED / TICK_HZ);
-      expect((PADDLE_MAX_SPEED * size) / per).toBeLessThanOrEqual(PADDLE_MAX_SPEED / TICK_HZ);
+      const X = W * rink.size;
+      let left = 0;
+      let right = 0;
+      let sum = 0;
+      for (const t of [...Array(PERIOD).keys(), 0.5, 2000.75]) {
+        const obs = obstacles('sea', t, rink.size, rink.count);
+        expect(obs).toHaveLength(rink.count);
+        for (const o of obs) {
+          if (Math.abs(o.x - X / 2) < 50 * rink.size) {
+            // The centre mermaid, counted over the ticks of a period.
+            if (t % 1) {
+              continue;
+            }
+            left += +(o.x < X / 2 - 1e-9);
+            right += +(o.x > X / 2 + 1e-9);
+            sum += o.x - X / 2;
+            continue;
+          }
+          const m = obs.find(q => Math.abs(q.x - (X - o.x)) < 1e-9)!;
+          expect([m.kind, m.y, m.r, m.vy, -m.vx + 0]).toEqual([o.kind, o.y, o.r, o.vy, o.vx + 0]);
+        }
+      }
+      // As long on either side of the centre line, as far.
+      expect(left).toBe(right);
+      expect(Math.abs(sum)).toBeLessThan(1e-6);
+    }
+  });
+
+  it('repeats every PERIOD ticks, which divides the u16 snapshot tick wrap', () => {
+    for (const rink of ALL) {
+      for (const t of [0, 1, 17.5, 1500.25]) {
+        const a = obstacles('sea', t, rink.size, rink.count);
+        for (const u of [t + PERIOD, t + 65536, t + 3 * 65536]) {
+          obstacles('sea', u, rink.size, rink.count).forEach((o, i) => {
+            expect(o.kind).toBe(a[i].kind);
+            expect(o.x).toBeCloseTo(a[i].x, 6);
+            expect(o.y).toBeCloseTo(a[i].y, 6);
+            expect([o.vx, o.vy]).toEqual([a[i].vx, a[i].vy]);
+          });
+        }
+      }
+    }
+  });
+
+  it('fits a paddle and a puck in every gap at every tick, with the narrowest margins named', () => {
+    let rockToLane = Infinity;
+    let laneToLane = Infinity;
+    let toLine = Infinity;
+    for (const t of [...Array(PERIOD).keys()]) {
+      const [a, , b, , left, mid] = sea(t);
+      for (const o of [a, b]) {
+        rockToLane = Math.min(rockToLane, dist(o, left.x, left.y) - o.r - left.r);
+      }
+      rockToLane = Math.min(rockToLane, left.x - left.r - Math.max(a.x + a.r, b.x + b.r));
+      laneToLane = Math.min(laneToLane, mid.x - mid.r - (left.x + left.r));
+      toLine = Math.min(toLine, W / 2 - 2 * PADDLE_R - (left.x + left.r));
+    }
+    expect(rockToLane).toBeCloseTo(152, 6);
+    // The centre mermaid zig-zags in step with the pair: 216 at every instant, 188 at worst.
+    expect(laneToLane).toBeGreaterThanOrEqual(188);
+    expect(toLine).toBeCloseTo(146, 6);
+    expect(Math.min(rockToLane, laneToLane, toLine)).toBeGreaterThan(FIT);
+  });
+
+  it.each([
+    [2, 'rr'],
+    [3, 'rrm'],
+    [4, 'rrmm'],
+    [5, 'rrmmm'],
+    [6, 'rrrrmm'],
+    [7, 'rrrrmmm'],
+  ])('keeps %i obstacles, in the slots of the ice', (count, kinds) => {
+    expect(
+      obstacles('sea', 333.5, 1, count)
+        .map(o => o.kind[0])
+        .join(''),
+    ).toBe(kinds);
+  });
+});
+
+describe('fixed', () => {
+  it('is true for icebergs and rocks, false for penguins and mermaids', () => {
+    expect([...ice(), ...sea()].map(o => [o.kind, fixed(o)])).toEqual([
+      ...Array(4).fill(['iceberg', true]),
+      ...Array(3).fill(['penguin', false]),
+      ...Array(4).fill(['rock', true]),
+      ...Array(3).fill(['mermaid', false]),
+    ]);
+  });
+});
+
+describe('scene', () => {
+  it('takes turns through a list, round 1 the first, the first one while waiting', () => {
+    const list: Arena[] = ['ice', 'sea'];
+    expect([0, 1, 2, 3, 4, 5].map(n => scene(list, n))).toEqual([
+      'ice',
+      'ice',
+      'sea',
+      'ice',
+      'sea',
+      'ice',
+    ]);
+    expect([0, 1, 2, 3, 4].map(n => scene(['sea', 'classic', 'ice'], n))).toEqual([
+      'sea',
+      'sea',
+      'classic',
+      'ice',
+      'sea',
+    ]);
+  });
+
+  it('plays a single scene, or a list of one, every round', () => {
+    for (const n of [0, 1, 2, 3, 7]) {
+      expect(scene('sea', n)).toBe('sea');
+      expect(scene(['classic'], n)).toBe('classic');
     }
   });
 });

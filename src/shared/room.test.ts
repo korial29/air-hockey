@@ -920,6 +920,100 @@ describe('Room tournament', () => {
     expect(lastMatch(a)).toMatchObject({ t: 'match', phase: 'wait', round: 0, wins: [0, 0] });
   });
 
+  describe('scenes', () => {
+    /** The scene of each match message c got since message n, phase by phase. */
+    const told = (c: FakeConn, n = 0) =>
+      matches(c)
+        .slice(n)
+        .map(m => `${m.phase} ${m.arena}`);
+
+    it('take turns round after round, ice then sea by default, the first one while waiting', () => {
+      const a = join(room, 'A');
+      expect(lastMatch(a)).toMatchObject({ phase: 'wait', arena: 'ice' });
+      physics.arenas = [];
+      join(room, 'B');
+      start();
+      winRound(a, 0);
+      nextRound();
+      winRound(a, 1);
+      nextRound();
+      expect(told(a)).toEqual([
+        'wait ice',
+        'ready ice',
+        'play ice',
+        'break ice',
+        'ready sea',
+        'play sea',
+        'break sea',
+        'ready ice',
+        'play ice',
+      ]);
+      expect(lastMatch(a)).toMatchObject({ round: 3 });
+      // A fresh world for each round, in its scene.
+      expect(physics.arenas).toEqual(['ice', 'sea', 'ice']);
+    });
+
+    it('keep the round on its scene through a refit on a serve', () => {
+      const a = join(room, 'A');
+      join(room, 'B');
+      start();
+      winRound(a, 0);
+      nextRound();
+      // Round 2 at sea: two newcomers, a bigger rink on the next serve, still at sea.
+      join(room, 'C');
+      join(room, 'D');
+      goal(0);
+      expect(lastMatch(a)).toMatchObject({ phase: 'play', round: 2, arena: 'sea', count: 4 });
+      expect(physics.arenas.slice(-2)).toEqual(['sea', 'sea']);
+    });
+
+    it('go back to the first one when a team empties, on the same rink', () => {
+      const a = join(room, 'A');
+      const b = join(room, 'B');
+      start();
+      winRound(a, 0);
+      nextRound();
+      touch(me(a).id);
+      expect(lastMatch(a)).toMatchObject({ phase: 'play', round: 2, arena: 'sea' });
+      const n = matches(a).length;
+      room.disconnect(b);
+      // Same size and count for 1 player as for 2: the scene alone calls for a fresh world.
+      expect(told(a, n)).toEqual(['wait ice']);
+      expect(lastMatch(a)).toMatchObject({ round: 0, size: 1, count: 3 });
+      expect(physics.arenas.at(-1)).toBe('ice');
+      // Back to a match: round 1 on ice.
+      join(room, 'B');
+      expect(told(a, n)).toEqual(['wait ice', 'ready ice']);
+    });
+
+    it.each([
+      ['sea', ['sea', 'sea', 'sea']],
+      [['sea'], ['sea', 'sea', 'sea']],
+      [
+        ['classic', 'ice'],
+        ['classic', 'ice', 'classic'],
+      ],
+      [
+        ['sea', 'classic', 'ice'],
+        ['sea', 'classic', 'ice'],
+      ],
+    ] as [Arena | Arena[], Arena[]][])('%j plays %j', (arena, scenes) => {
+      room = new Room({ ...RULES, arena });
+      const a = join(room, 'A');
+      expect(lastMatch(a)).toMatchObject({ phase: 'wait', arena: scenes[0] });
+      join(room, 'B');
+      const played: Arena[] = [];
+      for (let round = 1; round <= 3; round++) {
+        start();
+        played.push(lastMatch(a).arena);
+        expect(lastMatch(a)).toMatchObject({ phase: 'play', round });
+        winRound(a, (round % 2) as Team);
+        ticks(BREAK);
+      }
+      expect(played).toEqual(scenes);
+    });
+  });
+
   describe('rink', () => {
     const rink = (c: FakeConn) => {
       const { size, count } = lastMatch(c);

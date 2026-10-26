@@ -5,7 +5,7 @@
 // (see bump): a removed obstacle touches nothing until it comes back, RESPAWN ticks later.
 // The rink is W · s × H · s for the world's size s: goals, serve spots and top speeds scale with
 // it, the radii do not.
-import { obstacles } from './arena';
+import { fixed, obstacles } from './arena';
 import {
   GOAL,
   H,
@@ -92,12 +92,13 @@ const off = (w: World, i: number): boolean => (w.obs[i]?.gone ?? -1) >= 0;
 
 /**
  * Puck against the obstacles in play: out of them, bounce on the relative velocity (penguins
- * move), then the kick: it leaves at KICK · size at least, the push added along the normal.
- * Records w.bumps.
+ * and mermaids move), then the kick: it leaves at KICK · size at least, the push added along the
+ * normal. Records w.bumps.
  * On the host (`was`: the bumps of the previous step) a new contact is a hit: one that did not
  * touch that obstacle in the previous step, nor earlier in this one, so a puck held against it
- * counts once. An iceberg goes at its ICEBERG_HP-th hit, a penguin at the first one, removed at
- * once at the tick this step lands on. The puck bounces and gets the kick all the same.
+ * counts once. A fixed obstacle (iceberg, rock) goes at its ICEBERG_HP-th hit, a mover (penguin,
+ * mermaid) at the first one, removed at once at the tick this step lands on. The puck bounces and
+ * gets the kick all the same.
  */
 const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
   obs.forEach((o, i) => {
@@ -128,7 +129,7 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
         const st = (w.obs[i] ??= { hits: 0, gone: -1, angle: 0 });
         // From the puck to the obstacle's centre at impact: where a shot-out penguin flies.
         st.angle = Math.atan2(-ny, -nx);
-        if (++st.hits >= (o.kind == 'iceberg' ? ICEBERG_HP : 1)) {
+        if (++st.hits >= (fixed(o) ? ICEBERG_HP : 1)) {
           st.gone = w.tick + 1;
         }
       }
@@ -186,8 +187,8 @@ export const spawnPoint = (team: Team, n: number, size = 1): [number, number] =>
  * No tunnelling at 240 Hz: the puck moves at most 2400 / 240 = 10 units per step (< PUCK_R = 28
  * against walls and posts), a paddle 7200 / 240 = 30, so the closing distance per step is at
  * most 40 < PUCK_R + PADDLE_R = 72: an overlap is always caught before the centres cross.
- * Penguins move about 1 unit per step: puck to obstacle closes at most 11 < 40 + 28 (the
- * smallest obstacle), paddle to obstacle at most 31 < 40 + 44.
+ * Penguins and mermaids (zig-zag included) move about 1 unit per step: puck to obstacle closes
+ * at most 12 < 32 + 28 (the smallest obstacle, a mermaid), paddle to obstacle at most 32 < 32 + 44.
  * On a bigger rink top speeds grow with the size, so the step runs in ceil(size) sub-steps, the
  * obstacles taken at fractional ticks: the distances per sub-step stay those above.
  */

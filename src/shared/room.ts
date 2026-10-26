@@ -1,9 +1,20 @@
-import { layout } from './arena';
+import { layout, scene } from './arena';
 import { MAX_NAME, MAX_PLAYERS, RULES, SNAP_EVERY, TICK_HZ } from './constants';
 import { clampPaddle, createWorld, skate, spawnPoint, step } from './physics';
 import { decodeInput, encodeSnapshot, parseText } from './protocol';
 import type { ClientText, ServerText } from './protocol';
-import type { Conn, Every, Paddle, Phase, PlayerInfo, Rank, Rules, Team, World } from './types';
+import type {
+  Arena,
+  Conn,
+  Every,
+  Paddle,
+  Phase,
+  PlayerInfo,
+  Rank,
+  Rules,
+  Team,
+  World,
+} from './types';
 
 type Match = Extract<ServerText, { t: 'match' }>;
 
@@ -40,7 +51,7 @@ const unique = (name: string, taken: string[]): string => {
 };
 
 const fresh = (info: PlayerInfo): Rank => ({ ...info, points: 0, goals: 0, hits: 0 });
-const idle = ({ arena, goals, rounds }: Rules, { size, count }: World): Match => ({
+const idle = ({ goals, rounds }: Rules, { arena, size, count }: World): Match => ({
   t: 'match',
   phase: 'wait',
   round: 0,
@@ -247,10 +258,15 @@ export class Room {
     this.halt = undefined;
   }
 
-  /** A world on the rink of layout(0), for a room nobody joined yet. */
+  /** A world on the rink of layout(0), in the first scene, for a room nobody joined yet. */
   private empty(): World {
     const { size, count } = layout(0);
-    return createWorld(this.rules.arena, size, count);
+    return createWorld(scene(this.rules.arena, 0), size, count);
+  }
+
+  /** The scene of the current round: the first one while waiting. */
+  private scene(): Arena {
+    return scene(this.rules.arena, this.m.round);
   }
 
   private players(): Player[] {
@@ -357,10 +373,11 @@ export class Room {
   }
 
   /**
-   * Moves the world onto the rink the joined players call for, when that is fair: while waiting,
-   * during the countdown, or mid-round while the puck waits at its serve spot (after a goal) and
-   * nobody has touched it yet. Paddles respawn on it (see shape), the puck keeps its serve spot,
-   * scaled; the score stays, so does the countdown. The caller tells the clients.
+   * Moves the world onto the rink the joined players call for, in the scene of the round (the
+   * first one while waiting), when that is fair: while waiting, during the countdown, or mid-round
+   * while the puck waits at its serve spot (after a goal) and nobody has touched it yet. Paddles
+   * respawn on it (see shape), the puck keeps its serve spot, scaled; the score stays, so does
+   * the countdown. The caller tells the clients.
    * Returns whether it did.
    */
   private fit(): boolean {
@@ -369,7 +386,7 @@ export class Room {
     const { phase } = this.m;
     if (
       !(phase === 'wait' || phase === 'ready' || (phase === 'play' && !w.live)) ||
-      (size === w.size && count === w.count)
+      (size === w.size && count === w.count && w.arena === this.scene())
     ) {
       return false;
     }
@@ -383,9 +400,9 @@ export class Room {
   }
 
   /**
-   * The world on the rink for the joined players (layout), at tick 0, where no penguin stands on
-   * the centre spot: paddles back to their spawn points, puck served, every obstacle back and
-   * intact (a fresh w.obs, sized to the new count), score as given.
+   * The world on the rink for the joined players (layout), in the scene of the round, at tick 0,
+   * where no penguin stands on the centre spot: paddles back to their spawn points, puck served,
+   * every obstacle back and intact (a fresh w.obs, sized to the new count), score as given.
    * Returns the paddles per team.
    */
   private shape(score: [number, number]): number[] {
@@ -395,22 +412,23 @@ export class Room {
     w.paddles.forEach(p => {
       [p.tx, p.ty] = [p.x, p.y] = spawnPoint(p.team, n[p.team]++, size);
     });
-    Object.assign(w, createWorld(this.rules.arena, size, count), { paddles: w.paddles, score });
-    Object.assign(this.m, { size, count });
+    const arena = this.scene();
+    Object.assign(w, createWorld(arena, size, count), { paddles: w.paddles, score });
+    Object.assign(this.m, { arena, size, count });
     this.last = undefined;
     return n;
   }
 
   /**
-   * Next round, on the rink for the players joined right now (set until the next round):
-   * paddles back to their spawn points, puck served, head start for the smaller team, then the
-   * readySec countdown (none at 0) before play.
+   * Next round, in its scene, on the rink for the players joined right now (set until the next
+   * round): paddles back to their spawn points, puck served, head start for the smaller team,
+   * then the readySec countdown (none at 0) before play.
    */
   private next(): void {
+    this.m.round++;
     const [a, b] = this.shape([0, 0]);
     const { goals, headStart, readySec } = this.rules;
     this.world.score[a < b ? 0 : 1] = Math.min(goals - 1, headStart * Math.abs(a - b));
-    this.m.round++;
     this.timer = Math.round(readySec * TICK_HZ);
     this.go(this.timer > 0 ? 'ready' : 'play');
   }
