@@ -239,34 +239,35 @@ export const stadium = (ranking: Rank[], winner: Team | undefined, now: number) 
   const sw = Math.min(u * 5, (W - pw) / 3.4);
   const top = podium(ranking);
   const med = ['#fc3', '#cfd6df', '#cd7f32'];
-  // Depth of the blocks' top faces, seen from slightly above.
+  // One stepped block seen from the front, slightly above: the top faces recede toward a single
+  // vanishing point above the centre step, and the shading spans the whole front, so the three
+  // steps read as one piece. Side steps first, the centre step is drawn over them.
   const d = sw * 0.16;
-  const at = (i: number) => (W - pw) / 2 + [0, -1, 1][i] * sw;
+  const pc = (W - pw) / 2;
+  const at = (i: number) => pc + [0, -1, 1][i] * sw;
   const ys = [3.4, 2.7, 2.2].map(h => CH - u * (0.4 + h));
-  for (let i = 0; i < 3 && top[0]; i++) {
+  const back = (x: number) => pc + (x - pc) * 0.88;
+  for (const i of top[0] ? [1, 2, 0] : []) {
     const m = at(i);
     const y = ys[i];
     const l = m - sw / 2;
-    const k = sw * 0.08;
-    // Top face: a trapezoid narrowing toward the back.
     c.beginPath();
     c.moveTo(l, y);
-    c.lineTo(l + k, y - d);
-    c.lineTo(l + sw - k, y - d);
+    c.lineTo(back(l), y - d);
+    c.lineTo(back(l + sw), y - d);
     c.lineTo(l + sw, y);
     fill('#f4f7fb', c.createLinearGradient(0, y - d, 0, y), [0, '#fff0'], [1, '#b8c4d688']);
-    // Front face: lit in the middle, darker toward the edges and the floor.
     c.beginPath();
     c.rect(l, y, sw, CH - y);
     fill(
       '#d6deea',
-      c.createLinearGradient(l, 0, l + sw, 0),
-      [0, '#0004'],
-      [0.18, '#fff4'],
+      c.createLinearGradient(pc - sw * 1.5, 0, pc + sw * 1.5, 0),
+      [0, '#0005'],
+      [0.25, '#fff3'],
       [0.5, '#fff0'],
       [1, '#0005'],
     );
-    fill('#0000', c.createLinearGradient(0, y, 0, CH), [0, '#0000'], [1, '#0006']);
+    fill('#0000', c.createLinearGradient(0, ys[0], 0, CH), [0, '#0000'], [1, '#0006']);
     rect(l, y + u * 0.14, sw, u * 0.16, med[i]);
     line('#fff', 4, l, y, l + sw, y);
     // Embossed rank: dark below right, light above left.
