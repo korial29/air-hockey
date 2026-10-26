@@ -39,11 +39,12 @@ const unique = (name: string, taken: string[]): string => {
 };
 
 const fresh = (info: PlayerInfo): Rank => ({ ...info, points: 0, goals: 0, hits: 0 });
-const idle = ({ goals, rounds }: Rules): Match => ({
+const idle = ({ arena, goals, rounds }: Rules): Match => ({
   t: 'match',
   phase: 'wait',
   round: 0,
   wins: [0, 0],
+  arena,
   goals,
   rounds,
 });
@@ -60,7 +61,8 @@ const setEvery: Every = (cb, ms) => {
 export class Room {
   /** Every connected peer; null until it joins. */
   private peers = new Map<Conn, Player | null>();
-  private world: World = createWorld();
+  private world: World;
+  /** Room ticks, frozen phases included: the snapshot cadence. */
   private ticks = 0;
   private halt: (() => void) | undefined;
   private rules: Rules;
@@ -79,6 +81,7 @@ export class Room {
   /** Missing rules fall back to RULES. */
   public constructor(rules: Partial<Rules> = {}) {
     this.rules = { ...RULES, ...rules };
+    this.world = createWorld(this.rules.arena);
     this.m = idle(this.rules);
   }
 
@@ -124,7 +127,7 @@ export class Room {
       this.roster();
     } else {
       // Last one out: the next game starts from 0-0.
-      this.world = createWorld();
+      this.world = createWorld(this.rules.arena);
       this.ticks = 0;
     }
     this.sync();
@@ -178,9 +181,16 @@ export class Room {
       }
     }
     if (++this.ticks % SNAP_EVERY === 0) {
-      // One buffer for everyone: transports must not mutate it.
+      // One buffer for everyone: transports must not mutate it. The world tick (u16 on the wire)
+      // places the obstacles; it stands still in 'break' and 'end', like the penguins.
       this.broadcast(
-        encodeSnapshot({ tick: this.ticks, score: w.score, puck: w.puck, paddles: w.paddles }),
+        encodeSnapshot({
+          tick: w.tick,
+          score: w.score,
+          puck: w.puck,
+          paddles: w.paddles,
+          live: w.live,
+        }),
       );
     }
   }
@@ -313,7 +323,10 @@ export class Room {
     return true;
   }
 
-  /** Next round: paddles back to their spawn points, puck served, head start for the smaller team. */
+  /**
+   * Next round: paddles back to their spawn points, puck served, head start for the smaller team.
+   * The world restarts at tick 0, where no penguin stands on the centre spot.
+   */
   private next(): void {
     const w = this.world;
     const n = [0, 0];
@@ -322,7 +335,7 @@ export class Room {
     });
     const [a, b] = n;
     const { goals, headStart } = this.rules;
-    Object.assign(w, createWorld(), { paddles: w.paddles });
+    Object.assign(w, createWorld(this.rules.arena), { paddles: w.paddles });
     w.score[a < b ? 0 : 1] = Math.min(goals - 1, headStart * Math.abs(a - b));
     this.last = undefined;
     this.m.round++;

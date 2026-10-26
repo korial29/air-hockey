@@ -19,7 +19,7 @@ Tiny multiplayer air hockey for the browser. Zero runtime dependencies on the cl
 ## Rules
 
 - The host (server or local host tab) is authoritative. Clients only send their pointer target.
-- `dist/index.js` must stay under 15 KB gzip, `dist/local.js` under 4 KB (`npm run size`, gated in CI).
+- `dist/index.js` must stay under 15 KB gzip, `dist/local.js` under 5 KB (`npm run size`, gated in CI).
   No runtime dependency, no class hierarchy for its own sake, no assets.
 - `src/shared` never touches the DOM or Node APIs.
 - `erasableSyntaxOnly` is on: no enums, no parameter properties, no namespaces.

@@ -2,7 +2,7 @@
 // Text frames carry rare JSON messages (join, roster, goal, full).
 // Binary frames carry the hot path: inputs (client → host) and snapshots (host → client).
 import { SCALE } from './constants';
-import type { Phase, PlayerInfo, Rank, Snapshot, Team } from './types';
+import type { Arena, Phase, PlayerInfo, Rank, Snapshot, Team } from './types';
 
 export type ClientText = { t: 'join'; name: string };
 
@@ -16,7 +16,8 @@ export type ServerText =
       phase: Phase;
       /** Current round, from 1; 0 in 'wait'. */
       round: number;
-      /** Effective rules: goals that win a round, rounds in a match (best of). */
+      /** Effective rules: the arena, goals that win a round, rounds in a match (best of). */
+      arena: Arena;
       goals: number;
       rounds: number;
       /** Rounds won by each team. */
@@ -69,7 +70,8 @@ export const encodeSnapshot = (s: Snapshot): ArrayBuffer => {
   v.setUint16(5, toWire(s.puck.x));
   v.setUint16(7, toWire(s.puck.y));
   v.setUint8(9, s.paddles.length);
-  // byte 10 is reserved (flags), kept at 0
+  // byte 10: flags, bit 0 = live
+  v.setUint8(10, s.live ? 1 : 0);
   v.setInt16(11, speed(s.puck.vx));
   v.setInt16(13, speed(s.puck.vy));
   s.paddles.forEach((p, i) => {
@@ -100,6 +102,7 @@ export const decodeSnapshot = (buf: ArrayBuffer): Snapshot | null => {
     });
   }
   return {
+    live: (v.getUint8(10) & 1) == 1,
     tick: v.getUint16(1),
     score: [v.getUint8(3), v.getUint8(4)],
     puck: {

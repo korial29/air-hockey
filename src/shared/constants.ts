@@ -1,10 +1,10 @@
 import type { Rules } from './types';
 
 // Field units. The table is landscape: team 0 defends the left goal, team 1 the right one.
-export const W = 1600;
-export const H = 900;
+export const W = 2000;
+export const H = 1125;
 /** Height of each goal mouth, centred on H / 2. */
-export const GOAL = 300;
+export const GOAL = 380;
 
 export const PUCK_R = 28;
 export const PADDLE_R = 44;
@@ -29,6 +29,7 @@ export const SCALE = 32;
 
 /** Default match rules. */
 export const RULES: Rules = {
+  arena: 'ice',
   rounds: 3,
   goals: 10,
   hit: 1,

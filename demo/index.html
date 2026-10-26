@@ -40,9 +40,10 @@
         max-width: 960px;
         margin: 0 auto;
       }
-      /* The game is 4:3 with its HUD bands: keep it within the viewport height. */
+      /* The canvas is W × CH field units (2000 × 1500 with its HUD bands): keep it within the
+         viewport height. */
       #game {
-        max-width: calc((100dvh - 180px) * 4 / 3);
+        max-width: calc((100dvh - 180px) * 2000 / 1500);
         margin: 0 auto;
       }
       h1 {

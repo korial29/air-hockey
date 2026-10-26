@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlayerInfo, Rank, Snapshot } from '../shared/types';
-import { BOT, CH, TOP, byTeam, flow, podium, sample, shown, toField } from './util';
+import { BOT, CH, TOP, byTeam, flow, podium, rnd, sample, shown, toField } from './util';
 
 const snap = (x: number, paddles: { id: number; x: number; y: number }[] = []): Snapshot => ({
   tick: 0,
@@ -14,15 +14,17 @@ describe('toField', () => {
   const rect = { left: 10, top: 20, width: 800, height: CH / 2 };
 
   it('maps client pixels to rink units through the canvas rect, below the top band', () => {
-    expect(CH).toBe(TOP + 900 + BOT);
+    expect(CH).toBe(TOP + 1125 + BOT);
+    // 4:3 like the old 1600 × 1200 canvas: the demo layout keeps fitting the viewport.
+    expect(2000 / CH).toBeCloseTo(4 / 3);
     expect(toField(10, 20 + TOP / 2, rect)).toEqual([0, 0]);
-    expect(toField(810, 20 + TOP / 2 + 450, rect)).toEqual([1600, 900]);
-    expect(toField(410, 20 + TOP / 2 + 225, rect)).toEqual([800, 450]);
+    expect(toField(810, 20 + TOP / 2 + 562.5, rect)).toEqual([2000, 1125]);
+    expect(toField(410, 20 + TOP / 2 + 281.25, rect)).toEqual([1000, 562.5]);
   });
 
   it('gives y outside the rink over the HUD bands', () => {
     expect(toField(10, 20, rect)).toEqual([0, -TOP]);
-    expect(toField(10, 20 + CH / 2, rect)).toEqual([0, 900 + BOT]);
+    expect(toField(10, 20 + CH / 2, rect)).toEqual([0, 1125 + BOT]);
   });
 });
 
@@ -145,5 +147,17 @@ describe('shown', () => {
     expect(shown(16, 7)).toEqual([6, 10]);
     expect(shown(3, 0)).toEqual([0, 3]);
     expect(shown(0, 0)).toEqual([0, 0]);
+  });
+});
+
+describe('rnd', () => {
+  it('is deterministic and in [0, 1)', () => {
+    const v = Array.from({ length: 500 }, (_, i) => rnd(i));
+    expect(v).toEqual(Array.from({ length: 500 }, (_, i) => rnd(i)));
+    expect(Math.min(...v)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...v)).toBeLessThan(1);
+    // Spread out, not stuck in a corner of the range.
+    expect(v.filter(x => x < 0.5).length).toBeGreaterThan(200);
+    expect(v.filter(x => x < 0.5).length).toBeLessThan(300);
   });
 });
