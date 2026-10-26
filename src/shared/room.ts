@@ -85,7 +85,7 @@ export class Room {
   public constructor(rules: Partial<Rules> = {}) {
     this.rules = { ...RULES, ...rules };
     // The rink of layout(0); fit() and next() move the world onto the one the players call for.
-    this.world = createWorld(this.rules.arena, 1, 2);
+    this.world = this.empty();
     this.m = idle(this.rules, this.world);
   }
 
@@ -131,7 +131,7 @@ export class Room {
       this.roster();
     } else {
       // Last one out: the next game starts from 0-0.
-      this.world = createWorld(this.rules.arena, 1, 2);
+      this.world = this.empty();
       this.ticks = 0;
     }
     if (!this.sync() && this.fit()) {
@@ -230,6 +230,12 @@ export class Room {
   public stop(): void {
     this.halt?.();
     this.halt = undefined;
+  }
+
+  /** A world on the rink of layout(0), for a room nobody joined yet. */
+  private empty(): World {
+    const { size, count } = layout(0);
+    return createWorld(this.rules.arena, size, count);
   }
 
   private players(): Player[] {

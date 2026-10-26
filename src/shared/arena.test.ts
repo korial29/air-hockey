@@ -161,10 +161,10 @@ describe('obstacles', () => {
 
 describe('layout', () => {
   it.each([
-    [0, 1, 2],
-    [1, 1, 2],
-    [2, 1, 2],
-    [3, Math.sqrt(1.5), 2],
+    [0, 1, 3],
+    [1, 1, 3],
+    [2, 1, 3],
+    [3, Math.sqrt(1.5), 3],
     [4, Math.SQRT2, 3],
     [5, Math.sqrt(2.5), 3],
     [6, Math.sqrt(3), 4],

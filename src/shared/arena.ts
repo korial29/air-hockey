@@ -74,10 +74,10 @@ export const obstacles = (arena: Arena, t: number, size = 1, count = 7): Obstacl
 /**
  * Rink geometry for a number of players. The area grows with the players so each keeps the same
  * room: size = √(players / 2) on each side, from 1 (2 players) to MAX_SIZE (8 and more).
- * Obstacles: players / 2 + 1, from 2 to 7, always in mirrored pairs plus, when odd, a penguin on
- * the centre line.
+ * Obstacles: players / 2 + 1, from 3 to 7 (2 players already get the centre penguin), always in
+ * mirrored pairs plus, when odd, a penguin on the centre line.
  */
 export const layout = (players: number): { size: number; count: number } => ({
   size: Math.min(MAX_SIZE, Math.max(1, Math.sqrt(players / 2))),
-  count: Math.min(7, Math.max(2, ((players / 2) | 0) + 1)),
+  count: Math.min(7, Math.max(3, ((players / 2) | 0) + 1)),
 });
