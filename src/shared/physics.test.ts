@@ -287,6 +287,35 @@ describe('puck', () => {
   });
 });
 
+describe('serve after a goal', () => {
+  it.each([
+    [0, 'classic'],
+    [1, 'classic'],
+    [0, 'ice'],
+  ] as const)(
+    'serves beside a paddle left on the serve spot: no own goal again and again (team %i, %s)',
+    (team, arena) => {
+      // The paddle stays where it just hit, on its own serve spot; the puck goes into its goal.
+      const spot = team ? (3 * W) / 4 : W / 4;
+      const p = paddle(team, spot, H / 2);
+      const w = world(team ? W - 40 : 40, H / 2, team ? 2000 : -2000, 0, [p], arena);
+      let goals = 0;
+      for (let i = 0; i < 4 * TICK_HZ; i++) {
+        goals += +(step(w, DT) != -1);
+      }
+      expect(goals).toBe(1);
+      expect(w.puck).toMatchObject({ x: spot, vx: 0, vy: 0 });
+      expect(Math.hypot(p.x - w.puck.x, p.y - w.puck.y)).toBeGreaterThan(PUCK_R + PADDLE_R);
+    },
+  );
+
+  it('serves on the spot itself when nothing stands there', () => {
+    const w = world(40, H / 2, -2000, 0, [paddle(0, 100, 100)]);
+    expect(run(w, 30)).toBe(1);
+    expect(w.puck).toMatchObject({ x: W / 4, y: H / 2 });
+  });
+});
+
 describe('goals', () => {
   it('team 1 scores in the left goal, the puck is re-served on team 0 side', () => {
     const w = world(200, H / 2, -2000, 0);
