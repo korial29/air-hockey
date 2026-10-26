@@ -461,6 +461,50 @@ describe('predict', () => {
       expect(view(p, late, 50)!.obs![1].since).toBeGreaterThanOrEqual(7);
     });
 
+    it('switches scenes between rounds: hit times and states go, the new obstacles bounce', () => {
+      // Round 1 on ice: the first iceberg hit, a penguin gone.
+      const p = ice();
+      rebase(
+        p,
+        at([intact, intact, intact, intact, { hits: 1, since: 5, angle: 0 }, intact, intact]),
+        ME,
+        1000,
+      );
+      view(p, at([]), 1050);
+      expect(Object.keys(p.hits)).toEqual(['0']);
+      // The break keeps them on screen; round 2 at sea, same rink: they go with the ice.
+      reset(p, 'break', 'ice');
+      expect(Object.keys(p.hits)).toEqual(['0']);
+      expect(p.w.obs).toHaveLength(7);
+      reset(p, 'ready', 'sea');
+      expect(p.w).toMatchObject({ arena: 'sea', size: 1, count: 7, obs: [] });
+      expect(p.hits).toEqual([]);
+      // In play: the local puck bounces off the first rock, and off the centre shark.
+      reset(p, 'play', 'sea');
+      const [rock] = obstacles('sea', 0);
+      const s = {
+        ...snap({ x: rock.x - rock.r - PUCK_R - 20, y: rock.y, vx: 1000 }, []),
+        live: true,
+        obs: Array(7).fill(intact),
+      };
+      rebase(p, s, ME, 2000);
+      expect(view(p, s, 2050)!.puck.vx).toBeLessThan(0);
+      expect(Object.keys(p.hits)).toEqual(['0']);
+      const shark = obstacles('sea', 512)[5];
+      const m = {
+        ...snap({ x: shark.x, y: shark.y + shark.r + PUCK_R + 10, vy: -1000 }, []),
+        live: true,
+        tick: 500,
+        obs: Array(7).fill(intact),
+      };
+      rebase(p, m, ME, 3000);
+      expect(view(p, m, 3000 + 30 * DT)!.puck.vy).toBeGreaterThan(0);
+      expect(Object.keys(p.hits)).toEqual(['0', '5']);
+      // Round 3 back on ice: the sea's hit times go too.
+      reset(p, 'ready', 'ice');
+      expect(p.hits).toEqual([]);
+    });
+
     it('forgets the obstacle states on a new count until the next snapshot', () => {
       const p = ice();
       rebase(p, at([{ hits: 1, since: 5, angle: 0 }, ...Array(6).fill(intact)]), ME, 0);

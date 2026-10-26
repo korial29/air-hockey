@@ -4,8 +4,9 @@
 // drawn where it is and an own hit redirects it at once. Other paddles stand at their latest
 // snapshot position for collisions; they are drawn interpolated, INTERP_DELAY in the past.
 // Obstacles follow the world tick, rebased on the snapshot tick: the arena is a pure function of
-// it, so the local puck bounces off the same penguins as the host's. The rink size and obstacle
-// count come from the match message, through reset: the own paddle gets the host's clamp and speeds.
+// it, so the local puck bounces off the same penguins as the host's. The scene, rink size and
+// obstacle count come from the match message, through reset: the own paddle gets the host's clamp
+// and speeds, the local puck the round's obstacles.
 // Which obstacles are in play is the host's call: w.obs is rebuilt from every snapshot, so the
 // local puck goes through what the host removed. Local steps never damage an obstacle; they only
 // bring one back when its RESPAWN is up, as the host does on the same tick.
@@ -151,13 +152,13 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
 /**
  * Phase change: the host respawns paddles and maybe serves, so the own paddle and the puck
  * restart from the next snapshot. `arena`, `size` and `count`: the host's rink, from the same
- * match message. Another obstacle count renumbers the obstacles: their hit times and states go,
- * all in play until the next snapshot tells.
+ * match message (the scene changes between rounds). Another scene or obstacle count makes other
+ * obstacles: their hit times and states go, all in play until the next snapshot tells.
  */
 export const reset = (p: Prediction, phase: Phase, arena: Arena, size = 1, count = 7): void => {
   const { w } = p;
-  if (count != w.count) {
-    p.hits = [];
+  if (count != w.count || arena != w.arena) {
+    p.hits.length = 0;
     w.obs = [];
   }
   Object.assign(w, { arena, size, count });

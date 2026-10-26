@@ -42,7 +42,7 @@ export const GHOST = 3 * TICK_HZ;
 
 /** Default match rules. */
 export const RULES: Rules = {
-  arena: 'ice',
+  arena: ['ice', 'sea'],
   rounds: 3,
   goals: 10,
   hit: 1,

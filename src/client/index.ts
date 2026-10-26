@@ -9,6 +9,7 @@ import {
   beacon,
   circle,
   countdown,
+  doubloon,
   hud,
   obstacle,
   pen,
@@ -18,6 +19,7 @@ import {
   streak,
   text,
   veil,
+  waves,
 } from './render';
 import { CH, MIN_PADDLE_PX, MIN_PUCK_PX, TOP, drawnR, sample, toField } from './util';
 import type { Stamped } from './util';
@@ -209,7 +211,11 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     c.setTransform(k, 0, 0, k, 0, k * TOP);
     const arena = match?.arena ?? 'ice';
     const ice = arena == 'ice';
-    rink(ice, k);
+    const sea = arena == 'sea';
+    rink(arena, k);
+    if (sea) {
+      waves(now);
+    }
     // The world, W · size × H · size, on the same rink area: puck and paddles look smaller on a
     // bigger rink. Names keep their size on screen: g world units.
     c.setTransform(k / size, 0, 0, k / size, 0, k * TOP);
@@ -250,6 +256,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       if (ice) {
         circle(x, y, pr * 0.75, '#2b3646');
       }
+      if (sea) {
+        doubloon(x, y, pr);
+      }
       // The puck itself blinks toward a light yellow, in step with the beacon's glow.
       circle(x, y, pr, `rgba(255,214,90,${0.15 + 0.6 * (0.5 + 0.5 * Math.sin(now / 400))})`);
       for (const p of s.paddles) {
@@ -257,15 +266,13 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         const { x, y } = p;
         circle(x, y, dr, info?.color ?? '#888');
         circle(x, y, dr / 2, '#0003');
-        // Above the paddle, or below it against the top wall.
-        text(
-          info?.name ?? '',
-          x,
-          y < dr + g ? y + dr + g / 2 : y - dr - g / 2,
-          g,
-          'center',
-          ice ? '#163049' : '#fff',
-        );
+        // Above the paddle, or below it against the top wall. At sea, over a dark shadow.
+        const ny = y < dr + g ? y + dr + g / 2 : y - dr - g / 2;
+        const name = info?.name ?? '';
+        if (sea) {
+          text(name, x + g / 14, ny + g / 14, g, 'center', '#000a');
+        }
+        text(name, x, ny, g, 'center', ice ? '#163049' : '#fff');
       }
     }
     // Back to base rink coordinates: snow and veils cover the rink area whatever its size.
