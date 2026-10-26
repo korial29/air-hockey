@@ -11,12 +11,13 @@ export const PADDLE_R = 44;
 
 /** Units per second. */
 export const PUCK_MAX_SPEED = 2400;
-export const PADDLE_MAX_SPEED = 3000;
+/** Fast enough to keep up with a quick mouse flick (about 3000 px/s on a laptop-sized table). */
+export const PADDLE_MAX_SPEED = 7200;
 
 /** Physics steps per second (fixed step, server or local host). */
-export const TICK_HZ = 120;
-/** A snapshot goes out every SNAP_EVERY ticks: 120 / 2 = 60 Hz. */
-export const SNAP_EVERY = 2;
+export const TICK_HZ = 240;
+/** A snapshot goes out every SNAP_EVERY ticks: 240 / 4 = 60 Hz. */
+export const SNAP_EVERY = 4;
 /**
  * Client render delay of the other paddles, interpolated between snapshots, in ms: about two
  * snapshot intervals. The puck and the own paddle are predicted, drawn in the present.

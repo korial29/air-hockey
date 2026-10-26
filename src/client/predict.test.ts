@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PADDLE_MAX_SPEED, PADDLE_R, SNAP_EVERY, TICK_HZ, W } from '../shared/constants';
+import { H, PADDLE_MAX_SPEED, PADDLE_R, SNAP_EVERY, TICK_HZ, W } from '../shared/constants';
 import { createWorld, step } from '../shared/physics';
 import type { Puck, Snapshot } from '../shared/types';
 import { predict, rebase, reset, view } from './predict';
@@ -60,11 +60,11 @@ describe('predict', () => {
     rebase(p, snap({ x: 420, vx: -2000 }), ME, 0);
     expect(draw(p, snap({}), DT / 2).puck.vx).toBeLessThan(0);
     // Contact in 3 steps: the very frame that reaches it shows the puck going back.
-    const hit = draw(p, snap({}), 5.5 * DT).puck;
+    const hit = draw(p, snap({}), 46).puck;
     expect(hit.vx).toBeGreaterThan(0);
 
     // The host has not seen the hit yet: its puck still comes in.
-    rebase(p, snap({ x: 380, vx: -1900 }), ME, 6 * DT);
+    rebase(p, snap({ x: 380, vx: -1900 }), ME, 50);
     expect(p.w.puck.vx).toBeGreaterThan(0);
 
     // Past the grace period, a disagreeing host wins, without a jump on screen.
@@ -94,7 +94,8 @@ describe('predict', () => {
     const ref = createWorld();
     Object.assign(ref.puck, n);
     let err = Infinity;
-    for (let i = 1; i <= 30; i++) {
+    // Two steps per frame for 500 ms.
+    for (let i = 1; i <= 500 / (2 * DT); i++) {
       step(ref, 1 / TICK_HZ);
       step(ref, 1 / TICK_HZ);
       const d = draw(p, snap({}), t + i * 2 * DT + 0.1).puck;
@@ -132,7 +133,7 @@ describe('predict', () => {
       step(host, 1 / TICK_HZ);
       truth.push({ ...host.puck });
       if (i % SNAP_EVERY == 0) {
-        const jitter = ((i * 37) % 7) * (6 / 7);
+        const jitter = (((i / SNAP_EVERY) * 2 * 37) % 7) * (6 / 7);
         arrivals.push([i * DT + 30 + jitter, snap({ ...host.puck }, [])]);
       }
     }
@@ -150,15 +151,20 @@ describe('predict', () => {
       const h = truth[Math.round((t - 30) / DT)];
       worst = Math.max(worst, Math.hypot(d.x - h.x, d.y - h.y));
       if (last) {
-        // Frame-to-frame motion follows the puck speed: no back-and-forth.
-        const moved = Math.hypot(d.x - last.x, d.y - last.y);
-        const speed = Math.hypot(h.vx, h.vy) / 60;
-        shake = Math.max(shake, Math.abs(moved - speed));
+        // Away from the walls, frame-to-frame motion follows the host puck's own motion over the
+        // same frame: no back-and-forth. Bounce frames are left to `worst`: there a few units of
+        // lead shift where the path folds, which says nothing about smoothness.
+        const g = truth[Math.round((t - 1000 / 60 - 30) / DT)];
+        const near = (y: number) => y < 80 || y > H - 80;
+        if (![d.y, last.y, h.y, g.y].some(near)) {
+          const moved = Math.hypot(d.x - last.x, d.y - last.y);
+          shake = Math.max(shake, Math.abs(moved - Math.hypot(h.x - g.x, h.y - g.y)));
+        }
       }
       last = d;
     }
     expect(worst).toBeLessThan(12);
-    expect(shake).toBeLessThan(10);
+    expect(shake).toBeLessThan(4);
   });
 
   it('freezes the puck on a local goal, leaving the score and the serve to the host', () => {

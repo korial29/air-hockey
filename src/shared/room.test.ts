@@ -313,10 +313,10 @@ describe('Room', () => {
       const a = join(room);
       room.start();
       elapse(5001);
-      // 10 ticks replayed at most.
-      expect(binaries(a)).toHaveLength(Math.floor(10 / SNAP_EVERY));
-      elapse(dt * 2);
-      expect(decodeSnapshot(binaries(a).at(-1)!)!.tick).toBe(12);
+      // 20 ticks replayed at most.
+      expect(binaries(a)).toHaveLength(Math.floor(20 / SNAP_EVERY));
+      elapse(dt * 4);
+      expect(decodeSnapshot(binaries(a).at(-1)!)!.tick).toBe(24);
     });
 
     it('starts and stops idempotently', () => {

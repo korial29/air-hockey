@@ -217,7 +217,8 @@ describe('paddle hits', () => {
     p.tx = 700;
     const w = world(420, H / 2, 0, 0, [p]);
     run(w, 10);
-    expect(w.puck.vx).toBeGreaterThan(PADDLE_MAX_SPEED * 0.75);
+    // Faster than the puck may go: it leaves at the cap.
+    expect(w.puck.vx).toBeGreaterThan(Math.min(PADDLE_MAX_SPEED, PUCK_MAX_SPEED) * 0.75);
     expect(Math.abs(w.puck.vy)).toBeLessThan(1);
   });
 

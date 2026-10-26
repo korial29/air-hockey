@@ -3,18 +3,20 @@
 // snapshot (taken as the host state at its arrival) and simulated forward, so a fast puck is
 // drawn where it is and an own hit redirects it at once. Other paddles stand at their latest
 // snapshot position for collisions; they are drawn interpolated, INTERP_DELAY in the past.
-import { TICK_HZ, W } from '../shared/constants';
+import { GOAL, H, PUCK_R, TICK_HZ, W } from '../shared/constants';
 import { createWorld, step } from '../shared/physics';
 import type { Paddle, Phase, Snapshot, World } from '../shared/types';
 
 /** Physics step, in ms. */
 const DT = 1000 / TICK_HZ;
-/** Share of the drawn puck correction left after one step: half gone in ~4 steps (35 ms). */
-const EASE = 0.85;
+/** Share of the drawn puck correction left after one step: half gone in ~35 ms, whatever TICK_HZ. */
+const EASE = 0.85 ** (120 / TICK_HZ);
 /** After an own hit, snapshots that do not show it yet are ignored for this long, in ms. */
 const GRACE = 200;
 /** Steps replayed at most per advance, so a stalled tab does not spiral. */
-const MAX_CATCH_UP = 10;
+const MAX_CATCH_UP = 20;
+
+const cl = (v: number, a: number, b: number): number => (v < a ? a : v > b ? b : v);
 
 export interface Prediction {
   w: World;
@@ -136,9 +138,16 @@ export const view = (
   const k = w.puck;
   // w stands up to one step behind now: the puck is drawn where it gets at now.
   const r = (now - p.t) / 1000;
+  // That push and the correction ignore the walls: keep the drawn puck off the boards (it may
+  // only go past a goal line in front of the mouth), or it would dip in and out on a bounce.
+  const y = cl(k.y + p.o[1] + k.vy * r, PUCK_R, H - PUCK_R);
+  let x = k.x + p.o[0] + k.vx * r;
+  if (Math.abs(y - H / 2) > GOAL / 2) {
+    x = cl(x, PUCK_R, W - PUCK_R);
+  }
   return {
     ...s,
-    puck: { ...k, x: k.x + p.o[0] + k.vx * r, y: k.y + p.o[1] + k.vy * r },
+    puck: { ...k, x, y },
     paddles: s.paddles.map(q => (q.id == me?.id ? me : q)),
   };
 };

@@ -15,7 +15,7 @@ interface Player {
 }
 
 /** Ticks run at most this many times per timer callback, so a stalled host does not spiral. */
-const MAX_CATCH_UP = 10;
+const MAX_CATCH_UP = 20;
 
 /** First n characters (code points) of s, trimmed. */
 const cut = (s: string, n: number): string => Array.from(s).slice(0, n).join('').trim();
