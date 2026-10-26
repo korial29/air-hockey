@@ -146,7 +146,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
 
     const s = view(P, sample(buf, now - INTERP_DELAY), now, me);
     // Time of the puck's last contact with each obstacle; absent before prediction tracks it.
-    const hits = (P as { hits?: number[] }).hits;
+    const hits = P.hits;
     obstacles(arena, s?.tick ?? 0).forEach((o, i) =>
       obstacle(o, i, now - (hits?.[i] ?? -1e9), now),
     );
