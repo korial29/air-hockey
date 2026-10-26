@@ -6,6 +6,12 @@
 // Obstacles follow the world tick, rebased on the snapshot tick: the arena is a pure function of
 // it, so the local puck bounces off the same penguins as the host's. The rink size and obstacle
 // count come from the match message, through reset: the own paddle gets the host's clamp and speeds.
+// Which obstacles are in play is the host's call: w.obs is rebuilt from every snapshot, so the
+// local puck goes through what the host removed. Local steps never damage an obstacle; they only
+// bring one back when its RESPAWN is up, as the host does on the same tick.
+// For the renderer: view(...).obs[i] is obstacle i of obstacles(arena, view(...).tick, size, count)
+// (hits; since: ticks since removal, fractional, -1 in play; angle). Removed for since in
+// [0, RESPAWN), a ghost from RESPAWN - GHOST. P.hits keeps the local contact times.
 import { GOAL, H, PUCK_R, TICK_HZ, W } from '../shared/constants';
 import { createWorld, step } from '../shared/physics';
 import type { Arena, Paddle, Phase, Snapshot, World } from '../shared/types';
@@ -18,6 +24,12 @@ const EASE = 0.85 ** (120 / TICK_HZ);
 const GRACE = 200;
 /** Steps replayed at most per advance, so a stalled tab does not spiral. */
 const MAX_CATCH_UP = 20;
+/**
+ * w.tick runs this far ahead of the host's u16 tick: obstacles repeat over it, and an obstacle
+ * removed `since` ticks ago (since < 65536) gets a tick gone = w.tick - since that is never -1,
+ * the in-play mark, nor negative.
+ */
+const WRAP = 65536;
 
 const cl = (v: number, a: number, b: number): number => (v < a ? a : v > b ? b : v);
 
@@ -64,7 +76,7 @@ const advance = (p: Prediction, now: number): void => {
   p.t = Math.max(p.t, now - MAX_CATCH_UP * DT);
   for (; p.t + DT <= now; p.t += DT) {
     const { x, y } = k;
-    const goal = step(w, DT / 1000);
+    const goal = step(w, DT / 1000, false);
     if (goal != -1) {
       // The host owns the score and the serve: undo both.
       w.score[goal]--;
@@ -107,30 +119,38 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
     q.id == you && p.me?.id == you && !p.off ? p.me : paddle(q, w.size),
   );
   p.me = w.paddles.find(q => q.id == you);
-  if (!jump && now < p.hold && n.vx * k.vx + n.vy * k.vy < 0) {
-    // The host has not seen our hit yet.
-    return;
+  // Unless the host has not seen our hit yet (its puck still runs against ours): then the local
+  // puck and tick stay.
+  if (jump || now >= p.hold || n.vx * k.vx + n.vy * k.vy >= 0) {
+    // Where the puck is drawn at now (see view) minus where the host has it: the gap to fade.
+    const r = (now - p.t) / 1000;
+    p.o = jump ? [0, 0] : [p.o[0] + k.x + k.vx * r - n.x, p.o[1] + k.y + k.vy * r - n.y];
+    p.t = now;
+    p.hold = 0;
+    p.wait = false;
+    w.tick = s.tick + WRAP;
+    w.live = !!s.live;
+    Object.assign(k, n);
   }
-  // Where the puck is drawn at now (see view) minus where the host has it: the gap to fade.
-  const r = (now - p.t) / 1000;
-  p.o = jump ? [0, 0] : [p.o[0] + k.x + k.vx * r - n.x, p.o[1] + k.y + k.vy * r - n.y];
-  p.t = now;
-  p.hold = 0;
-  p.wait = false;
-  w.tick = s.tick;
-  w.live = !!s.live;
-  Object.assign(k, n);
+  // The host's obstacles, in any case: what it removed lets the local puck through at once.
+  w.obs = (s.obs ?? []).map(({ hits, since, angle }) => ({
+    hits,
+    gone: since < 0 ? -1 : w.tick - since,
+    angle,
+  }));
 };
 
 /**
  * Phase change: the host respawns paddles and maybe serves, so the own paddle and the puck
  * restart from the next snapshot. `arena`, `size` and `count`: the host's rink, from the same
- * match message. Another obstacle count renumbers the obstacles: their hit times go.
+ * match message. Another obstacle count renumbers the obstacles: their hit times and states go,
+ * all in play until the next snapshot tells.
  */
 export const reset = (p: Prediction, phase: Phase, arena: Arena, size = 1, count = 7): void => {
   const { w } = p;
   if (count != w.count) {
     p.hits = [];
+    w.obs = [];
   }
   Object.assign(w, { arena, size, count });
   p.me = undefined;
@@ -142,7 +162,9 @@ export const reset = (p: Prediction, phase: Phase, arena: Arena, size = 1, count
  * The state to draw at now: the snapshot interpolated in the past (s) for the other paddles and
  * the score, the local puck and own paddle in the present. `target`: the clamped pointer.
  * Its tick is the fractional world tick at now: draw obstacles(p.w.arena, tick, p.w.size,
- * p.w.count) with it. While the host is frozen (break, end) s comes back as is, its tick still.
+ * p.w.count) with it. Its obs are the host's latest obstacle states, `since` counted up to that
+ * tick (fractional): removals, ghosts and returns animate smoothly between snapshots.
+ * While the host is frozen (break, end) s comes back as is, its tick and obs still.
  */
 export const view = (
   p: Prediction,
@@ -161,6 +183,7 @@ export const view = (
   const k = w.puck;
   // w stands up to one step behind now: the puck is drawn where it gets at now.
   const r = (now - p.t) / 1000;
+  const f = (now - p.t) / DT;
   // That push and the correction ignore the walls: keep the drawn puck off the boards (it may
   // only go past a goal line in front of the mouth), or it would dip in and out on a bounce.
   const { size } = w;
@@ -171,8 +194,13 @@ export const view = (
   }
   return {
     ...s,
-    tick: w.tick + (now - p.t) / DT,
+    tick: w.tick - WRAP + f,
     puck: { ...k, x, y },
     paddles: s.paddles.map(q => (q.id == me?.id ? me : q)),
+    obs: w.obs.map(({ hits, gone, angle }) => ({
+      hits,
+      since: gone < 0 ? -1 : w.tick - gone + f,
+      angle,
+    })),
   };
 };

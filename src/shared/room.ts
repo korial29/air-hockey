@@ -191,7 +191,8 @@ export class Room {
     }
     if (++this.ticks % SNAP_EVERY === 0) {
       // One buffer for everyone: transports must not mutate it. The world tick (u16 on the wire)
-      // places the obstacles; it stands still in 'break' and 'end', like the penguins.
+      // places the obstacles; it stands still in 'break' and 'end', like the penguins. Their
+      // state travels as ticks since removal, which survive the wrap.
       this.broadcast(
         encodeSnapshot({
           tick: w.tick,
@@ -199,6 +200,11 @@ export class Room {
           puck: w.puck,
           paddles: w.paddles,
           live: w.live,
+          obs: w.obs.map(({ hits, gone, angle }) => ({
+            hits,
+            since: gone < 0 ? -1 : w.tick - gone,
+            angle,
+          })),
         }),
       );
     }
@@ -375,7 +381,8 @@ export class Room {
 
   /**
    * The world on the rink for the joined players (layout), at tick 0, where no penguin stands on
-   * the centre spot: paddles back to their spawn points, puck served, score as given.
+   * the centre spot: paddles back to their spawn points, puck served, every obstacle back and
+   * intact (a fresh w.obs, sized to the new count), score as given.
    * Returns the paddles per team.
    */
   private shape(score: [number, number]): number[] {

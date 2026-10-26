@@ -115,10 +115,61 @@ describe('snapshot frames', () => {
     });
   });
 
-  it('carry an empty paddle list', () => {
+  it('carry an empty paddle list and no obstacles in 16 bytes', () => {
     const buf = encodeSnapshot({ ...snapshot, paddles: [] });
-    expect(buf.byteLength).toBe(15);
-    expect(decodeSnapshot(buf)!.paddles).toEqual([]);
+    expect(buf.byteLength).toBe(16);
+    expect(decodeSnapshot(buf)).toMatchObject({ paddles: [], obs: [] });
+  });
+
+  it('carry the obstacle states after the paddles, 4 bytes each', () => {
+    const obs = [
+      { hits: 0, since: -1, angle: 0 },
+      { hits: 2, since: -1, angle: 1 },
+      { hits: 3, since: 0, angle: -2 },
+      { hits: 1, since: 2399, angle: Math.PI },
+      { hits: 0, since: -1, angle: 0 },
+      { hits: 0, since: -1, angle: 0 },
+      { hits: 1, since: 17, angle: 6.2 },
+    ];
+    const buf = encodeSnapshot({ ...snapshot, obs });
+    expect(buf.byteLength).toBe(15 + 3 * 5 + 1 + 7 * 4);
+    const out = decodeSnapshot(buf)!;
+    expect(out.paddles.map(p => p.id)).toEqual([1, 7, 255]);
+    expect(out.obs!.map(({ hits, since }) => [hits, since])).toEqual(
+      obs.map(({ hits, since }) => [hits, since]),
+    );
+  });
+
+  it('keep the obstacle angle within half a 256th of a turn, in [0, 2π)', () => {
+    const TURN = 2 * Math.PI;
+    for (let a = -Math.PI; a <= Math.PI; a += 0.013) {
+      const [o] = decodeSnapshot(
+        encodeSnapshot({ ...snapshot, obs: [{ hits: 1, since: 0, angle: a }] }),
+      )!.obs!;
+      expect(o.angle).toBeGreaterThanOrEqual(0);
+      expect(o.angle).toBeLessThan(TURN);
+      // Same direction, modulo a turn.
+      const d = Math.abs(((o.angle - a) % TURN) + TURN) % TURN;
+      expect(Math.min(d, TURN - d)).toBeLessThanOrEqual(TURN / 512 + 1e-12);
+    }
+  });
+
+  it('cap the obstacle hits and ticks since removal, 0xffff meaning in play', () => {
+    const out = decodeSnapshot(
+      encodeSnapshot({
+        ...snapshot,
+        obs: [
+          { hits: 300, since: 1e6, angle: 0 },
+          { hits: 0, since: 0xffff, angle: 0 },
+          { hits: 0, since: -1, angle: 0 },
+        ],
+      }),
+    )!;
+    expect(out.obs!.map(o => [o.hits, o.since])).toEqual([
+      [255, 0xfffe],
+      [0, 0xfffe],
+      [0, -1],
+    ]);
   });
 
   it('wrap the tick, cap the score and clamp coordinates and velocities', () => {
@@ -148,6 +199,15 @@ describe('snapshot frames', () => {
     const wrongCount = good.slice();
     wrongCount[9] = 4;
     expect(decodeSnapshot(wrongCount.buffer)).toBeNull();
+    // The obstacle count byte must match the bytes that follow.
+    const withObs = new Uint8Array(
+      encodeSnapshot({ ...snapshot, obs: [{ hits: 1, since: 3, angle: 0 }] }),
+    );
+    expect(decodeSnapshot(withObs.buffer)).not.toBeNull();
+    expect(decodeSnapshot(withObs.slice(0, -1).buffer)).toBeNull();
+    const wrongObs = withObs.slice();
+    wrongObs[15 + 3 * 5] = 2;
+    expect(decodeSnapshot(wrongObs.buffer)).toBeNull();
     expect(decodeSnapshot(encodeInput(1, 2))).toBeNull();
   });
 });

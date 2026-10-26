@@ -1,11 +1,22 @@
 // Fixed-step physics, shared by the host (authoritative) and the client (paddle prediction).
 // Paddles are kinematic (infinite mass): they push the puck, the puck never pushes them,
 // except when it is pinned against a wall (see the last pass of `step`). Obstacles are kinematic
-// too: they push both, and kick the puck away like pinball bumpers.
+// too: they push both, and kick the puck away like pinball bumpers. The host's puck breaks them
+// (see bump): a removed obstacle touches nothing until it comes back, RESPAWN ticks later.
 // The rink is W · s × H · s for the world's size s: goals, serve spots and top speeds scale with
 // it, the radii do not.
 import { obstacles } from './arena';
-import { GOAL, H, PADDLE_MAX_SPEED, PADDLE_R, PUCK_MAX_SPEED, PUCK_R, W } from './constants';
+import {
+  GOAL,
+  H,
+  ICEBERG_HP,
+  PADDLE_MAX_SPEED,
+  PADDLE_R,
+  PUCK_MAX_SPEED,
+  PUCK_R,
+  RESPAWN,
+  W,
+} from './constants';
 import type { Arena, Obstacle, Paddle, Puck, Team, World } from './types';
 
 /** Restitution of walls, posts and paddle hits. */
@@ -76,19 +87,24 @@ const out = <T extends Puck | Paddle>(
   return true;
 };
 
+/** Whether obstacle i is out of play (removed, ghost included): it touches nothing. */
+const off = (w: World, i: number): boolean => (w.obs[i]?.gone ?? -1) >= 0;
+
 /**
- * Puck against the obstacles: out of them, bounce on the relative velocity (penguins move), then
- * the kick: it leaves at KICK · size at least, the push added along the normal. Records w.bumps.
+ * Puck against the obstacles in play: out of them, bounce on the relative velocity (penguins
+ * move), then the kick: it leaves at KICK · size at least, the push added along the normal.
+ * Records w.bumps.
+ * On the host (`was`: the bumps of the previous step) a new contact is a hit: one that did not
+ * touch that obstacle in the previous step, nor earlier in this one, so a puck held against it
+ * counts once. An iceberg goes at its ICEBERG_HP-th hit, a penguin at the first one, removed at
+ * once at the tick this step lands on. The puck bounces and gets the kick all the same.
  */
-const bump = (w: World, obs: Obstacle[]): void =>
+const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
   obs.forEach((o, i) => {
     const k = w.puck;
     const kick = KICK * w.size;
-    if (!w.live || !out(k, o, o.r + PUCK_R, put, w.size)) {
+    if (!w.live || off(w, i) || !out(k, o, o.r + PUCK_R, put, w.size)) {
       return;
-    }
-    if (!w.bumps.includes(i)) {
-      w.bumps.push(i);
     }
     const d = Math.hypot(k.x - o.x, k.y - o.y);
     const nx = (k.x - o.x) / d;
@@ -106,13 +122,24 @@ const bump = (w: World, obs: Obstacle[]): void =>
       k.vx += a * nx;
       k.vy += a * ny;
     }
+    if (!w.bumps.includes(i)) {
+      w.bumps.push(i);
+      if (was && !was.includes(i)) {
+        const st = (w.obs[i] ??= { hits: 0, gone: -1, angle: 0 });
+        // From the puck to the obstacle's centre at impact: where a shot-out penguin flies.
+        st.angle = Math.atan2(-ny, -nx);
+        if (++st.hits >= (o.kind == 'iceberg' ? ICEBERG_HP : 1)) {
+          st.gone = w.tick + 1;
+        }
+      }
+    }
   });
 
-/** A paddle out of the obstacles: it slides around them. */
-const avoid = (p: Paddle, obs: Obstacle[], s: number): void =>
-  obs.forEach(o => out(p, o, o.r + PADDLE_R, place, s));
+/** A paddle out of the obstacles in play: it slides around them. */
+const avoid = (p: Paddle, w: World, obs: Obstacle[]): void =>
+  obs.forEach((o, i) => off(w, i) || out(p, o, o.r + PADDLE_R, place, w.size));
 
-/** Empty world at tick 0: puck at the centre, no paddles, 0-0. */
+/** Empty world at tick 0: puck at the centre, no paddles, 0-0, every obstacle in play, intact. */
 export const createWorld = (arena: Arena = 'ice', size = 1, count = 7): World => ({
   arena,
   size,
@@ -120,7 +147,7 @@ export const createWorld = (arena: Arena = 'ice', size = 1, count = 7): World =>
   tick: 0,
   bumps: [],
   live: false,
-  obs: [],
+  obs: obstacles(arena, 0, size, count).map(() => ({ hits: 0, gone: -1, angle: 0 })),
   puck: { x: (W * size) / 2, y: (H * size) / 2, vx: 0, vy: 0 },
   paddles: [],
   score: [0, 0],
@@ -149,6 +176,12 @@ export const spawnPoint = (team: Team, n: number, size = 1): [number, number] =>
  * On a goal it bumps the score, re-serves the puck and returns the scoring team; -1 otherwise.
  * Sets w.hit to the paddle that touched the puck during the step (the last one if several), or -1,
  * and w.bumps to the obstacles it touched.
+ * `host`: the authoritative world, where the puck damages the obstacles (see bump). A prediction
+ * (false) bounces off the same obstacles and leaves w.obs alone but for their return.
+ *
+ * Obstacles due back at the new tick (gone + RESPAWN) come back first, intact. A live puck in the
+ * way is pushed out gently, a unit clear: no kick, no damage, no bump. Paddles slide out of them
+ * like out of any obstacle, in the sub-step.
  *
  * No tunnelling at 240 Hz: the puck moves at most 2400 / 240 = 10 units per step (< PUCK_R = 28
  * against walls and posts), a paddle 7200 / 240 = 30, so the closing distance per step is at
@@ -158,13 +191,26 @@ export const spawnPoint = (team: Team, n: number, size = 1): [number, number] =>
  * On a bigger rink top speeds grow with the size, so the step runs in ceil(size) sub-steps, the
  * obstacles taken at fractional ticks: the distances per sub-step stay those above.
  */
-export const step = (w: World, dt: number): Team | -1 => {
+export const step = (w: World, dt: number, host = true): Team | -1 => {
+  const was = host ? w.bumps : undefined;
   w.hit = -1;
   w.bumps = [];
   let goal: Team | -1 = -1;
   const n = Math.ceil(w.size);
+  const at = (i: number) => obstacles(w.arena, w.tick + i / n, w.size, w.count);
+  if (dt > 0) {
+    at(1).forEach((o, i) => {
+      const st = w.obs[i];
+      if (st?.gone >= 0 && w.tick + 1 - st.gone >= RESPAWN) {
+        Object.assign(st, { hits: 0, gone: -1 });
+        if (w.live) {
+          out(w.puck, o, o.r + PUCK_R + 1, put, w.size);
+        }
+      }
+    });
+  }
   for (let i = 1; dt > 0 && i <= n; i++) {
-    const g = sub(w, dt / n, obstacles(w.arena, w.tick + i / n, w.size, w.count));
+    const g = sub(w, dt / n, at(i), was);
     if (g != -1) {
       goal = g;
     }
@@ -174,7 +220,7 @@ export const step = (w: World, dt: number): Team | -1 => {
 };
 
 /** One sub-step of step, among the obstacles obs. */
-const sub = (w: World, dt: number, obs: Obstacle[]): Team | -1 => {
+const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 => {
   const s = w.size;
   const k = w.puck;
   const m = PADDLE_MAX_SPEED * s * dt;
@@ -199,7 +245,7 @@ const sub = (w: World, dt: number, obs: Obstacle[]): Team | -1 => {
       dy *= m / d;
     }
     place(p, ox + dx, oy + dy, s);
-    avoid(p, obs, s);
+    avoid(p, w, obs);
     p.vx = (p.x - ox) / dt;
     p.vy = (p.y - oy) / dt;
   }
@@ -288,7 +334,7 @@ const sub = (w: World, dt: number, obs: Obstacle[]): Team | -1 => {
   if (hit != -1) {
     w.hit = hit;
   }
-  bump(w, obs);
+  bump(w, obs, was);
 
   // Whatever overlap is left (puck pinned against a wall, an obstacle or squeezed between paddles,
   // paddle on the serve spot) pushes the paddle back, sliding along the centre line, a wall or an
@@ -300,11 +346,11 @@ const sub = (w: World, dt: number, obs: Obstacle[]): Team | -1 => {
       if (out(p, k, RR, place, s)) {
         w.hit = p.id;
         w.live = true;
-        avoid(p, obs, s);
+        avoid(p, w, obs);
         out(k, p, RR, put, s);
       }
     }
-    bump(w, obs);
+    bump(w, obs, was);
   }
 
   const v = Math.hypot(k.vx, k.vy);
