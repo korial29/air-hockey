@@ -14,6 +14,17 @@ export const BOT = 175;
 export const CH = TOP + H + BOT;
 
 /**
+ * Smallest drawn radius of the puck and of a paddle, in CSS px. A big rink on a small canvas
+ * (8 players on a phone) would draw them at 2 to 4 px; they are drawn bigger, around their true
+ * position, while the physics keeps PUCK_R and PADDLE_R.
+ */
+export const MIN_PUCK_PX = 7;
+export const MIN_PADDLE_PX = 11;
+
+/** Radius r in world units, raised to min CSS px on screen; px is CSS px per world unit. */
+export const drawnR = (r: number, min: number, px: number): number => Math.max(r, min / px);
+
+/**
  * Client (CSS px) coordinates → world units, given the canvas bounding rect and the rink size
  * factor: the rink always fills the same part of the canvas, W · size × H · size world units.
  * y is measured from the rink's top edge: the HUD bands give negative y or y past H · size.
