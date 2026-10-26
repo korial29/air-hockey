@@ -6,6 +6,7 @@ import type { ServerText } from '../shared/protocol';
 import type { PlayerInfo, SocketLike } from '../shared/types';
 import { predict, rebase, reset, view } from './predict';
 import {
+  beacon,
   circle,
   countdown,
   hud,
@@ -244,10 +245,13 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       const { x, y, vx, vy } = s.puck;
       // Top speeds scale with the rink: so does the speed that leaves a trail.
       streak(trail, x, y, Math.hypot(vx, vy) > 1000 * size, ice ? '#2a9df4' : '#fff', pr);
+      beacon(x, y, pr, now);
       circle(x, y, pr, ice ? '#141a24' : '#fff');
       if (ice) {
         circle(x, y, pr * 0.75, '#2b3646');
       }
+      // The puck itself blinks toward a light yellow, in step with the beacon's glow.
+      circle(x, y, pr, `rgba(255,214,90,${0.15 + 0.6 * (0.5 + 0.5 * Math.sin(now / 400))})`);
       for (const p of s.paddles) {
         const info = players.get(p.id);
         const { x, y } = p;
