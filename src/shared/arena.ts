@@ -8,8 +8,15 @@
 // The sea arena (sea and pirates) is the same layout, slot for slot: rocks where the icebergs
 // are, same size, and mermaids in the penguin lanes, swimming board to board in the same period
 // and zig-zagging across their lane: a triangle wave of ZA units either side, ZN back-and-forths
-// per crossing, at 0 on the boards. Mermaids are smaller (MR) so the zig-zag keeps every gap:
-// rocks to the nearest lane 152, lane to lane ≥ 188, the pair's lanes to a centre-line paddle 146.
+// per crossing, on the lane at the boards and at mid-height. The swing is wide on purpose, so the
+// sea drops the paddle-and-puck rule while a mermaid swings toward a neighbour: rocks to the
+// nearest lane narrow down to 96 (about 1/9 of the period), the pair's lanes to a centre-line
+// paddle down to 90 (about 2/5 of it, on every inward swing). Lane to lane stays ≥ 155.
+// The puck alone always fits (every gap ≥ 90 > 2 · PUCK_R), so no obstacle traps it, and a paddle
+// caught in a squeeze is pushed out like anywhere else; cornered where a board meets the centre
+// line, it slips past the mermaid (see out in physics.ts). The serve spots stay ≥ 114 clear, as
+// on the ice. A swing passes a few units from the outer spawn column, never over it.
+// Mermaids are smaller (MR) to leave room for the swing.
 // The pair zig-zags in mirror, the centre mermaid across the centre line: half a zig on each
 // side, so it favours neither team over time.
 // A bigger rink scales all of it while paddle and puck keep their size, and fewer obstacles leave
@@ -41,10 +48,13 @@ const LANES = [
 ];
 /** Ticks for a penguin to slide there and back: 2048 divides 65536, 8.5 s at 240 Hz. */
 export const PERIOD = 2048;
-/** Mermaid zig-zag: amplitude either side of its lane, and back-and-forths per crossing. */
-const ZA = 14;
-const ZN = 4;
-/** Sideways speed of a mermaid, units per second: 4 · ZA per back-and-forth, about 52. */
+/**
+ * Mermaid zig-zag: amplitude either side of its lane, and back-and-forths per crossing. Wide enough
+ * to read at a glance: it narrows some gaps below a paddle and a puck while it swings (see top).
+ */
+export const ZA = 70;
+export const ZN = 3;
+/** Sideways speed of a mermaid, units per second: 4 · ZA per back-and-forth, about 197. */
 const ZV = (8 * ZA * ZN * TICK_HZ) / PERIOD;
 /** Obstacles kept for a count of 2 to 7 (see obstacles): bit i keeps index i of the full layout. */
 const MASKS = [0b11, 0b100011, 0b1010011, 0b1110011, 0b1011111, 0b1111111];

@@ -12,7 +12,7 @@ import {
   TICK_HZ,
   W,
 } from './constants';
-import { PERIOD, fixed, obstacles } from './arena';
+import { PERIOD, ZA, ZN, fixed, obstacles } from './arena';
 import { clampPaddle, createWorld, skate, spawnPoint, step } from './physics';
 import type { Arena, Paddle, Team, World } from './types';
 
@@ -44,6 +44,27 @@ const world = (
   w.paddles = paddles;
   w.live = true;
   return w;
+};
+
+/**
+ * Longest stretches, in steps, a live puck stays within PUCK_R of one spot: `still` anywhere,
+ * `pinned` touching an obstacle all along (held against a rock or a mermaid by a paddle).
+ */
+const stillness = () => {
+  const m = { still: 0, pinned: 0 };
+  let [x, y, n, p] = [NaN, NaN, 0, 0];
+  return Object.assign(m, {
+    see(w: World): void {
+      const k = w.puck;
+      if (w.live && Math.hypot(k.x - x, k.y - y) < PUCK_R) {
+        m.still = Math.max(m.still, ++n);
+        p = w.bumps.length ? p + 1 : 0;
+        m.pinned = Math.max(m.pinned, p);
+      } else {
+        [x, y, n, p] = [k.x, k.y, 0, 0];
+      }
+    },
+  });
 };
 
 /** Steps (on the host unless told) until a goal or `n` steps; returns the scoring team or -1. */
@@ -572,6 +593,7 @@ describe('ice arena', () => {
         return paddle(team, ...spawnPoint(team, i >> 1), i);
       });
       const w = world(W / 2, H / 2, 900, 700, paddles, arena);
+      const still = stillness();
       let worst = 0;
       let fast = 0;
       let outside = 0;
@@ -589,6 +611,7 @@ describe('ice arena', () => {
         const before = w.obs.map(o => o.gone);
         goals += +(step(w, DT) !== -1);
         bumps += w.bumps.length;
+        still.see(w);
         w.obs.forEach((o, j) => {
           removed += +(before[j] < 0 && o.gone >= 0);
           back += +(before[j] >= 0 && o.gone < 0);
@@ -619,6 +642,9 @@ describe('ice arena', () => {
       expect(goals).toBeGreaterThan(5);
       expect(removed).toBeGreaterThan(10);
       expect(back).toBeGreaterThan(10);
+      // Never stuck: in a narrow passage too, the kick throws a pinned puck clear at once.
+      expect(still.still).toBeLessThan(TICK_HZ);
+      expect(still.pinned).toBeLessThan(TICK_HZ / 10);
     },
   );
 
@@ -786,9 +812,11 @@ describe('a rink of size 2', () => {
     }
   });
 
-  it.each([3, 5, 7])(
-    'keeps every invariant through a long scrambled game among %i obstacles',
-    count => {
+  it.each(
+    [3, 5, 7].flatMap(count => ['ice', 'sea'].map(arena => [count, arena] as [number, Arena])),
+  )(
+    'keeps every invariant through a long scrambled game among %i obstacles (%s)',
+    (count, arena) => {
       let seed = count;
       const rnd = (): number => {
         seed = (seed * 1103515245 + 12345) % 2147483648;
@@ -798,7 +826,8 @@ describe('a rink of size 2', () => {
         const team = (i & 1) as Team;
         return paddle(team, ...spawnPoint(team, i >> 1, S), i);
       });
-      const w = big(X / 2, Y / 2, 900, 700, paddles, 'ice', count);
+      const w = big(X / 2, Y / 2, 900, 700, paddles, arena, count);
+      const still = stillness();
       let worst = 0;
       let bumps = 0;
       let goals = 0;
@@ -811,6 +840,7 @@ describe('a rink of size 2', () => {
         }
         goals += +(step(w, DT) !== -1);
         bumps += w.bumps.length;
+        still.see(w);
         const k = w.puck;
         expect(Number.isFinite(k.x + k.y + k.vx + k.vy)).toBe(true);
         for (const o of solid(w)) {
@@ -830,6 +860,8 @@ describe('a rink of size 2', () => {
       expect(worst).toBeLessThan(0.1);
       expect(bumps).toBeGreaterThan(10);
       expect(goals).toBeGreaterThan(2);
+      expect(still.still).toBeLessThan(TICK_HZ);
+      expect(still.pinned).toBeLessThan(TICK_HZ / 10);
     },
   );
 });
@@ -1097,20 +1129,23 @@ describe('sea arena', () => {
   });
 
   it('bounces the puck on its velocity relative to the mermaid, sideways swim included', () => {
-    /** A puck at 1500 units/s head-on into the left mermaid at tick t, from its right: its vx after. */
+    /**
+     * A puck at 2000 units/s head-on into the left mermaid at tick t, from its right: its vx after.
+     * Fast enough to leave above the kick either way, which would hide the difference.
+     */
     const shot = (t: number): [number, number] => {
       const m = obstacles('sea', t + 1)[4];
-      const w = sea(m.x + m.r + PUCK_R - 0.5, m.y, -1500, 0);
+      const w = sea(m.x + m.r + PUCK_R - 0.5, m.y, -2000, 0);
       w.tick = t;
       step(w, DT, false);
       expect(w.bumps).toEqual([4]);
       return [w.puck.vx, m.vx];
     };
-    // Swimming toward the puck, then away from it, half a zig later (128 ticks).
+    // Swimming toward the puck, then away from it, half a zig later.
     const [toward, v1] = shot(300);
-    const [away, v2] = shot(300 + 128);
-    expect(v1).toBeGreaterThan(40);
-    expect(v2).toBeLessThan(-40);
+    const [away, v2] = shot(300 + Math.round(PERIOD / (4 * ZN)));
+    const zv = (8 * ZA * ZN * TICK_HZ) / PERIOD;
+    expect([v1, v2]).toEqual([zv, -zv]);
     // Faster back by (1 + E) times the difference of the sideways swims.
     expect(toward - away).toBeCloseTo(1.9 * (v1 - v2), -1);
   });
@@ -1122,6 +1157,35 @@ describe('sea arena', () => {
       w.tick = t;
       run(w, 20, undefined, false);
       expect(w.puck.x).toBeLessThan(obstacles('sea', w.tick)[4].x);
+    }
+  });
+
+  it('slips a paddle cornered at the centre line past a mermaid swinging into it at a board', () => {
+    // The centre mermaid reaches either board from team 0's side, swinging back to its lane.
+    for (const [y, t] of [
+      [PADDLE_R, PERIOD - 200],
+      [H - PADDLE_R, PERIOD / 2 - 200],
+    ]) {
+      const p = paddle(0, W / 2 - PADDLE_R, y);
+      const w = sea(300, H / 2, 0, 0, [p]);
+      w.tick = t;
+      let near = Infinity;
+      let past = false;
+      run(
+        w,
+        400,
+        () => {
+          expect(overlap(w)).toBeLessThan(1e-6);
+          const m = obs(w)[5];
+          near = Math.min(near, Math.hypot(p.x - m.x, p.y - m.y) - m.r - PADDLE_R);
+          past ||= p.x < m.x;
+        },
+        false,
+      );
+      // It met the paddle, the paddle went round it, then back into its corner.
+      expect(near).toBeCloseTo(0, 6);
+      expect(past).toBe(true);
+      expect([p.x, p.y]).toEqual([W / 2 - PADDLE_R, y]);
     }
   });
 

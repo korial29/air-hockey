@@ -54,7 +54,9 @@ const put = (k: Puck, x: number, y: number, s: number): void => {
 /**
  * Pushes c out of circle o (an obstacle, the puck, a paddle) to the contact distance D, through
  * fix (place or put). When a wall stops it, it slides along that wall instead: a penguin at a
- * board squeezes it out sideways. Returns whether c was inside.
+ * board squeezes it out sideways. `past` (a paddle out of an obstacle): cornered there, where
+ * a board meets the centre line, it slips past to the obstacle's far side. Returns whether c was
+ * inside.
  */
 const out = <T extends Puck | Paddle>(
   c: T,
@@ -62,6 +64,7 @@ const out = <T extends Puck | Paddle>(
   D: number,
   fix: (c: T, x: number, y: number, s: number) => void,
   s: number,
+  past = false,
 ): boolean => {
   let nx = c.x - o.x;
   let ny = c.y - o.y;
@@ -78,10 +81,15 @@ const out = <T extends Puck | Paddle>(
   ny = c.y - o.y;
   if (nx * nx + ny * ny < D * D) {
     // The top or bottom wall held it: slide along x. Else the centre line or a side wall: along y.
-    if (c.y != y) {
-      fix(c, o.x + (nx < 0 ? -1 : 1) * Math.sqrt(D * D - ny * ny), c.y, s);
-    } else {
-      fix(c, c.x, o.y + (ny < 0 ? -1 : 1) * Math.sqrt(D * D - nx * nx), s);
+    const along = c.y != y;
+    const slide = (k: number): void =>
+      along
+        ? fix(c, o.x + k * (nx < 0 ? -1 : 1) * Math.sqrt(D * D - ny * ny), c.y, s)
+        : fix(c, c.x, o.y + k * (ny < 0 ? -1 : 1) * Math.sqrt(D * D - nx * nx), s);
+    slide(1);
+    // Still inside (beyond rounding): a wall holds it on the near side too, a corner. Past: far side.
+    if (past && Math.hypot(c.x - o.x, c.y - o.y) < D - 1e-6) {
+      slide(-1);
     }
   }
   return true;
@@ -138,7 +146,7 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
 
 /** A paddle out of the obstacles in play: it slides around them. */
 const avoid = (p: Paddle, w: World, obs: Obstacle[]): void =>
-  obs.forEach((o, i) => off(w, i) || out(p, o, o.r + PADDLE_R, place, w.size));
+  obs.forEach((o, i) => off(w, i) || out(p, o, o.r + PADDLE_R, place, w.size, true));
 
 /** Empty world at tick 0: puck at the centre, no paddles, 0-0, every obstacle in play, intact. */
 export const createWorld = (arena: Arena = 'ice', size = 1, count = 7): World => ({
@@ -160,7 +168,9 @@ export const createWorld = (arena: Arena = 'ice', size = 1, count = 7): World =>
  * Four columns of three, from the goal outward; the column next to the serve spot
  * (W / 4 from the goal) is 100 units away from it, more than PUCK_R + PADDLE_R. The last two
  * columns stand either side of the icebergs (x 450-460), the last one clear of the nearest
- * penguin lane (x 720): no obstacle ever covers a spawn point.
+ * penguin lane (x 720): no obstacle ever covers a spawn point. A mermaid swinging out of that lane
+ * passes a few units from the last column at sea; it is clear by the full margin at tick 0, when
+ * a round starts.
  * Past 12 paddles the grid repeats, shifted down by 60 units.
  * All of it is drawn on the base rink and scaled with the obstacles, so every clearance grows.
  */
@@ -187,8 +197,8 @@ export const spawnPoint = (team: Team, n: number, size = 1): [number, number] =>
  * No tunnelling at 240 Hz: the puck moves at most 2400 / 240 = 10 units per step (< PUCK_R = 28
  * against walls and posts), a paddle 7200 / 240 = 30, so the closing distance per step is at
  * most 40 < PUCK_R + PADDLE_R = 72: an overlap is always caught before the centres cross.
- * Penguins and mermaids (zig-zag included) move about 1 unit per step: puck to obstacle closes
- * at most 12 < 32 + 28 (the smallest obstacle, a mermaid), paddle to obstacle at most 32 < 32 + 44.
+ * Penguins and mermaids (zig-zag included) move under 1.4 units per step: puck to obstacle closes
+ * at most 11.4 < 32 + 28 (the smallest obstacle, a mermaid), paddle to obstacle 31.4 < 32 + 44.
  * On a bigger rink top speeds grow with the size, so the step runs in ceil(size) sub-steps, the
  * obstacles taken at fractional ticks: the distances per sub-step stay those above.
  */

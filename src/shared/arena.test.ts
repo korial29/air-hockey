@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PERIOD, fixed, layout, obstacles, scene } from './arena';
+import { PERIOD, ZA, ZN, fixed, layout, obstacles, scene } from './arena';
 import {
   GOAL,
   H,
@@ -17,6 +17,8 @@ import type { Arena, Obstacle, Team } from './types';
 
 /** A paddle and a puck side by side: the width every gap must leave. */
 const FIT = 2 * PADDLE_R + 2 * PUCK_R;
+/** The puck alone, with room to spare: the width every gap keeps at sea, even mid-swing. */
+const SLIP = 2 * PUCK_R + 20;
 /** Every tick of a period, plus fractional ones. */
 const TICKS = [...Array(PERIOD).keys(), 0.5, 1234.25, 2047.9];
 
@@ -276,6 +278,9 @@ describe('obstacles on a scaled rink', () => {
   it.each(['ice', 'sea'] as Arena[])(
     'keeps clear of the serve spots, the spawn points and the goal mouths at every count and size (%s)',
     arena => {
+      // At sea a mermaid swinging out of its lane passes a few units from the outer spawn column:
+      // never over a spawned paddle, and clear by the full margin at tick 0, when a round starts.
+      const spare = arena == 'sea' ? 0 : 10;
       for (const rink of RINKS) {
         const { size } = rink;
         const [X, Y] = [W * size, H * size];
@@ -287,7 +292,7 @@ describe('obstacles on a scaled rink', () => {
             for (const team of [0, 1] as Team[]) {
               for (let n = 0; n < MAX_PLAYERS; n++) {
                 const [x, y] = spawnPoint(team, n, size);
-                expect(dist(o, x, y)).toBeGreaterThan(o.r + PADDLE_R + 10);
+                expect(dist(o, x, y)).toBeGreaterThan(o.r + PADDLE_R + spare);
               }
             }
             expect(Math.min(o.x, X - o.x) - o.r).toBeGreaterThan(300);
@@ -295,6 +300,12 @@ describe('obstacles on a scaled rink', () => {
         }
         for (const o of obstacles(arena, 0, size, rink.count)) {
           expect(dist(o, X / 2, Y / 2)).toBeGreaterThan(o.r + PUCK_R + 100);
+          for (const team of [0, 1] as Team[]) {
+            for (let n = 0; n < MAX_PLAYERS; n++) {
+              const [x, y] = spawnPoint(team, n, size);
+              expect(dist(o, x, y)).toBeGreaterThan(o.r + PADDLE_R + 10);
+            }
+          }
           // A straight shot from the centre spot reaches any point of either mouth.
           expect(Math.abs(o.y - Y / 2)).toBeGreaterThan(o.r + PUCK_R + (GOAL * size) / 2);
         }
@@ -303,31 +314,28 @@ describe('obstacles on a scaled rink', () => {
     20_000,
   );
 
-  it.each(['ice', 'sea'] as Arena[])(
-    'fits a paddle and a puck side by side in every gap at every count and size (%s)',
-    arena => {
-      for (const rink of ALL) {
-        const X = W * rink.size;
-        const Y = H * rink.size;
-        for (const t of SOME) {
-          const obs = obstacles(arena, t, rink.size, rink.count);
-          obs.forEach((o, i) => {
-            if (fixed(o)) {
-              expect(Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r)).toBeGreaterThan(
-                FIT,
-              );
-            } else if (Math.abs(X / 2 - o.x) > 100 * rink.size) {
-              // A side lane to a paddle standing on the centre line, where it cannot yield.
-              expect(Math.abs(X / 2 - o.x) - o.r - 2 * PADDLE_R).toBeGreaterThan(FIT);
-            }
-            for (const q of obs.slice(i + 1)) {
-              expect(dist(o, q.x, q.y) - o.r - q.r).toBeGreaterThan(FIT);
-            }
-          });
-        }
+  it('fits a paddle and a puck side by side in every gap at every count and size', () => {
+    for (const rink of ALL) {
+      const X = W * rink.size;
+      const Y = H * rink.size;
+      for (const t of SOME) {
+        const obs = obstacles('ice', t, rink.size, rink.count);
+        obs.forEach((o, i) => {
+          if (fixed(o)) {
+            expect(Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r)).toBeGreaterThan(
+              FIT,
+            );
+          } else if (Math.abs(X / 2 - o.x) > 100 * rink.size) {
+            // A side lane to a paddle standing on the centre line, where it cannot yield.
+            expect(Math.abs(X / 2 - o.x) - o.r - 2 * PADDLE_R).toBeGreaterThan(FIT);
+          }
+          for (const q of obs.slice(i + 1)) {
+            expect(dist(o, q.x, q.y) - o.r - q.r).toBeGreaterThan(FIT);
+          }
+        });
       }
-    },
-  );
+    }
+  });
 
   it.each(['ice', 'sea'] as Arena[])(
     'cannot be tunnelled at the scaled top speeds, with ceil(size) sub-steps per tick (%s)',
@@ -372,7 +380,7 @@ describe('the sea arena', () => {
             expect(o).toEqual({ ...c, kind: 'rock' });
           } else {
             // Same lane (give or take the zig-zag), same share of the crossing, same direction.
-            expect(Math.abs(o.x - c.x)).toBeLessThan(20 * size);
+            expect(Math.abs(o.x - c.x)).toBeLessThanOrEqual(ZA * size + 1e-9);
             expect((o.y - o.r) / (H * size - 2 * o.r)).toBeCloseTo(
               (c.y - c.r) / (H * size - 2 * c.r),
               9,
@@ -390,15 +398,17 @@ describe('the sea arena', () => {
     swims.forEach((_, i) => {
       const xs = CROSSING.map(t => sea(t)[4 + i].x - LANES[i]);
       const vx = CROSSING.map(t => sea(t)[4 + i].vx);
-      // Out to about 14 units either side, evenly.
-      expect(Math.max(...xs)).toBeCloseTo(14, 6);
-      expect(Math.min(...xs)).toBeCloseTo(-14, 6);
+      // Out to ZA units either side, evenly: a swing of 120 units or more, plain to see.
+      expect(ZA).toBeGreaterThanOrEqual(60);
+      expect(Math.max(...xs)).toBeCloseTo(ZA, 6);
+      expect(Math.min(...xs)).toBeCloseTo(-ZA, 6);
       // On the lane where it touches a board.
       expect(xs[0]).toBeCloseTo(0, 9);
       expect(sea(PERIOD / 2)[4 + i].x).toBeCloseTo(LANES[i], 9);
-      // Turns: four back-and-forths per crossing.
+      // Turns: ZN back-and-forths per crossing, a few.
       const turns = vx.filter((v, t) => t && Math.sign(v) != Math.sign(vx[t - 1])).length;
-      expect(turns).toBe(8);
+      expect(turns).toBe(2 * ZN);
+      expect(ZN).toBeGreaterThanOrEqual(3);
     });
   });
 
@@ -418,8 +428,8 @@ describe('the sea arena', () => {
           sideways = Math.max(sideways, Math.abs(o.vx));
         });
       }
-      // About 52 units/s sideways, 250 board to board, scaled.
-      expect(sideways / size).toBeCloseTo(52.5, 6);
+      // 4 · ZA per back-and-forth, ZN of them per crossing (about 197 units/s), scaled.
+      expect(sideways / size).toBeCloseTo((8 * ZA * ZN * TICK_HZ) / PERIOD, 6);
     }
   });
 
@@ -448,7 +458,7 @@ describe('the sea arena', () => {
         const obs = obstacles('sea', t, rink.size, rink.count);
         expect(obs).toHaveLength(rink.count);
         for (const o of obs) {
-          if (Math.abs(o.x - X / 2) < 50 * rink.size) {
+          if (Math.abs(o.x - X / 2) <= (ZA + 1) * rink.size) {
             // The centre mermaid, counted over the ticks of a period.
             if (t % 1) {
               continue;
@@ -484,24 +494,76 @@ describe('the sea arena', () => {
     }
   });
 
-  it('fits a paddle and a puck in every gap at every tick, with the narrowest margins named', () => {
+  it('fits the puck alone in every gap at every tick, count and size: no obstacle traps it', () => {
+    for (const rink of ALL) {
+      const X = W * rink.size;
+      const Y = H * rink.size;
+      for (const t of [...Array(PERIOD).keys(), 0.5, 1234.25, 2047.9]) {
+        const obs = obstacles('sea', t, rink.size, rink.count);
+        obs.forEach((o, i) => {
+          if (fixed(o)) {
+            // Rocks to the boards and the side walls: a paddle and a puck, as on the ice.
+            expect(Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r)).toBeGreaterThan(
+              FIT,
+            );
+          } else if (Math.abs(X / 2 - o.x) > (ZA + 1) * rink.size) {
+            // A side lane to a paddle standing on the centre line, where it cannot yield.
+            expect(Math.abs(X / 2 - o.x) - o.r - 2 * PADDLE_R).toBeGreaterThan(SLIP);
+          }
+          for (const q of obs.slice(i + 1)) {
+            expect(dist(o, q.x, q.y) - o.r - q.r).toBeGreaterThan(SLIP);
+          }
+        });
+      }
+    }
+  });
+
+  it('narrows a gap below a paddle and a puck only while a mermaid swings toward it', () => {
+    const [a, , b, , { r }] = sea(0);
+    const lane = LANES[0];
+    /** Every quarter tick of a period. */
+    const QUARTERS = [...Array(4 * PERIOD).keys()].map(t => t / 4);
     let rockToLane = Infinity;
     let laneToLane = Infinity;
     let toLine = Infinity;
-    for (const t of [...Array(PERIOD).keys()]) {
-      const [a, , b, , left, mid] = sea(t);
-      for (const o of [a, b]) {
-        rockToLane = Math.min(rockToLane, dist(o, left.x, left.y) - o.r - left.r);
+    let rockTight = 0;
+    let lineTight = 0;
+    for (const t of QUARTERS) {
+      const [, , , , left, mid, right] = sea(t);
+      const rock = Math.min(...[a, b].map(o => dist(o, left.x, left.y) - o.r - left.r));
+      const line = W / 2 - 2 * PADDLE_R - (left.x + left.r);
+      rockToLane = Math.min(rockToLane, rock);
+      toLine = Math.min(toLine, line);
+      laneToLane = Math.min(
+        laneToLane,
+        ...[left, right].map(o => dist(o, mid.x, mid.y) - o.r - mid.r),
+      );
+      // A squeeze only on the side the mermaid swings to.
+      if (rock < FIT) {
+        rockTight++;
+        expect(left.x).toBeLessThan(lane);
       }
-      rockToLane = Math.min(rockToLane, left.x - left.r - Math.max(a.x + a.r, b.x + b.r));
-      laneToLane = Math.min(laneToLane, mid.x - mid.r - (left.x + left.r));
-      toLine = Math.min(toLine, W / 2 - 2 * PADDLE_R - (left.x + left.r));
+      if (line < FIT) {
+        lineTight++;
+        expect(left.x).toBeGreaterThan(lane);
+      }
     }
-    expect(rockToLane).toBeCloseTo(152, 6);
-    // The centre mermaid zig-zags in step with the pair: 216 at every instant, 188 at worst.
-    expect(laneToLane).toBeGreaterThanOrEqual(188);
-    expect(toLine).toBeCloseTo(146, 6);
-    expect(Math.min(rockToLane, laneToLane, toLine)).toBeGreaterThan(FIT);
+    // Rocks to the nearest lane: down to about 96, the full outward swing side on, in the rocks'
+    // rows only: under 1/8 of the period.
+    expect(rockToLane).toBeLessThan(FIT);
+    expect(rockToLane).toBeGreaterThanOrEqual(
+      lane - ZA - r - Math.max(a.x + a.r, b.x + b.r) - 1e-9,
+    );
+    expect(rockTight / QUARTERS.length).toBeLessThan(1 / 8);
+    // The pair's lanes to a centre-line paddle: 90 at the full inward swing, below a paddle and a
+    // puck once the swing passes d, on every inward half-zig: (1 - d / ZA) / 2 of the period.
+    const d = W / 2 - 2 * PADDLE_R - FIT - r - lane;
+    expect(toLine).toBeCloseTo(W / 2 - 2 * PADDLE_R - (lane + ZA + r), 6);
+    expect(lineTight / QUARTERS.length).toBeCloseTo((1 - d / ZA) / 2, 2);
+    // Lane to lane: a paddle and a puck at every instant.
+    expect(laneToLane).toBeGreaterThan(FIT);
+    // The puck alone, always.
+    expect(Math.min(rockToLane, toLine)).toBeGreaterThan(SLIP);
   });
 
   it.each([
