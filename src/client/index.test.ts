@@ -311,6 +311,144 @@ describe('airHockey', () => {
     expect(document.body.childElementCount).toBe(0);
   });
 
+  it('counts down 3, 2, 1 over the rink centre, then PLAY! for 600 ms; nothing in other phases', () => {
+    const texts = fakeContext();
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    const send = (phase: string, left?: number) =>
+      socket.onmessage!({
+        data: JSON.stringify({
+          t: 'match',
+          phase,
+          left,
+          round: 1,
+          rounds: 3,
+          goals: 10,
+          wins: [0, 0],
+        }),
+      });
+    const OVERLAY = ['3', '2', '1', 'PLAY!'];
+    /** The overlay texts drawn at time t (the shadow, then the label). */
+    const at = (t: number) => {
+      clock.mockReturnValue(t);
+      texts.length = texts.at.length = texts.alphas.length = 0;
+      frame(0);
+      return texts.filter(s => OVERLAY.includes(s));
+    };
+    socket.onopen!();
+    socket.onmessage!({
+      data: JSON.stringify({
+        t: 'roster',
+        you: 3,
+        players: [{ id: 3, name: 'Ana', color: '#f00', team: 0 }],
+      }),
+    });
+    socket.onmessage!({
+      data: encodeSnapshot({
+        tick: 1,
+        score: [0, 0],
+        puck: { x: 1000, y: 560, vx: 0, vy: 0 },
+        paddles: [{ id: 3, x: 400, y: 450 }],
+      }),
+    });
+
+    send('wait');
+    expect(at(1000)).toEqual([]);
+    send('ready', 3000);
+    expect(at(1000)).toEqual(['3', '3']);
+    // The round line stays in the top band.
+    expect(texts).toContain('Round 1/3 · 0–0 · first to 10');
+    // Big, over the rink centre: on a 300 px canvas (0.15 px per unit), some 70 px tall.
+    /** Canvas px of the label (drawn after its shadow) at time t. */
+    const size = (t: number) => (at(t), texts.at.filter(([s]) => OVERLAY.includes(s)).at(-1)![2]);
+    expect(texts.ys.get('3')).toBeCloseTo(TOP + 1125 / 2);
+    expect(size(1000)).toBeGreaterThan(60);
+    // Pops in big, settles, then swells and fades out within its second.
+    expect(size(1000)).toBeGreaterThan(size(1300));
+    expect(size(1900)).toBeGreaterThan(size(1300));
+    expect(at(1950)).toEqual(['3', '3']);
+    expect(Math.min(...texts.alphas)).toBeLessThan(0.2);
+    expect(at(2000)).toEqual(['2', '2']);
+    expect(at(2999)).toEqual(['2', '2']);
+    expect(at(3500)).toEqual(['1', '1']);
+    // A late 'play' message: 1 stays (faded out), never 0.
+    expect(at(4100)).toEqual(['1', '1']);
+
+    send('play');
+    expect(at(4100)).toEqual(['PLAY!', 'PLAY!']);
+    expect(at(4650)).toEqual(['PLAY!', 'PLAY!']);
+    expect(at(4700)).toEqual([]);
+    expect(at(9000)).toEqual([]);
+
+    // A joiner mid-countdown counts from the time left in its message.
+    send('ready', 1200);
+    expect(at(9000)).toEqual(['2', '2']);
+    expect(at(9300)).toEqual(['1', '1']);
+    // Back to waiting (a team emptied): no countdown, no PLAY!.
+    send('wait');
+    expect(at(9300)).toEqual([]);
+    // 'play' that does not end a countdown (a refit after a goal): no PLAY!.
+    send('play');
+    expect(at(9300)).toEqual([]);
+    send('break');
+    expect(at(9300)).toEqual([]);
+    game.destroy();
+  });
+
+  it('moves the own paddle in the countdown and keeps the pointer as its target into play', () => {
+    const texts = fakeContext();
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    socket.onopen!();
+    const canvas = document.body.firstElementChild!.shadowRoot!.querySelector('canvas')!;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 }) as DOMRect;
+    const players = [{ id: 3, name: 'Ana', color: '#f00', team: 0 }];
+    socket.onmessage!({ data: JSON.stringify({ t: 'roster', you: 3, players }) });
+    const send = (phase: string) =>
+      socket.onmessage!({
+        data: JSON.stringify({ t: 'match', phase, left: 3000, round: 1, wins: [0, 0] }),
+      });
+    const snap = (y: number) =>
+      socket.onmessage!({
+        data: encodeSnapshot({
+          tick: 1,
+          score: [0, 0],
+          puck: { x: 1000, y: 560, vx: 0, vy: 0 },
+          paddles: [{ id: 3, x: 400, y }],
+        }),
+      });
+    /** Field y of the own paddle's name (drawn above it, before the HUD lists it) at time t. */
+    const name = (t: number) => {
+      clock.mockReturnValue(t);
+      texts.at.length = 0;
+      frame(0);
+      return texts.at.find(([s]) => s == 'Ana')![1];
+    };
+    send('ready');
+    snap(450);
+    const still = name(0);
+    // Pointer at y 250: the input goes out, and the paddle gets there locally within 100 ms.
+    canvas.dispatchEvent(new MouseEvent('pointermove', { clientX: 100, clientY: 180 }));
+    const moved = name(100);
+    expect(decodeInput(socket.sent.at(-1) as ArrayBuffer)).toEqual({ x: 250, y: 250 });
+    expect(moved).toBeCloseTo(still - 200 * 0.15);
+    // Play: the host had it half-way; the pointer, still, remains the target.
+    send('play');
+    snap(350);
+    expect(name(200)).toBeCloseTo(moved);
+    // A new round (respawn): the target is dropped, the paddle stays where the host has it.
+    send('ready');
+    snap(450);
+    expect(name(300)).toBeCloseTo(still);
+    game.destroy();
+  });
+
   it('draws the ice arena with its obstacles and hit animations, and the classic one', () => {
     const texts = fakeContext();
     let frame: FrameRequestCallback = () => {};

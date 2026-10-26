@@ -594,6 +594,19 @@ export const veil = (color: string, label = '') => {
   text(label, W / 2, H / 2, f * 2);
 };
 
+/**
+ * The countdown over the rink centre, in rink coordinates: q goes 0 → 1 over each label, which
+ * pops in big, settles, then swells and fades out. About 40 % of the rink height: some 80 CSS px
+ * on a 343 px wide phone.
+ */
+export const countdown = (label: string, q: number, color = '#fff') => {
+  const z = H * 0.42 * (1 + 0.4 * q + 0.5 * (1 - q) ** 8);
+  c.globalAlpha = 1 - q * q;
+  text(label, W / 2 + z / 30, H / 2 + z / 30, z, 'center', '#0006', W * 0.9);
+  text(label, W / 2, H / 2, z, 'center', color, W * 0.9);
+  c.globalAlpha = 1;
+};
+
 const side = (t?: Team) => (t ? 'Right' : 'Left');
 
 /** Score and round line in the band above the rink, team rosters in the band below. */
@@ -620,7 +633,7 @@ export const hud = (
         ? `Left ${wins.join(' – ')} Right`
         : phase == 'wait'
           ? 'Waiting for a player on each side'
-          : phase == 'play'
+          : phase == 'play' || phase == 'ready'
             ? `Round ${round}/${rounds} · ${wins.join('–')} · first to ${goals}`
             : ''),
     W / 2,

@@ -101,6 +101,8 @@ export interface Rules {
   matchWin: number;
   /** Uneven teams: the smaller team starts each round with headStart goals per missing player. */
   headStart: number;
+  /** Countdown before each round, in seconds: paddles move, the puck waits. 0: none. */
+  readySec: number;
   /** Pause after a round, in seconds. */
   breakSec: number;
   /** Time the final ranking stays on screen before a new match, in seconds. */
@@ -109,9 +111,10 @@ export interface Rules {
 
 /**
  * wait: fewer than one player per team, free play, nothing counted.
+ * ready: countdown before a round: paddles move, the puck and the obstacles wait.
  * play: a round is on. break: between rounds. end: final ranking shown.
  */
-export type Phase = 'wait' | 'play' | 'break' | 'end';
+export type Phase = 'wait' | 'ready' | 'play' | 'break' | 'end';
 
 /** One line of the individual ranking. */
 export interface Rank {

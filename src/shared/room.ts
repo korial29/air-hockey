@@ -1,6 +1,6 @@
 import { layout } from './arena';
 import { MAX_NAME, MAX_PLAYERS, RULES, SNAP_EVERY, TICK_HZ } from './constants';
-import { clampPaddle, createWorld, spawnPoint, step } from './physics';
+import { clampPaddle, createWorld, skate, spawnPoint, step } from './physics';
 import { decodeInput, encodeSnapshot, parseText } from './protocol';
 import type { ClientText, ServerText } from './protocol';
 import type { Conn, Every, Paddle, Phase, PlayerInfo, Rank, Rules, Team, World } from './types';
@@ -71,7 +71,7 @@ export class Room {
   private rules: Rules;
   /** The match state, as broadcast. */
   private m: Match;
-  /** Ticks left in 'break' or 'end'. */
+  /** Ticks left in 'ready', 'break' or 'end'. */
   private timer = 0;
   /** Last toucher of the puck; none after a serve or a goal. */
   private last: Player | undefined;
@@ -146,7 +146,13 @@ export class Room {
     }
     const { rules, m, world: w } = this;
     const { phase } = m;
-    if (phase === 'break' || phase === 'end') {
+    if (phase === 'ready') {
+      // Countdown: the paddles get into position, the puck, the obstacles and w.tick wait.
+      skate(w, 1 / TICK_HZ);
+      if (--this.timer < 1) {
+        this.go('play');
+      }
+    } else if (phase === 'break' || phase === 'end') {
       // Frozen: no physics, snapshots still go out.
       if (--this.timer < 1) {
         if (phase === 'break') {
@@ -191,8 +197,8 @@ export class Room {
     }
     if (++this.ticks % SNAP_EVERY === 0) {
       // One buffer for everyone: transports must not mutate it. The world tick (u16 on the wire)
-      // places the obstacles; it stands still in 'break' and 'end', like the penguins. Their
-      // state travels as ticks since removal, which survive the wrap.
+      // places the obstacles; it stands still in 'ready', 'break' and 'end', like the penguins.
+      // Their state travels as ticks since removal, which survive the wrap.
       this.broadcast(
         encodeSnapshot({
           tick: w.tick,
@@ -283,7 +289,7 @@ export class Room {
     };
     const player: Player = { conn, info, paddle };
     const { phase } = this.m;
-    if (phase === 'play' || phase === 'break') {
+    if (phase !== 'wait' && phase !== 'end') {
       // Back in the same match under the same name: the stats come back.
       let r = this.stats.find(r => r.left && r.name === info.name);
       if (r) {
@@ -300,7 +306,7 @@ export class Room {
       if (this.fit()) {
         this.go(this.m.phase);
       } else {
-        conn.send(JSON.stringify(this.m));
+        conn.send(this.told());
       }
     }
   }
@@ -351,21 +357,18 @@ export class Room {
   }
 
   /**
-   * In 'wait' the rink follows arrivals and departures: when the joined players call for another
-   * one, the world moves onto it (see shape), the score kept. The caller tells the clients.
-   * Returns whether it did.
-   */
-  /**
    * Moves the world onto the rink the joined players call for, when that is fair: while waiting,
-   * or mid-round while the puck waits at its serve spot (round start, after a goal) and nobody has
-   * touched it yet. The puck keeps its serve spot, scaled; the score stays.
+   * during the countdown, or mid-round while the puck waits at its serve spot (after a goal) and
+   * nobody has touched it yet. Paddles respawn on it (see shape), the puck keeps its serve spot,
+   * scaled; the score stays, so does the countdown. The caller tells the clients.
+   * Returns whether it did.
    */
   private fit(): boolean {
     const { size, count } = layout(this.size);
     const w = this.world;
     const { phase } = this.m;
     if (
-      !(phase === 'wait' || (phase === 'play' && !w.live)) ||
+      !(phase === 'wait' || phase === 'ready' || (phase === 'play' && !w.live)) ||
       (size === w.size && count === w.count)
     ) {
       return false;
@@ -400,20 +403,26 @@ export class Room {
 
   /**
    * Next round, on the rink for the players joined right now (set until the next round):
-   * paddles back to their spawn points, puck served, head start for the smaller team.
+   * paddles back to their spawn points, puck served, head start for the smaller team, then the
+   * readySec countdown (none at 0) before play.
    */
   private next(): void {
     const [a, b] = this.shape([0, 0]);
-    const { goals, headStart } = this.rules;
+    const { goals, headStart, readySec } = this.rules;
     this.world.score[a < b ? 0 : 1] = Math.min(goals - 1, headStart * Math.abs(a - b));
     this.m.round++;
-    this.go('play');
+    this.timer = Math.round(readySec * TICK_HZ);
+    this.go(this.timer > 0 ? 'ready' : 'play');
   }
 
-  /** Phase change, broadcast. 'break' and 'end' carry the winner and the ranking at that time. */
+  /**
+   * Phase change, broadcast. 'break' and 'end' carry the winner and the ranking at that time,
+   * 'ready' the time left (see told).
+   */
   private go(phase: Phase, winner?: Team): void {
     Object.assign(this.m, {
       phase,
+      left: undefined,
       winner,
       ranking:
         winner === undefined
@@ -422,7 +431,19 @@ export class Room {
               (a, b) => b.points - a.points || b.goals - a.goals || b.hits - a.hits,
             ),
     });
-    this.broadcast(JSON.stringify(this.m));
+    this.broadcast(this.told());
+  }
+
+  /**
+   * The match message as of now. In 'ready' it carries the ms left until play: a client counts
+   * down from when it gets the message, a joiner mid-countdown included, all of them late by
+   * their own latency only, like the 'play' message that ends it.
+   */
+  private told(): string {
+    if (this.m.phase === 'ready') {
+      this.m.left = Math.round((this.timer * 1000) / TICK_HZ);
+    }
+    return JSON.stringify(this.m);
   }
 
   /** Each joined peer gets the full roster with its own id. */
