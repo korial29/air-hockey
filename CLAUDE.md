@@ -6,11 +6,11 @@ Tiny multiplayer air hockey for the browser. Zero runtime dependencies on the cl
 
 | Path | Role |
 | --- | --- |
-| `src/shared/constants.ts` | Field size, radii, rates, network scale |
+| `src/shared/constants.ts` | Field size, radii, rates, network scale, default match rules (`RULES`) |
 | `src/shared/types.ts` | World, Snapshot, PlayerInfo, SocketLike, Conn |
 | `src/shared/protocol.ts` | Wire format: JSON text frames + binary input/snapshot frames |
 | `src/shared/physics.ts` | Fixed-step physics, shared by host and client prediction |
-| `src/shared/room.ts` | One game, transport-agnostic: roster, colours, teams, tick loop |
+| `src/shared/room.ts` | One game, transport-agnostic: roster, colours, teams, tick loop, match (rounds, points, ranking) |
 | `src/server/` | Node `ws` adapter (`air-hockey/server`) and its CLI |
 | `src/local/` | Same-browser multiplayer over BroadcastChannel (`air-hockey/local`) |
 | `src/client/` | Canvas renderer, input, interpolation, public `airHockey()` API |

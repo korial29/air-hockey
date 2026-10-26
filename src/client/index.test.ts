@@ -169,8 +169,8 @@ describe('airHockey', () => {
     socket.onmessage!({
       data: encodeSnapshot({ tick: 1, score: [4, 2], puck: { x: 1, y: 1 }, paddles: [] }),
     });
-    send({ phase: 'play', round: 2, wins: [1, 0] });
-    expect(draw()).toEqual(expect.arrayContaining(['4 : 2', 'Round 2 · 1–0']));
+    send({ phase: 'play', round: 2, rounds: 3, goals: 10, wins: [1, 0] });
+    expect(draw()).toEqual(expect.arrayContaining(['4 : 2', 'Round 2/3 · 1–0 · first to 10']));
 
     const ranking = [rank(1, 0, 2), rank(2, 0, 5), rank(3, 1, 0, true)];
     send({ phase: 'break', round: 2, wins: [2, 0], winner: 0, ranking });

@@ -16,6 +16,9 @@ export type ServerText =
       phase: Phase;
       /** Current round, from 1; 0 in 'wait'. */
       round: number;
+      /** Effective rules: goals that win a round, rounds in a match (best of). */
+      goals: number;
+      rounds: number;
       /** Rounds won by each team. */
       wins: [number, number];
       /** 'break': the team that won the round. 'end': the team that won the match. */

@@ -97,7 +97,7 @@ describe('Room', () => {
     expect(room.size).toBe(1);
     expect(texts(a)).toEqual([
       { t: 'roster', you: 0, players: [{ id: 0, name: 'Ann', color: 'hsl(0 80% 55%)', team: 0 }] },
-      { t: 'match', phase: 'wait', round: 0, wins: [0, 0] },
+      { t: 'match', phase: 'wait', round: 0, wins: [0, 0], goals: 10, rounds: 3 },
     ]);
 
     const b = join(room, 'Bob');
@@ -349,7 +349,7 @@ describe('Room tournament', () => {
 
   it('waits for one player per team, then starts round 1 with the newcomer told right after his roster', () => {
     const a = join(room, 'A');
-    expect(lastMatch(a)).toEqual({ t: 'match', phase: 'wait', round: 0, wins: [0, 0] });
+    expect(lastMatch(a)).toMatchObject({ t: 'match', phase: 'wait', round: 0, wins: [0, 0] });
     // Free play: touches and goals count for nobody.
     touch(0, 1);
     expect(snap(a).score).toEqual([0, 1]);
@@ -357,8 +357,8 @@ describe('Room tournament', () => {
     const b = join(room, 'B');
     const play = { t: 'match', phase: 'play', round: 1, wins: [0, 0] };
     expect(texts(b).map(m => m.t)).toEqual(['roster', 'match']);
-    expect(lastMatch(b)).toEqual(play);
-    expect(lastMatch(a)).toEqual(play);
+    expect(lastMatch(b)).toMatchObject(play);
+    expect(lastMatch(a)).toMatchObject(play);
     // Round start: 0-0, paddles back on their spawn points.
     expect(snap(a)).toMatchObject({
       score: [0, 0],
@@ -420,7 +420,7 @@ describe('Room tournament', () => {
     expect(binaries(a).length).toBeGreaterThan(sent);
     expect(decodeSnapshot(binaries(a).at(-1)!)!.score).toEqual([2, 0]);
     room.tick();
-    expect(lastMatch(a)).toEqual({ t: 'match', phase: 'play', round: 2, wins: [1, 0] });
+    expect(lastMatch(a)).toMatchObject({ t: 'match', phase: 'play', round: 2, wins: [1, 0] });
     expect(physics.steps).toBe(steps);
     expect(snap(a)).toMatchObject({
       score: [0, 0],
@@ -531,7 +531,7 @@ describe('Room tournament', () => {
     touch(0);
     const c = join(room, 'C');
     expect(texts(c).map(m => m.t)).toEqual(['roster', 'match']);
-    expect(lastMatch(c)).toEqual({ t: 'match', phase: 'play', round: 1, wins: [0, 0] });
+    expect(lastMatch(c)).toMatchObject({ t: 'match', phase: 'play', round: 1, wins: [0, 0] });
     expect(me(c).team).toBe(0);
     winRound(a, 1);
     expect(line(a, 'A')).toMatchObject({ points: 1, hits: 1 });
@@ -547,14 +547,14 @@ describe('Room tournament', () => {
       goal(0);
     }
     room.disconnect(b);
-    expect(lastMatch(a)).toEqual({ t: 'match', phase: 'wait', round: 0, wins: [0, 0] });
+    expect(lastMatch(a)).toMatchObject({ t: 'match', phase: 'wait', round: 0, wins: [0, 0] });
     // Free play again: physics runs, the score is left as is.
     const steps = physics.steps;
     expect(snap(a).score).toEqual(brk ? [2, 0] : [1, 0]);
     expect(physics.steps).toBe(steps + SNAP_EVERY);
 
     join(room, 'B');
-    expect(lastMatch(a)).toEqual({ t: 'match', phase: 'play', round: 1, wins: [0, 0] });
+    expect(lastMatch(a)).toMatchObject({ t: 'match', phase: 'play', round: 1, wins: [0, 0] });
     winRound(a, 1);
     expect(line(a, 'A')).toMatchObject({ points: 0, hits: 0 });
   });
@@ -572,7 +572,7 @@ describe('Room tournament', () => {
     expect(matches(a)).toHaveLength(n);
     expect(physics.steps).toBe(steps);
     room.tick();
-    expect(lastMatch(a)).toEqual({ t: 'match', phase: 'play', round: 1, wins: [0, 0] });
+    expect(lastMatch(a)).toMatchObject({ t: 'match', phase: 'play', round: 1, wins: [0, 0] });
     winRound(a, 1);
     expect(line(a, 'A')).toMatchObject({ points: 0, hits: 0, goals: 0 });
   });
@@ -585,7 +585,7 @@ describe('Room tournament', () => {
     room.disconnect(b);
     expect(lastMatch(a)).toMatchObject({ phase: 'end', winner: 0 });
     ticks(12);
-    expect(lastMatch(a)).toEqual({ t: 'match', phase: 'wait', round: 0, wins: [0, 0] });
+    expect(lastMatch(a)).toMatchObject({ t: 'match', phase: 'wait', round: 0, wins: [0, 0] });
   });
 
   it('ranks by points, then goals, then hits, then who got there first', () => {

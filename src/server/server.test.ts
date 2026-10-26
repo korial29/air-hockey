@@ -136,7 +136,13 @@ describe('serve', () => {
       { ...RULES, goals: 3 },
       { ...RULES, goals: 3 },
     ]);
-    expect(a.texts.at(-1)).toEqual({ t: 'match', phase: 'wait', round: 0, wins: [0, 0] });
+    expect(a.texts.at(-1)).toMatchObject({
+      t: 'match',
+      phase: 'wait',
+      round: 0,
+      wins: [0, 0],
+      goals: 3,
+    });
   });
 
   it('closes the HTTP server it created', async () => {

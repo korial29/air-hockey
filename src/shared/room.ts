@@ -29,7 +29,14 @@ const cleanName = (raw: unknown): string =>
     .trim();
 
 const fresh = (info: PlayerInfo): Rank => ({ ...info, points: 0, goals: 0, hits: 0 });
-const idle = (): Match => ({ t: 'match', phase: 'wait', round: 0, wins: [0, 0] });
+const idle = ({ goals, rounds }: Rules): Match => ({
+  t: 'match',
+  phase: 'wait',
+  round: 0,
+  wins: [0, 0],
+  goals,
+  rounds,
+});
 
 const setEvery: Every = (cb, ms) => {
   const id = setInterval(cb, ms);
@@ -48,7 +55,7 @@ export class Room {
   private halt: (() => void) | undefined;
   private rules: Rules;
   /** The match state, as broadcast. */
-  private m = idle();
+  private m: Match;
   /** Ticks left in 'break' or 'end'. */
   private timer = 0;
   /** Last toucher of the puck; none after a serve or a goal. */
@@ -62,6 +69,7 @@ export class Room {
   /** Missing rules fall back to RULES. */
   public constructor(rules: Partial<Rules> = {}) {
     this.rules = { ...RULES, ...rules };
+    this.m = idle(this.rules);
   }
 
   /** Number of joined players. */
@@ -281,7 +289,7 @@ export class Room {
     if (!due && (on ? phase !== 'wait' : phase === 'wait' || (phase === 'end' && this.size))) {
       return false;
     }
-    this.m = idle();
+    this.m = idle(this.rules);
     if (on) {
       this.stats = this.players().map(p => (p.rank = fresh(p.info)));
       this.next();

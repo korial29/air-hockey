@@ -27,6 +27,8 @@ const libBuild = {
   emptyOutDir: false,
   target: 'es2022',
   minify: true,
+  // Vite keeps whitespace in ES library output; ship it fully minified.
+  rolldownOptions: { output: { minify: true } },
 };
 
 const serverBuild = {

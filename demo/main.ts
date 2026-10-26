@@ -2,6 +2,12 @@ import { airHockey } from '../src/client';
 import type { AirHockey } from '../src/client';
 import { localSocket } from '../src/local';
 
+const q = new URLSearchParams(location.search);
+// ?goals=2&rounds=1 shortens local matches (the host tab's values win).
+const rules = Object.fromEntries(
+  ['goals', 'rounds'].filter(k => q.has(k)).map(k => [k, Number(q.get(k))]),
+);
+
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const form = $<HTMLFormElement>('form');
 const fields = form.elements as unknown as Record<'name' | 'mode' | 'url', HTMLInputElement>;
@@ -20,7 +26,7 @@ const join = () => {
   const url = fields.url.value;
   game = airHockey($('game'), {
     name,
-    ...(server ? { url } : { socket: localSocket('demo') }),
+    ...(server ? { url } : { socket: localSocket('demo', rules) }),
   });
   status.textContent = server ? `Playing on ${url}` : 'Playing locally';
   game.on('close', () => (status.textContent = 'Disconnected'));
@@ -43,7 +49,6 @@ form.addEventListener('submit', e => {
 $('leave').addEventListener('click', leave);
 
 // ?name=…&mode=local|server&url=… joins right away.
-const q = new URLSearchParams(location.search);
 fields.name.value = q.get('name') ?? `Player ${Math.floor(Math.random() * 900) + 100}`;
 fields.mode.value = q.get('mode') == 'server' ? 'server' : 'local';
 fields.url.value = q.get('url') ?? fields.url.value;

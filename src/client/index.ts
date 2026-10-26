@@ -93,6 +93,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     } else if (m?.t == 'match') {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { t, ...rest } = m;
+      // The host puts paddles back on their spawn points at round start: drop the prediction
+      // until the pointer moves again, or our paddle would be drawn where it no longer is.
+      me = undefined;
       emit('match', (match = rest));
     } else if (m?.t == 'full') {
       msg = 'Room is full';
@@ -171,7 +174,8 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         const [x, y] = p.id == you && me ? me : [p.x, p.y];
         circle(x, y, PADDLE_R, info?.color ?? '#888');
         circle(x, y, PADDLE_R / 2, '#0003');
-        text(info?.name ?? '', x, y - PADDLE_R - f / 2);
+        // Above the paddle, or below it against the top wall.
+        text(info?.name ?? '', x, y < PADDLE_R + f ? y + PADDLE_R + f / 2 : y - PADDLE_R - f / 2);
       }
       text(s.score.join(' : '), W / 2, f * 1.5, f * 2);
     }
@@ -184,13 +188,13 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       }),
     );
 
-    const { phase, round = 0, wins = [0, 0], winner, ranking = [] } = match ?? {};
+    const { phase, round = 0, rounds, goals, wins = [0, 0], winner, ranking = [] } = match ?? {};
     const a = 1 - (now - goalAt) / 600;
     if (phase == 'wait' || phase == 'play') {
       text(
         phase == 'wait'
           ? 'Waiting for a player on each side'
-          : `Round ${round} · ${wins.join('–')}`,
+          : `Round ${round}/${rounds} · ${wins.join('–')} · first to ${goals}`,
         W / 2,
         f * 3.2,
       );
