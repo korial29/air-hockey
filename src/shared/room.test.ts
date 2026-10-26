@@ -6,12 +6,14 @@ import { Room } from './room';
 import type { Arena, Conn, PlayerInfo, Team, World } from './types';
 
 // The room is tested against a fake physics: paddles jump to their target,
-// the toucher and the goal outcome of the next step are driven by the test.
+// the toucher, the goal outcome and the obstacles broken by the next step are driven by the test.
 // New worlds start at tick `tick0` and record their arena and geometry in `arenas` and `rinks`.
 // Spawn points and the input clamp scale with the size like the real ones.
 const physics = vi.hoisted(() => ({
   goal: -1 as -1 | 0 | 1,
   hit: -1,
+  /** Obstacle indices the next step breaks: one more hit, removed on the second. */
+  breaks: [] as number[],
   steps: 0,
   tick0: 0,
   arenas: [] as string[],
@@ -26,6 +28,7 @@ vi.mock('./physics', () => ({
     tick: physics.tick0,
     bumps: [],
     live: false,
+    obs: Array.from({ length: count }, () => ({ hits: 0, gone: -1, angle: 0 })),
     puck: { x: 800, y: 450, vx: 0, vy: 0 },
     paddles: [],
     score: [0, 0],
@@ -42,6 +45,14 @@ vi.mock('./physics', () => ({
   step: (w: World): Team | -1 => {
     physics.steps++;
     w.tick++;
+    physics.breaks.forEach(i => {
+      const o = w.obs[i];
+      o.angle = 1.5;
+      if (++o.hits > 1) {
+        o.gone = w.tick;
+      }
+    });
+    physics.breaks = [];
     w.hit = physics.hit;
     physics.hit = -1;
     // As in physics: a touch puts the puck in play, a goal serves it again.
@@ -100,7 +111,7 @@ describe('Room', () => {
   let room: Room;
 
   beforeEach(() => {
-    Object.assign(physics, { goal: -1, hit: -1, tick0: 0, arenas: [], rinks: [] });
+    Object.assign(physics, { goal: -1, hit: -1, breaks: [], tick0: 0, arenas: [], rinks: [] });
     room = new Room();
   });
 
@@ -334,6 +345,37 @@ describe('Room', () => {
     expect(ticks()).toEqual([65534, 2, 6]);
   });
 
+  it('sends the obstacle states in every snapshot, removal as ticks since, the wrap survived', () => {
+    physics.tick0 = 65530;
+    room = new Room();
+    const a = join(room);
+    const obs = () => decodeSnapshot(binaries(a).at(-1)!)!.obs!.map(o => [o.hits, o.since]);
+    for (let i = 0; i < SNAP_EVERY; i++) {
+      room.tick();
+    }
+    expect(obs()).toEqual([
+      [0, -1],
+      [0, -1],
+    ]);
+    // Obstacle 1: one hit, then removed at tick 65536 (0 on the wire).
+    physics.breaks = [1];
+    room.tick();
+    physics.breaks = [1];
+    room.tick();
+    room.tick();
+    room.tick();
+    expect(decodeSnapshot(binaries(a).at(-1)!)!.tick).toBe(2);
+    expect(obs()).toEqual([
+      [0, -1],
+      [2, 2],
+    ]);
+    expect(decodeSnapshot(binaries(a).at(-1)!)!.obs![1].angle).toBeCloseTo(1.5, 1);
+    for (let i = 0; i < SNAP_EVERY; i++) {
+      room.tick();
+    }
+    expect(obs()[1]).toEqual([2, 6]);
+  });
+
   it('does no work while empty', () => {
     const c = fakeConn();
     room.connect(c);
@@ -396,7 +438,7 @@ describe('Room tournament', () => {
   let room: Room;
 
   beforeEach(() => {
-    Object.assign(physics, { goal: -1, hit: -1, steps: 0, tick0: 0, rinks: [] });
+    Object.assign(physics, { goal: -1, hit: -1, breaks: [], steps: 0, tick0: 0, rinks: [] });
     room = new Room(RULES);
   });
 
@@ -461,6 +503,28 @@ describe('Room tournament', () => {
     expect(winRound(a, 0).ranking!.map(r => [r.name, r.points])).toEqual([
       ['A', 10],
       ['B', 0],
+    ]);
+  });
+
+  it('brings every obstacle back, intact, at round start', () => {
+    const a = join(room, 'A');
+    join(room, 'B');
+    physics.breaks = [0];
+    room.tick();
+    physics.breaks = [0, 1];
+    room.tick();
+    expect(snap(a).obs!.map(o => [o.hits, o.since >= 0])).toEqual([
+      [2, true],
+      [1, false],
+    ]);
+    winRound(a, 0);
+    // Frozen in the break: as they were.
+    expect(snap(a).obs!.map(o => o.hits)).toEqual([2, 1]);
+    ticks(6);
+    expect(lastMatch(a)).toMatchObject({ phase: 'play', round: 2 });
+    expect(snap(a).obs).toEqual([
+      { hits: 0, since: -1, angle: 0 },
+      { hits: 0, since: -1, angle: 0 },
     ]);
   });
 
@@ -719,6 +783,8 @@ describe('Room tournament', () => {
       join(room, 'D');
       expect(lastMatch(a)).toMatchObject({ phase: 'play', round: 1, size: Math.SQRT2, count: 4 });
       expect(rink(c)).toEqual([Math.SQRT2, 4]);
+      // As many obstacle states as obstacles on the new rink, all of them intact.
+      expect(snap(a).obs).toEqual(Array(4).fill({ hits: 0, since: -1, angle: 0 }));
       expect(snap(a).paddles.map(p => [p.x, p.y])).toEqual(
         [
           [400, 100],
@@ -769,6 +835,7 @@ describe('Room tournament', () => {
       // One more leaves: back to size 1, told to the others; one joins on team 1: a new match.
       room.disconnect(conns[2]);
       expect(lastMatch(a)).toMatchObject({ phase: 'wait', size: 1, count: 3 });
+      expect(snap(a).obs).toHaveLength(3);
       expect(snap(a)).toMatchObject({
         score: [1, 0],
         paddles: [

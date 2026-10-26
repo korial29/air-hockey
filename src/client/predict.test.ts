@@ -3,9 +3,11 @@ import { obstacles } from '../shared/arena';
 import {
   GOAL,
   H,
+  ICEBERG_HP,
   PADDLE_MAX_SPEED,
   PADDLE_R,
   PUCK_R,
+  RESPAWN,
   SNAP_EVERY,
   TICK_HZ,
   W,
@@ -229,9 +231,10 @@ describe('predict', () => {
   it('rebases the world tick on each snapshot and draws the fractional tick at now', () => {
     const p = predict();
     rebase(p, { ...snap({}, []), tick: 100 }, ME, 0);
-    expect(p.w.tick).toBe(100);
+    // The local tick runs a wrap ahead (see WRAP in predict.ts): the same obstacles.
+    expect(p.w.tick).toBe(65536 + 100);
     const v = view(p, snap({}, []), 2.5 * DT)!;
-    expect(p.w.tick).toBe(102);
+    expect(p.w.tick).toBe(65536 + 102);
     expect(v.tick).toBeCloseTo(102.5, 9);
 
     // The u16 wrap: the arena repeats over it, so the local tick may run past 65535.
@@ -326,5 +329,109 @@ describe('predict', () => {
     expect(Object.keys(p.hits)).toEqual(['0']);
     reset(p, 'play', 'ice', Math.SQRT2, 4);
     expect(p.hits).toEqual([]);
+  });
+
+  describe('breakable obstacles', () => {
+    const [berg] = obstacles('ice', 0);
+    const intact = { hits: 0, since: -1, angle: 0 };
+    /** A live puck 20 units from the first iceberg at 1000 units/s: contact in the 5th step. */
+    const at = (obs: Snapshot['obs'], tick = 0): Snapshot => ({
+      ...snap({ x: berg.x - berg.r - PUCK_R - 20, y: berg.y, vx: 1000 }, []),
+      live: true,
+      tick,
+      obs,
+    });
+    const ice = () => {
+      const p = predict();
+      reset(p, 'play', 'ice');
+      return p;
+    };
+
+    it('lets the local puck through an obstacle the host removed', () => {
+      for (const since of [0, RESPAWN - 300]) {
+        const p = ice();
+        const s = at([{ hits: ICEBERG_HP, since, angle: 0 }, ...Array(6).fill(intact)]);
+        rebase(p, s, ME, 1000);
+        // Only the drag slowed it.
+        expect(view(p, s, 1050)!.puck).toMatchObject({ y: berg.y, vy: 0 });
+        expect(p.w.puck.vx).toBeGreaterThan(980);
+        expect(p.hits).toEqual([]);
+      }
+    });
+
+    it('bounces the local puck off an obstacle in play but leaves its damage to the host', () => {
+      const p = ice();
+      const s = at([{ hits: ICEBERG_HP - 1, since: -1, angle: 2 }, ...Array(6).fill(intact)]);
+      rebase(p, s, ME, 1000);
+      const v = view(p, s, 1050)!;
+      expect(v.puck.vx).toBeLessThan(0);
+      expect(Object.keys(p.hits)).toEqual(['0']);
+      expect(p.w.obs[0]).toEqual({ hits: ICEBERG_HP - 1, gone: -1, angle: 2 });
+      expect(v.obs![0]).toEqual({ hits: ICEBERG_HP - 1, since: -1, angle: 2 });
+
+      // The host broke it on that hit: the next snapshot says so, and the puck goes through next time.
+      const gone = at([{ hits: ICEBERG_HP, since: 3, angle: 0 }, ...Array(6).fill(intact)]);
+      rebase(p, gone, ME, 1100);
+      expect(view(p, gone, 1150)!.puck.vx).toBeGreaterThan(0);
+    });
+
+    it('draws the host removals with since counted up to now, across the tick wrap', () => {
+      const p = ice();
+      // Removed 100 ticks ago, the host tick just past the u16 wrap.
+      const s = at([{ hits: 1, since: 100, angle: 1 }, ...Array(6).fill(intact)], 2);
+      rebase(p, s, ME, 1000);
+      const [o] = view(p, s, 1000 + 2.5 * DT)!.obs!;
+      expect(o).toMatchObject({ hits: 1, angle: 1 });
+      expect(o.since).toBeCloseTo(102.5, 9);
+      expect(view(p, s, 1000 + 2.5 * DT)!.obs![1]).toEqual(intact);
+      // The next snapshot agrees: no jump.
+      const t = at([{ hits: 1, since: 104, angle: 1 }, ...Array(6).fill(intact)], 6);
+      rebase(p, t, ME, 1000 + 4 * DT);
+      expect(view(p, t, 1000 + 4.5 * DT)!.obs![0].since).toBeCloseTo(104.5, 9);
+      // Not reached the iceberg yet: the host keeps the puck, nothing held.
+      expect(p.w.puck.vx).toBe(1000);
+    });
+
+    it('brings an obstacle back on the tick its RESPAWN is up, as the host does', () => {
+      const p = ice();
+      const s = at([{ hits: 1, since: RESPAWN - 3, angle: 1 }, ...Array(6).fill(intact)], 50);
+      rebase(p, s, ME, 1000);
+      expect(view(p, s, 1000 + 2.5 * DT)!.obs![0].since).toBeCloseTo(RESPAWN - 0.5, 9);
+      expect(view(p, s, 1000 + 3 * DT)!.obs![0]).toEqual({ hits: 0, since: -1, angle: 1 });
+      // Back in play before the puck gets there: it bounces.
+      expect(view(p, s, 1050)!.puck.vx).toBeLessThan(0);
+    });
+
+    it('takes the host obstacles even from a snapshot that misses our hit', () => {
+      const p = ice();
+      rebase(p, at(Array(7).fill(intact)), ME, 0);
+      // An own hit: the puck comes back toward us...
+      rebase(
+        p,
+        { ...snap({ x: 420, vx: -2000 }, [{ id: ME, x: 300, y: 450 }]), live: true },
+        ME,
+        0,
+      );
+      draw(p, snap({}), 46);
+      expect(p.hold).toBeGreaterThan(46);
+      // ...while the host, a step behind, still has it going in, and an obstacle gone.
+      const late = {
+        ...snap({ x: 380, vx: -1900 }, [{ id: ME, x: 300, y: 450 }]),
+        obs: [intact, { hits: 1, since: 7, angle: 0 }, ...Array(5).fill(intact)],
+      };
+      rebase(p, late, ME, 50);
+      expect(p.w.puck.vx).toBeGreaterThan(0);
+      expect(view(p, late, 50)!.obs![1]).toMatchObject({ hits: 1 });
+      expect(view(p, late, 50)!.obs![1].since).toBeGreaterThanOrEqual(7);
+    });
+
+    it('forgets the obstacle states on a new count until the next snapshot', () => {
+      const p = ice();
+      rebase(p, at([{ hits: 1, since: 5, angle: 0 }, ...Array(6).fill(intact)]), ME, 0);
+      reset(p, 'play', 'ice', 1, 7);
+      expect(p.w.obs).toHaveLength(7);
+      reset(p, 'play', 'ice', Math.SQRT2, 3);
+      expect(p.w.obs).toEqual([]);
+    });
   });
 });
