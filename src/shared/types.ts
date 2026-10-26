@@ -46,6 +46,11 @@ export interface World {
   tick: number;
   /** Indices in obstacles(arena, tick) the puck touched during the last step. */
   bumps: number[];
+  /**
+   * False from each serve until a paddle touches the puck: obstacles let it through meanwhile,
+   * so a penguin cannot start a round alone, let alone score.
+   */
+  live: boolean;
   puck: Puck;
   paddles: Paddle[];
   score: [number, number];
@@ -105,6 +110,8 @@ export interface Snapshot {
   score: [number, number];
   puck: Puck;
   paddles: { id: number; x: number; y: number }[];
+  /** World.live: the puck reacts to obstacles. */
+  live?: boolean;
 }
 
 /**

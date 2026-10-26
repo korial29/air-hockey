@@ -70,7 +70,8 @@ export const encodeSnapshot = (s: Snapshot): ArrayBuffer => {
   v.setUint16(5, toWire(s.puck.x));
   v.setUint16(7, toWire(s.puck.y));
   v.setUint8(9, s.paddles.length);
-  // byte 10 is reserved (flags), kept at 0
+  // byte 10: flags, bit 0 = live
+  v.setUint8(10, s.live ? 1 : 0);
   v.setInt16(11, speed(s.puck.vx));
   v.setInt16(13, speed(s.puck.vy));
   s.paddles.forEach((p, i) => {
@@ -101,6 +102,7 @@ export const decodeSnapshot = (buf: ArrayBuffer): Snapshot | null => {
     });
   }
   return {
+    live: (v.getUint8(10) & 1) == 1,
     tick: v.getUint16(1),
     score: [v.getUint8(3), v.getUint8(4)],
     puck: {

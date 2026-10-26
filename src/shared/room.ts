@@ -184,7 +184,13 @@ export class Room {
       // One buffer for everyone: transports must not mutate it. The world tick (u16 on the wire)
       // places the obstacles; it stands still in 'break' and 'end', like the penguins.
       this.broadcast(
-        encodeSnapshot({ tick: w.tick, score: w.score, puck: w.puck, paddles: w.paddles }),
+        encodeSnapshot({
+          tick: w.tick,
+          score: w.score,
+          puck: w.puck,
+          paddles: w.paddles,
+          live: w.live,
+        }),
       );
     }
   }

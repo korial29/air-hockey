@@ -115,6 +115,7 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
   p.hold = 0;
   p.wait = false;
   w.tick = s.tick;
+  w.live = !!s.live;
   Object.assign(k, n);
 };
 

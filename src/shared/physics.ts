@@ -81,7 +81,7 @@ const out = <T extends Puck | Paddle>(
 const bump = (w: World, obs: Obstacle[]): void =>
   obs.forEach((o, i) => {
     const k = w.puck;
-    if (!out(k, o, o.r + PUCK_R, put)) {
+    if (!w.live || !out(k, o, o.r + PUCK_R, put)) {
       return;
     }
     if (!w.bumps.includes(i)) {
@@ -114,6 +114,7 @@ export const createWorld = (arena: Arena = 'ice'): World => ({
   arena,
   tick: 0,
   bumps: [],
+  live: false,
   puck: { x: W / 2, y: H / 2, vx: 0, vy: 0 },
   paddles: [],
   score: [0, 0],
@@ -237,6 +238,7 @@ export const step = (w: World, dt: number): Team | -1 => {
       if (u < -PUCK_R) {
         goal = i > 0 ? 1 : 0;
         w.score[goal]++;
+        w.live = false;
         k.x = i > 0 ? W / 4 : (3 * W) / 4;
         k.y = H / 2;
         k.vx = k.vy = 0;
@@ -261,6 +263,8 @@ export const step = (w: World, dt: number): Team | -1 => {
     }
   }
 
+  // A paddle touch puts a served puck in play: from now on the obstacles bounce it.
+  w.live ||= w.hit != -1;
   bump(w, obs);
 
   // Whatever overlap is left (puck pinned against a wall, an obstacle or squeezed between paddles,
@@ -272,6 +276,7 @@ export const step = (w: World, dt: number): Team | -1 => {
     for (const p of w.paddles) {
       if (out(p, k, RR, place)) {
         w.hit = p.id;
+        w.live = true;
         avoid(p, obs);
         out(k, p, RR, put);
       }

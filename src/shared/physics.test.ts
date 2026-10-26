@@ -27,7 +27,7 @@ const paddle = (team: Team, x: number, y: number, id = 1): Paddle => ({
   ty: y,
 });
 
-/** A classic world (no obstacles) unless an arena is given. */
+/** A classic world (no obstacles) unless an arena is given, its puck already in play. */
 const world = (
   x: number,
   y: number,
@@ -39,6 +39,7 @@ const world = (
   const w = createWorld(arena);
   Object.assign(w.puck, { x, y, vx, vy });
   w.paddles = paddles;
+  w.live = true;
   return w;
 };
 
@@ -81,6 +82,7 @@ describe('createWorld', () => {
       arena: 'ice',
       tick: 0,
       bumps: [],
+      live: false,
       puck: { x: W / 2, y: H / 2, vx: 0, vy: 0 },
       paddles: [],
       score: [0, 0],
@@ -352,6 +354,33 @@ describe('hit', () => {
     w.hit = 2;
     step(w, 0);
     expect(w.hit).toBe(-1);
+  });
+});
+
+describe('served puck', () => {
+  it('lets the obstacles through until a paddle touches it: no penguin starts a round alone', () => {
+    // Served at the centre, on the centre penguin's lane, nobody playing: two full periods.
+    const w = createWorld('ice');
+    for (let i = 0; i < 2 * PERIOD; i++) {
+      expect(step(w, DT)).toBe(-1);
+      expect(w.bumps).toEqual([]);
+    }
+    expect(w.puck).toEqual({ x: W / 2, y: H / 2, vx: 0, vy: 0 });
+    expect(w.live).toBe(false);
+  });
+
+  it('goes live on a paddle touch and back to served after a goal', () => {
+    const w = createWorld('ice');
+    const p = paddle(0, W / 2 - PADDLE_R - PUCK_R - 40, H / 2);
+    p.tx = W;
+    w.paddles = [p];
+    run(w, 10);
+    expect(w.live).toBe(true);
+    // Into the right goal from just in front of it: served again on the conceding side.
+    Object.assign(w.puck, { x: W - 40, y: H / 2, vx: 2000, vy: 0 });
+    w.paddles = [];
+    expect(run(w, 60)).toBe(0);
+    expect(w.live).toBe(false);
   });
 });
 

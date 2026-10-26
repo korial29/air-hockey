@@ -21,6 +21,7 @@ vi.mock('./physics', () => ({
     arena: (physics.arenas.push(arena), arena),
     tick: physics.tick0,
     bumps: [],
+    live: false,
     puck: { x: 800, y: 450, vx: 0, vy: 0 },
     paddles: [],
     score: [0, 0],

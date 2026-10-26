@@ -65,6 +65,8 @@ describe('snapshot frames', () => {
     expect(Math.abs(out.puck.y - snapshot.puck.y)).toBeLessThanOrEqual(EPS);
     expect([out.puck.vx, out.puck.vy]).toEqual([-2400, 1234]);
     expect(out.paddles).toHaveLength(3);
+    expect(out.live).toBe(false);
+    expect(decodeSnapshot(encodeSnapshot({ ...snapshot, live: true }))!.live).toBe(true);
     out.paddles.forEach((p, i) => {
       const s = snapshot.paddles[i];
       expect(p.id).toBe(s.id);

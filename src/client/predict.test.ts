@@ -242,7 +242,10 @@ describe('predict', () => {
   it('bounces the local puck off the arena of the match and stamps each obstacle hit', () => {
     const [berg] = obstacles('ice', 0);
     // 20 units from the iceberg at 1000 units/s: contact in the 5th step, ~21 ms.
-    const s = snap({ x: berg.x - berg.r - PUCK_R - 20, y: berg.y, vx: 1000 }, []);
+    const s = {
+      ...snap({ x: berg.x - berg.r - PUCK_R - 20, y: berg.y, vx: 1000 }, []),
+      live: true,
+    };
     const p = predict();
     reset(p, 'play', 'ice');
     rebase(p, s, ME, 1000);
@@ -251,6 +254,13 @@ describe('predict', () => {
     expect(v.puck.vx).toBeLessThan(0);
     expect(Object.keys(p.hits)).toEqual(['0']);
     expect(p.hits[0]).toBeCloseTo(1000 + 5 * DT, 9);
+
+    // A served puck nobody touched goes through, as on the host.
+    const r = predict();
+    reset(r, 'play', 'ice');
+    rebase(r, { ...s, live: false }, ME, 1000);
+    expect(view(r, s, 1050)!.puck.vx).toBeGreaterThan(0);
+    expect(r.hits).toEqual([]);
 
     // The classic rink has nothing there.
     const q = predict();
