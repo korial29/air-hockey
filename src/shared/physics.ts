@@ -27,6 +27,9 @@ const DRAG = 0.7;
 const SLOT_SPEED = 300;
 /** Minimum speed of a puck leaving an obstacle: the pinball kick (× size). */
 const KICK = 1000;
+/** Clearance a served puck keeps from paddles and obstacles, and the step between serve spots tried. */
+const SERVE_GAP = 40;
+const SERVE_STEP = 160;
 /** Paddle-puck contact distance. */
 const RR = PUCK_R + PADDLE_R;
 
@@ -339,8 +342,19 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
         w.score[goal]++;
         w.live = false;
         k.x = i > 0 ? X / 4 : (3 * X) / 4;
-        k.y = Y / 2;
         k.vx = k.vy = 0;
+        // Served where nothing stands: a paddle left on the serve spot would otherwise shove the
+        // puck the moment it appears, into a goal again and again.
+        const free = (y: number) =>
+          w.paddles.every(p => Math.hypot(p.x - k.x, p.y - y) > RR + SERVE_GAP) &&
+          obs.every(o => Math.hypot(o.x - k.x, o.y - y) > o.r + PUCK_R + SERVE_GAP);
+        k.y = Y / 2;
+        for (const f of [0, -1, 1, -2, 2]) {
+          if (free(Y / 2 + f * SERVE_STEP * s)) {
+            k.y = Y / 2 + f * SERVE_STEP * s;
+            break;
+          }
+        }
       }
     } else {
       // In front of the mouth: only the posts (its corners) bounce, as points.
