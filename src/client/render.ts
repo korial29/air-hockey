@@ -610,6 +610,11 @@ export const countdown = (label: string, q: number, color = '#fff') => {
   const z = H * 0.42 * (1 + 0.4 * q + 0.5 * (1 - q) ** 8);
   c.globalAlpha = 1 - q * q;
   text(label, W / 2 + z / 30, H / 2 + z / 30, z, 'center', '#0006', W * 0.9);
+  // A thick navy outline: readable on the white ice as on the dark classic table.
+  c.strokeStyle = '#0d2240';
+  c.lineWidth = z / 9;
+  c.lineJoin = 'round';
+  c.strokeText(label, W / 2, H / 2, W * 0.9);
   text(label, W / 2, H / 2, z, 'center', color, W * 0.9);
   c.globalAlpha = 1;
 };
