@@ -5,7 +5,9 @@
 // nothing gets trapped. Penguins touch the boards at the ends of their lane: what they catch
 // there slides out sideways. A shot from the centre spot along the long axis reaches every point
 // of either goal mouth without meeting an iceberg.
-import { H, TICK_HZ, W } from './constants';
+// A bigger rink scales all of it while paddle and puck keep their size, and fewer obstacles leave
+// wider gaps: every guarantee holds at every size and count.
+import { H, MAX_SIZE, TICK_HZ, W } from './constants';
 import type { Arena, Obstacle } from './types';
 
 /** Icebergs of the left half, [x, y, r], above and below its serve spot. The right half mirrors. */
@@ -30,6 +32,8 @@ export const PERIOD = 2048;
 const SPAN = H - 2 * PR;
 /** Slide speed, units per second: 2 · SPAN per PERIOD, about 245. */
 const V = (2 * SPAN * TICK_HZ) / PERIOD;
+/** Obstacles kept for a count of 2 to 7 (see obstacles): bit i keeps index i of the full layout. */
+const MASKS = [0b11, 0b100011, 0b1010011, 0b1110011, 0b1011111, 0b1111111];
 
 /**
  * The obstacles of an arena at tick t: icebergs first (fixed), then penguins (sliding). 'classic'
@@ -37,10 +41,13 @@ const V = (2 * SPAN * TICK_HZ) / PERIOD;
  * that divides 65536 ticks, so the wrap of the u16 snapshot tick is seamless. The layout is
  * mirror-symmetric across the centre line: neither team is favoured.
  *
- * Indices are stable: 0-3 icebergs (left top, right top, left bottom, right bottom), 4-6 penguins
- * (left lane, centre lane, right lane). Fresh objects on every call.
+ * The layout is drawn for the base rink and scaled by `size` (positions, radii, slide speed:
+ * the crossing time stays the same). `count` picks which obstacles stay, in the order above and
+ * mirror-symmetric at every count: top icebergs (2), centre penguin (3), side penguins instead of
+ * the centre one (4), all three penguins (5), bottom icebergs too (6), everything (7).
+ * Indices follow the returned order and are stable for a given count. Fresh objects every call.
  */
-export const obstacles = (arena: Arena, t: number): Obstacle[] =>
+export const obstacles = (arena: Arena, t: number, size = 1, count = 7): Obstacle[] =>
   arena == 'classic'
     ? []
     : [
@@ -60,4 +67,17 @@ export const obstacles = (arena: Arena, t: number): Obstacle[] =>
             vy: up ? -V : V,
           };
         }),
-      ];
+      ]
+        .filter((_, i) => (MASKS[count - 2] ?? 127) & (1 << i))
+        .map(o => ({ ...o, x: o.x * size, y: o.y * size, r: o.r * size, vy: o.vy * size }));
+
+/**
+ * Rink geometry for a number of players. The area grows with the players so each keeps the same
+ * room: size = √(players / 2) on each side, from 1 (2 players) to MAX_SIZE (8 and more).
+ * Obstacles: players / 2 + 2, from 3 (2 players: icebergs and the centre penguin) to 7 (10 and
+ * more), always in mirrored pairs plus, when odd, a penguin on the centre line.
+ */
+export const layout = (players: number): { size: number; count: number } => ({
+  size: Math.min(MAX_SIZE, Math.max(1, Math.sqrt(players / 2))),
+  count: Math.min(7, Math.max(3, ((players / 2) | 0) + 2)),
+});

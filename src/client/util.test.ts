@@ -26,6 +26,17 @@ describe('toField', () => {
     expect(toField(10, 20, rect)).toEqual([0, -TOP]);
     expect(toField(10, 20 + CH / 2, rect)).toEqual([0, 1125 + BOT]);
   });
+
+  it('gives world units on a bigger rink: the same canvas spot, times the size', () => {
+    expect(toField(10, 20 + TOP / 2, rect, 1)).toEqual([0, 0]);
+    expect(toField(10, 20 + TOP / 2, rect, 2)).toEqual([0, 0]);
+    expect(toField(810, 20 + TOP / 2 + 562.5, rect, 2)).toEqual([4000, 2250]);
+    expect(toField(410, 20 + TOP / 2 + 281.25, rect, 2)).toEqual([2000, 1125]);
+    const [x, y] = toField(810, 20 + TOP / 2 + 562.5, rect, Math.SQRT2);
+    expect(x).toBeCloseTo(2000 * Math.SQRT2);
+    expect(y).toBeCloseTo(1125 * Math.SQRT2);
+    expect(toField(10, 20, rect, 2)).toEqual([0, -TOP * 2]);
+  });
 });
 
 describe('sample', () => {

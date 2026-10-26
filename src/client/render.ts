@@ -1,5 +1,7 @@
 // Canvas drawing in field units: the rink and its obstacles, HUD bands around the rink, and the
-// end-of-match stadium.
+// end-of-match stadium. The rink grows with the players (World.size): the world (obstacles, puck,
+// paddles) is drawn in world units, W · size × H · size, under a transform scaled by 1 / size,
+// while the rink picture, the snow, the veils and the HUD stay in base units.
 import { GOAL, H, PUCK_R, W } from '../shared/constants';
 import type { Obstacle, PlayerInfo, Rank, Team } from '../shared/types';
 import type { MatchState } from './index';
@@ -8,11 +10,17 @@ import { BOT, CH, TOP, byTeam, flow, podium, rnd, shown } from './util';
 let c: CanvasRenderingContext2D;
 /** Base font size in field units, never under 12 CSS px. */
 let f: number;
+/** Rink size factor: world units per base unit. */
+let u = 1;
 
-/** Starts a frame: the helpers below draw on ctx, size is the base font size. */
-export const pen = (ctx: CanvasRenderingContext2D, size: number) => {
+/**
+ * Starts a frame: the helpers below draw on ctx, font is the base font size, size the rink size
+ * factor (World.size).
+ */
+export const pen = (ctx: CanvasRenderingContext2D, font: number, size = 1) => {
   c = ctx;
-  f = size;
+  f = font;
+  u = size;
 };
 
 const rect = (x: number, y: number, w: number, h: number, color: string) => {
@@ -116,8 +124,10 @@ const ORANGE = '#f39a1c';
 const BLACK = '#1d2430';
 
 /**
- * The rink, in rink coordinates. Ice: pale ice with a sheen and skate marks, faded hockey
+ * The rink, in base rink coordinates. Ice: pale ice with a sheen and skate marks, faded hockey
  * markings, blue boards, red-framed nets. Classic: the dark table.
+ * Markings, boards and nets scale with the rink, so the picture is the same at any size, line
+ * widths included; only the skate marks are skater-sized: more of them, smaller, as it grows.
  */
 const paint = (ice: boolean) => {
   const m = (H - GOAL) / 2;
@@ -151,10 +161,10 @@ const paint = (ice: boolean) => {
   );
   // Skate marks: short arcs, the same every frame.
   c.beginPath();
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < Math.round(40 * u * u); i++) {
     const x = rnd(i) * W;
     const y = rnd(i + 50) * H;
-    const r = 90 + rnd(i + 99) * 320;
+    const r = (90 + rnd(i + 99) * 320) / u;
     const a = rnd(i + 150) * 7;
     c.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
     c.arc(x, y, r, a, a + 0.2 + rnd(i + 200) * 0.5);
@@ -202,15 +212,16 @@ const paint = (ice: boolean) => {
   }
 };
 
-/** Rink images per context, with what they were drawn for: arena and scale. */
+/** Rink images per context, with what they were drawn for: arena, scale and rink size. */
 const cache = new WeakMap<object, [string, HTMLCanvasElement]>();
 
 /**
- * Draws the rink, in rink coordinates, k canvas pixels per unit. Its full-size gradients cost
- * more than the rest of the frame: it is painted once per arena and size, then copied.
+ * Draws the rink, in base rink coordinates, k canvas pixels per unit. Its full-size gradients
+ * cost more than the rest of the frame: it is painted once per arena, canvas size and rink size,
+ * then copied.
  */
 export const rink = (ice: boolean, k: number) => {
-  const key = `${ice}${k}`;
+  const key = `${ice}${k}/${u}`;
   let img = cache.get(c)?.[0] == key ? cache.get(c)![1] : undefined;
   if (!img) {
     const ctx = c;
@@ -226,9 +237,12 @@ export const rink = (ice: boolean, k: number) => {
   c.drawImage(img, 0, 0, W, H);
 };
 
-/** An iceberg: facets lit from the top left. e: hit flash, 1 → 0. */
+/**
+ * An iceberg, in world units: facets lit from the top left. e: hit flash, 1 → 0. Strokes and the
+ * shake scale with the rink like its radius does.
+ */
 const berg = (x: number, y: number, r: number, i: number, e: number, age: number) => {
-  x += Math.sin(age / 12) * e * 8;
+  x += Math.sin(age / 12) * e * 8 * u;
   shadow(x + r * 0.25, y + r * 0.3, r * 1.3, r, '#0a4a7a66');
   const n = 7 + (i % 3);
   const v: number[] = [];
@@ -256,7 +270,7 @@ const berg = (x: number, y: number, r: number, i: number, e: number, age: number
     c.lineTo(v[j], v[j + 1]);
   }
   c.strokeStyle = '#fffa';
-  c.lineWidth = 2;
+  c.lineWidth = 2 * u;
   c.stroke();
   c.beginPath();
   for (let j = 0; j < n * 2; j += 2) {
@@ -264,19 +278,19 @@ const berg = (x: number, y: number, r: number, i: number, e: number, age: number
   }
   c.closePath();
   c.strokeStyle = '#4f9cc4';
-  c.lineWidth = 4;
+  c.lineWidth = 4 * u;
   c.lineJoin = 'round';
   c.stroke();
   if (e) {
     // Bumper flash: a ring spreading out, and ice shards flying off.
     c.globalAlpha = e;
-    ring(x, y, r * (1.3 + (1 - e) * 0.6), '#7fe3ff', 8 * e);
+    ring(x, y, r * (1.3 + (1 - e) * 0.6), '#7fe3ff', 8 * e * u);
     for (let j = 0; j < 6; j++) {
       const a = j * 1.05 + i;
       const d = r * (1.1 + (1 - e) * 1.4);
       const sx = x + Math.cos(a) * d;
       const sy = y + Math.sin(a) * d;
-      const s = r * 0.12 + 3;
+      const s = r * 0.12 + 3 * u;
       c.beginPath();
       c.moveTo(sx, sy - s);
       c.lineTo(sx + s, sy + s);
@@ -284,7 +298,7 @@ const berg = (x: number, y: number, r: number, i: number, e: number, age: number
       c.fillStyle = '#e6faff';
       c.fill();
       c.strokeStyle = '#4f9cc4';
-      c.lineWidth = 2;
+      c.lineWidth = 2 * u;
       c.stroke();
     }
     c.globalAlpha = 1;
@@ -358,7 +372,7 @@ const penguin = (
   }
 };
 
-/** An obstacle of the ice arena; age: ms since the puck last hit it. */
+/** An obstacle of the ice arena, in world units; age: ms since the puck last hit it. */
 export const obstacle = (
   { kind, x, y, r, vx, vy }: Obstacle,
   i: number,
@@ -370,12 +384,13 @@ export const obstacle = (
     : penguin(x, y, r, vx, vy, Math.max(0, 1 - age / 800), now);
 
 /**
- * The puck's trail: p holds the last positions drawn (x, y pairs), the one at x, y is pushed.
- * Drawn as a fading streak while the puck is fast; a jump (serve) starts it over.
+ * The puck's trail, in world units: p holds the last positions drawn (x, y pairs), the one at
+ * x, y is pushed. Drawn as a fading streak while the puck is fast; a jump (serve) starts it over.
+ * Speeds scale with the rink, so does the jump.
  */
 export const streak = (p: number[], x: number, y: number, fast: boolean, color: string) => {
   const n = p.length;
-  if (!fast || Math.hypot(x - p[n - 2], y - p[n - 1]) > 300) {
+  if (!fast || Math.hypot(x - p[n - 2], y - p[n - 1]) > 300 * u) {
     p.length = 0;
   }
   p.push(x, y);
@@ -389,7 +404,7 @@ export const streak = (p: number[], x: number, y: number, fast: boolean, color: 
   c.globalAlpha = 1;
 };
 
-/** Snowflakes drifting down over the rink. */
+/** Snowflakes drifting down over the rink, in base rink coordinates: the same at any size. */
 export const snow = (now: number) => {
   c.beginPath();
   for (let i = 0; i < 40; i++) {

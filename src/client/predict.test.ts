@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { obstacles } from '../shared/arena';
-import { H, PADDLE_MAX_SPEED, PADDLE_R, PUCK_R, SNAP_EVERY, TICK_HZ, W } from '../shared/constants';
+import {
+  GOAL,
+  H,
+  PADDLE_MAX_SPEED,
+  PADDLE_R,
+  PUCK_R,
+  SNAP_EVERY,
+  TICK_HZ,
+  W,
+} from '../shared/constants';
 import { createWorld, step } from '../shared/physics';
 import type { Puck, Snapshot } from '../shared/types';
 import { predict, rebase, reset, view } from './predict';
@@ -120,13 +129,13 @@ describe('predict', () => {
 
   it('keeps a puck at rest still whatever the snapshot timing', () => {
     const p = classic();
-    const s = snap({ x: 500.03125, y: 299.96875 });
+    const s = snap({ x: 500.0625, y: 299.9375 });
     for (let t = 0; t < 3000; t += 16.7) {
       if ((t | 0) % 3) {
         rebase(p, s, ME, t + ((t * 7) % 5));
       }
       const { puck } = draw(p, s, t + 5, [300, 450]);
-      expect(puck).toMatchObject({ x: 500.03125, y: 299.96875, vx: 0, vy: 0 });
+      expect(puck).toMatchObject({ x: 500.0625, y: 299.9375, vx: 0, vy: 0 });
     }
   });
 
@@ -268,5 +277,54 @@ describe('predict', () => {
     rebase(q, s, ME, 1000);
     expect(view(q, s, 1050)!.puck.vx).toBeGreaterThan(0);
     expect(q.hits).toEqual([]);
+  });
+
+  it('plays on the rink of the match message: scaled clamp, speeds, walls and obstacles', () => {
+    const p = predict();
+    reset(p, 'play', 'classic', 2, 5);
+    expect(p.w).toMatchObject({ arena: 'classic', size: 2, count: 5 });
+    // At x 1500 the own paddle is on the left half of a size-2 rink: team 0; past W, team 1.
+    const s = snap({ x: W, y: H }, [
+      { id: ME, x: 1500, y: 1500 },
+      { id: OTHER, x: 2100, y: 300 },
+    ]);
+    rebase(p, s, ME, 0);
+    expect(p.me).toMatchObject({ team: 0 });
+    expect(p.w.paddles.find(q => q.id == OTHER)).toMatchObject({ team: 1 });
+    // 8 steps at twice the top speed.
+    const a = draw(p, s, 8.5 * DT, [1500, 100]);
+    expect(a.me!.y).toBeCloseTo(1500 - (8 * 2 * PADDLE_MAX_SPEED) / TICK_HZ);
+    // Up to the scaled centre line and bottom wall.
+    let b = a;
+    for (let t = 10 * DT; t < 500; t += 16) {
+      b = draw(p, s, t, [3000, 3000]);
+    }
+    expect(b.me).toMatchObject({ x: W - PADDLE_R, y: 2 * H - PADDLE_R });
+
+    // The drawn puck keeps to the scaled boards, and may go past a line only in the scaled mouth.
+    // (New scores: the puck jumps there.)
+    rebase(p, snap({ x: 2 * W - 40, y: H + GOAL * 0.9, vx: 2000 }, [], [0, 1]), ME, 600);
+    expect(draw(p, s, 620).puck.x).toBeGreaterThan(2 * W - PUCK_R);
+    rebase(p, snap({ x: 300, y: 2 * H - 40, vy: 2000 }, [], [0, 2]), ME, 700);
+    const y = draw(p, s, 702).puck.y;
+    expect(y).toBeGreaterThan(2 * H - 40);
+    expect(y).toBeLessThanOrEqual(2 * H - PUCK_R);
+  });
+
+  it('bounces off the scaled obstacles of the match, their hit times dropped on a new count', () => {
+    const [berg] = obstacles('ice', 0, 2, 3);
+    const s = {
+      ...snap({ x: berg.x - berg.r - PUCK_R - 20, y: berg.y, vx: 2000 }, []),
+      live: true,
+    };
+    const p = predict();
+    reset(p, 'play', 'ice', 2, 3);
+    rebase(p, s, ME, 1000);
+    expect(view(p, s, 1050)!.puck.vx).toBeLessThan(0);
+    expect(Object.keys(p.hits)).toEqual(['0']);
+    reset(p, 'break', 'ice', 2, 3);
+    expect(Object.keys(p.hits)).toEqual(['0']);
+    reset(p, 'play', 'ice', Math.SQRT2, 4);
+    expect(p.hits).toEqual([]);
   });
 });

@@ -24,8 +24,14 @@ export const SNAP_EVERY = 4;
  */
 export const INTERP_DELAY = 35;
 
-/** Network fixed point: a coordinate travels as round(v * SCALE) in a Uint16. */
-export const SCALE = 32;
+/**
+ * Network fixed point: a coordinate travels as round(v * SCALE) in a Uint16, so up to
+ * 65535 / SCALE = 4095 units: the widest rink, W · MAX_SIZE, fits.
+ */
+export const SCALE = 16;
+
+/** The rink grows with the players (see layout in arena.ts), up to this factor on each side. */
+export const MAX_SIZE = 2;
 
 /** Default match rules. */
 export const RULES: Rules = {

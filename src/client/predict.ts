@@ -4,7 +4,8 @@
 // drawn where it is and an own hit redirects it at once. Other paddles stand at their latest
 // snapshot position for collisions; they are drawn interpolated, INTERP_DELAY in the past.
 // Obstacles follow the world tick, rebased on the snapshot tick: the arena is a pure function of
-// it, so the local puck bounces off the same penguins as the host's.
+// it, so the local puck bounces off the same penguins as the host's. The rink size and obstacle
+// count come from the match message, through reset: the own paddle gets the host's clamp and speeds.
 import { GOAL, H, PUCK_R, TICK_HZ, W } from '../shared/constants';
 import { createWorld, step } from '../shared/physics';
 import type { Arena, Paddle, Phase, Snapshot, World } from '../shared/types';
@@ -41,12 +42,12 @@ export interface Prediction {
   score: string;
   /**
    * hits[i]: time (ms, the clock of `now`) of the last local puck contact with obstacle i of
-   * obstacles(w.arena, tick), undefined before any. For hit animations.
+   * obstacles(w.arena, tick, w.size, w.count), undefined before any. For hit animations.
    */
   hits: number[];
 }
 
-/** w.arena comes from the match message, through reset. */
+/** w.arena, w.size and w.count come from the match message, through reset. */
 export const predict = (): Prediction => ({
   w: createWorld(),
   o: [0, 0],
@@ -81,9 +82,9 @@ const advance = (p: Prediction, now: number): void => {
   }
 };
 
-const paddle = ({ id, x, y }: Snapshot['paddles'][number]): Paddle => ({
+const paddle = ({ id, x, y }: Snapshot['paddles'][number], size: number): Paddle => ({
   id,
-  team: x > W / 2 ? 1 : 0,
+  team: x > (W * size) / 2 ? 1 : 0,
   x,
   y,
   vx: 0,
@@ -102,7 +103,9 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
   if (!jump) {
     advance(p, now);
   }
-  w.paddles = s.paddles.map(q => (q.id == you && p.me?.id == you && !p.off ? p.me : paddle(q)));
+  w.paddles = s.paddles.map(q =>
+    q.id == you && p.me?.id == you && !p.off ? p.me : paddle(q, w.size),
+  );
   p.me = w.paddles.find(q => q.id == you);
   if (!jump && now < p.hold && n.vx * k.vx + n.vy * k.vy < 0) {
     // The host has not seen our hit yet.
@@ -121,10 +124,15 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
 
 /**
  * Phase change: the host respawns paddles and maybe serves, so the own paddle and the puck
- * restart from the next snapshot. `arena`: the host's, from the same match message.
+ * restart from the next snapshot. `arena`, `size` and `count`: the host's rink, from the same
+ * match message. Another obstacle count renumbers the obstacles: their hit times go.
  */
-export const reset = (p: Prediction, phase: Phase, arena: Arena): void => {
-  p.w.arena = arena;
+export const reset = (p: Prediction, phase: Phase, arena: Arena, size = 1, count = 7): void => {
+  const { w } = p;
+  if (count != w.count) {
+    p.hits = [];
+  }
+  Object.assign(w, { arena, size, count });
   p.me = undefined;
   p.score = '';
   p.off = phase == 'break' || phase == 'end';
@@ -133,8 +141,8 @@ export const reset = (p: Prediction, phase: Phase, arena: Arena): void => {
 /**
  * The state to draw at now: the snapshot interpolated in the past (s) for the other paddles and
  * the score, the local puck and own paddle in the present. `target`: the clamped pointer.
- * Its tick is the fractional world tick at now: draw obstacles(p.w.arena, tick) with it. While
- * the host is frozen (break, end) s comes back as is, its tick still.
+ * Its tick is the fractional world tick at now: draw obstacles(p.w.arena, tick, p.w.size,
+ * p.w.count) with it. While the host is frozen (break, end) s comes back as is, its tick still.
  */
 export const view = (
   p: Prediction,
@@ -155,10 +163,11 @@ export const view = (
   const r = (now - p.t) / 1000;
   // That push and the correction ignore the walls: keep the drawn puck off the boards (it may
   // only go past a goal line in front of the mouth), or it would dip in and out on a bounce.
-  const y = cl(k.y + p.o[1] + k.vy * r, PUCK_R, H - PUCK_R);
+  const { size } = w;
+  const y = cl(k.y + p.o[1] + k.vy * r, PUCK_R, H * size - PUCK_R);
   let x = k.x + p.o[0] + k.vx * r;
-  if (Math.abs(y - H / 2) > GOAL / 2) {
-    x = cl(x, PUCK_R, W - PUCK_R);
+  if (Math.abs(y - (H * size) / 2) > (GOAL * size) / 2) {
+    x = cl(x, PUCK_R, W * size - PUCK_R);
   }
   return {
     ...s,
