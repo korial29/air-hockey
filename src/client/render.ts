@@ -188,30 +188,14 @@ export const stadium = (ranking: Rank[], winner: Team | undefined, now: number) 
   c.globalAlpha = 1;
   rect(0, s1, W, CH, '#14213b');
   rect(0, s1, W, 12, '#2b3d68');
-  // Floodlights above the stands, their cones reaching the floor.
-  for (const v of [0.1, 0.36, 0.64, 0.9]) {
-    const x = v * W;
+  // Floodlight heads above the stands; their beams are drawn last, over the podium.
+  const lamps = [0.1, 0.36, 0.64, 0.9].map(v => v * W);
+  for (const x of lamps) {
     const y = CH * 0.25;
-    c.fillStyle = '#fff2';
-    c.beginPath();
-    c.lineTo(x, y);
-    c.lineTo(x + (W / 2 - x) / 2 - 150, CH);
-    c.lineTo(x + (W / 2 - x) / 2 + 150, CH);
-    c.fill();
     circle(x, y, 60, '#fff2');
     for (let i = 0; i < 8; i++) {
       circle(x - 27 + (i % 4) * 18, y - 9 + (i >> 2) * 18, 7, '#fffbe6');
     }
-  }
-  // Confetti.
-  for (let i = 0; i < 40; i++) {
-    rect(
-      (i * 397 + Math.sin(now / 400 + i) * 30) % W,
-      (i * 233 + now * (0.04 + (i % 4) * 0.015)) % CH,
-      9,
-      15,
-      pick(i * 5),
-    );
   }
 
   text(
@@ -281,52 +265,112 @@ export const stadium = (ranking: Rank[], winner: Team | undefined, now: number) 
       text(`${r.goals} goal${r.goals > 1 ? 's' : ''}`, m, ny + u * 0.9, f, 'center', '#2a4170', sw);
     }
   }
-  // The players, once every block is drawn: shadow, shoes, arms (raised by the winner),
-  // body, head, then the medal hanging on the chest.
+  // The players, once every block is drawn, about 6.5 heads tall: shadow, shoes, legs, shirt in
+  // the player's colour, arms, neck, head with hair, and the medal hanging on the chest.
+  // The winner sways both arms up; the others wave with their outer arm.
+  const q = u * 1.2;
   top.forEach((r, i) => {
     if (!r) {
       return;
     }
     const m = at(i);
     const g = ys[i] - d / 2;
-    const b = u * 0.55;
-    const t = g - u * 1.5;
-    shadow(m, g, b * 1.5, d * 0.3);
+    const hp = g - q * 1.45;
+    const sh = hp - q * 1.2;
+    const hy = sh - q * 0.42;
+    const skin = ['#f1c7a0', '#d9a273', '#a86d43', '#6b4429'][r.id % 4];
+    const wave = Math.sin(now / 190 + i * 2);
+    shadow(m, g, q * 0.6, d * 0.3);
+    rect(m - q * 0.27, hp - q * 0.1, q * 0.54, q * 0.3, '#2b3446');
     for (const e of [-1, 1]) {
-      ball(m + e * b * 0.45, g - u * 0.1, u * 0.17, '#1d2433');
-      const hx = m + e * b * (i ? 1.4 : 1.8);
-      const hy = t + u * (i ? 1.1 : -0.6);
-      line(r.color, u / 4, m + e * b * 0.7, t + u * 0.3, hx, hy);
-      line('#0003', u / 10, m + e * b * 0.7, t + u * 0.36, hx, hy + u * 0.06);
-      ball(hx, hy, u * 0.15, r.color);
+      line('#2b3446', q * 0.26, m + e * q * 0.14, hp, m + e * q * 0.15, g - q * 0.12);
+      line(
+        '#fff2',
+        q * 0.06,
+        m + e * q * 0.14 - q * 0.06,
+        hp,
+        m + e * q * 0.15 - q * 0.06,
+        g - q * 0.14,
+      );
+      ball(m + e * q * 0.18, g - q * 0.07, q * 0.11, '#1d2433');
     }
     c.beginPath();
-    c.roundRect(m - b, t, b * 2, g - u * 0.12 - t, b);
+    c.moveTo(m - q * 0.4, sh);
+    c.lineTo(m + q * 0.4, sh);
+    c.lineTo(m + q * 0.29, hp + q * 0.05);
+    c.lineTo(m - q * 0.29, hp + q * 0.05);
     fill(
       r.color,
-      c.createLinearGradient(m - b, 0, m + b, 0),
+      c.createLinearGradient(m - q * 0.4, 0, m + q * 0.4, 0),
       [0, '#0006'],
-      [0.3, '#fff5'],
+      [0.3, '#fff4'],
       [0.55, '#fff0'],
       [1, '#0007'],
     );
-    const h = t - u * 0.42;
-    ball(m, h, u * 0.48, r.color);
     for (const e of [-1, 1]) {
-      ball(m + e * u * 0.17, h - u * 0.06, u * 0.1, '#fff');
-      circle(m + e * u * 0.17, h - u * 0.04, u * 0.05, '#000');
+      const sx = m + e * q * 0.36;
+      const sy = sh + q * 0.08;
+      const up = !i || e == (i == 1 ? -1 : 1);
+      const sway = up ? (i ? wave * 0.18 : wave * 0.1) : wave * 0.02;
+      const [ex, ey, hx, hy2] = up
+        ? [
+            m + e * q * (i ? 0.62 : 0.6 + sway / 2),
+            sh + q * (i ? 0.02 : -0.32),
+            m + e * q * (0.72 + sway),
+            sh - q * (i ? 0.48 : 0.86),
+          ]
+        : [m + e * q * 0.47, sh + q * 0.62, m + e * q * (0.5 + sway), sh + q * 1.12];
+      line(skin, q * 0.15, sx, sy, ex, ey, hx, hy2);
+      line(r.color, q * 0.21, sx, sy, (sx + ex) / 2, (sy + ey) / 2);
+      ball(hx, hy2, q * 0.09, skin);
+    }
+    rect(m - q * 0.07, sh - q * 0.14, q * 0.14, q * 0.16, skin);
+    c.save();
+    c.translate(m, hy);
+    c.scale(1, 1.15);
+    ball(0, 0, q * 0.25, skin);
+    c.beginPath();
+    c.arc(0, -q * 0.02, q * 0.26, 3.3, 6.1);
+    c.fillStyle = ['#2b1d14', '#5a3a22', '#c89a4a', '#111'][r.id % 4];
+    c.fill();
+    c.restore();
+    for (const e of [-1, 1]) {
+      circle(m + e * q * 0.08, hy + q * 0.01, q * 0.03, '#222');
     }
     c.beginPath();
-    c.arc(m, h + u * 0.1, u * 0.18, 0.3, 2.8);
-    c.strokeStyle = '#0008';
-    c.lineWidth = u * 0.05;
+    c.arc(m, hy + q * 0.06, q * 0.09, 0.4, 2.7);
+    c.strokeStyle = '#6a2a1a';
+    c.lineWidth = q * 0.03;
     c.stroke();
-    line('#c22', u * 0.12, m - b * 0.6, t + u * 0.1, m, t + u * 0.75);
-    line('#2a5bd7', u * 0.12, m + b * 0.6, t + u * 0.1, m, t + u * 0.75);
-    ball(m, t + u * 0.8, u * 0.26, med[i]);
-    text(i + 1 + '', m, t + u * 0.82, u * 0.24, 'center', '#0007');
-    text(r.name, m, t - u * 1.25, f, 'center', '#fff', sw);
+    line('#c22', q * 0.07, m - q * 0.2, sh + q * 0.02, m, sh + q * 0.52);
+    line('#2a5bd7', q * 0.07, m + q * 0.2, sh + q * 0.02, m, sh + q * 0.52);
+    ball(m, sh + q * 0.62, q * 0.17, med[i]);
+    text(r.name, m, hy - q * 0.7, f, 'center', '#fff', sw);
   });
+
+  // Floodlight beams sweeping slowly over the podium, added on top so they light it.
+  c.globalCompositeOperation = 'lighter';
+  lamps.forEach((x, j) => {
+    const y = CH * 0.25;
+    const aim = pc + (x - pc) * 0.35 + Math.sin(now / 1800 + j * 1.7) * sw * 0.9;
+    c.beginPath();
+    c.moveTo(x, y);
+    c.lineTo(aim - 130, CH);
+    c.lineTo(aim + 130, CH);
+    fill('#0000', c.createLinearGradient(0, y, 0, CH), [0, '#fff3'], [1, '#fff1']);
+  });
+  c.globalCompositeOperation = 'source-over';
+  // Confetti: a light rain, each piece flipping (its width) as it drifts down.
+  for (let i = 0; i < 70; i++) {
+    const w = 10 * Math.abs(Math.cos(now / 260 + i));
+    rect(
+      ((i * 397 + Math.sin(now / 700 + i) * 40) % W) - w / 2,
+      (i * 233 + now * (0.02 + (i % 5) * 0.008)) % CH,
+      w + 1,
+      8,
+      pick(i * 5),
+    );
+  }
 
   // Points ranking, small, bottom-right; players who left are greyed.
   const lh = f * 1.2;
