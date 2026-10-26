@@ -120,6 +120,7 @@ export const createWorld = (arena: Arena = 'ice', size = 1, count = 7): World =>
   tick: 0,
   bumps: [],
   live: false,
+  obs: [],
   puck: { x: (W * size) / 2, y: (H * size) / 2, vx: 0, vy: 0 },
   paddles: [],
   score: [0, 0],
