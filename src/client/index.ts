@@ -102,7 +102,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       // The host puts paddles back on their spawn points at round start: drop the prediction
       // until the pointer moves again, or our paddle would be drawn where it no longer is.
       me = undefined;
-      reset(P, m.phase);
+      reset(P, m.phase, m.arena);
       emit('match', (match = rest));
     } else if (m?.t == 'full') {
       msg = 'Room is full';

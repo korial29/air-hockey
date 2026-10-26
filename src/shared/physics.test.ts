@@ -9,8 +9,9 @@ import {
   TICK_HZ,
   W,
 } from './constants';
+import { PERIOD, obstacles } from './arena';
 import { clampPaddle, createWorld, spawnPoint, step } from './physics';
-import type { Paddle, Team, World } from './types';
+import type { Arena, Paddle, Team, World } from './types';
 
 const DT = 1 / TICK_HZ;
 const RR = PUCK_R + PADDLE_R;
@@ -26,8 +27,16 @@ const paddle = (team: Team, x: number, y: number, id = 1): Paddle => ({
   ty: y,
 });
 
-const world = (x: number, y: number, vx = 0, vy = 0, paddles: Paddle[] = []): World => {
-  const w = createWorld();
+/** A classic world (no obstacles) unless an arena is given. */
+const world = (
+  x: number,
+  y: number,
+  vx = 0,
+  vy = 0,
+  paddles: Paddle[] = [],
+  arena: Arena = 'classic',
+): World => {
+  const w = createWorld(arena);
   Object.assign(w.puck, { x, y, vx, vy });
   w.paddles = paddles;
   return w;
@@ -47,9 +56,31 @@ const run = (w: World, n: number, each?: () => void): number => {
 
 const speed = (w: World): number => Math.hypot(w.puck.vx, w.puck.vy);
 
+/** The obstacles the world stands among. */
+const obs = (w: World) => obstacles(w.arena, w.tick);
+
+/** How deep the puck sinks into a paddle or an obstacle, or a paddle into an obstacle; ≤ 0 if not. */
+const overlap = (w: World): number => {
+  const k = w.puck;
+  let worst = -Infinity;
+  for (const o of obs(w)) {
+    worst = Math.max(worst, o.r + PUCK_R - Math.hypot(k.x - o.x, k.y - o.y));
+    for (const p of w.paddles) {
+      worst = Math.max(worst, o.r + PADDLE_R - Math.hypot(p.x - o.x, p.y - o.y));
+    }
+  }
+  for (const p of w.paddles) {
+    worst = Math.max(worst, RR - Math.hypot(k.x - p.x, k.y - p.y));
+  }
+  return worst;
+};
+
 describe('createWorld', () => {
-  it('puts the puck at rest in the centre, with no paddles and 0-0', () => {
+  it('puts the puck at rest in the centre, with no paddles and 0-0, on ice at tick 0', () => {
     expect(createWorld()).toEqual({
+      arena: 'ice',
+      tick: 0,
+      bumps: [],
       puck: { x: W / 2, y: H / 2, vx: 0, vy: 0 },
       paddles: [],
       score: [0, 0],
@@ -321,5 +352,171 @@ describe('hit', () => {
     w.hit = 2;
     step(w, 0);
     expect(w.hit).toBe(-1);
+  });
+});
+
+describe('ice arena', () => {
+  /** Minimum speed of a puck leaving an obstacle (physics.ts). */
+  const KICK = 1000;
+  const ice = (x: number, y: number, vx = 0, vy = 0, paddles: Paddle[] = []): World =>
+    world(x, y, vx, vy, paddles, 'ice');
+
+  it('counts the steps in w.tick, a step that does nothing aside', () => {
+    const w = ice(W / 2, H / 2);
+    run(w, 10);
+    step(w, 0);
+    expect(w.tick).toBe(10);
+  });
+
+  it('bounces the puck off an iceberg with the pinball kick, naming it in bumps once', () => {
+    const [berg] = obs(createWorld());
+    const w = ice(berg.x - berg.r - PUCK_R - 30, berg.y, 300, 0);
+    const bumps: number[][] = [];
+    let after = 0;
+    run(w, 60, () => {
+      bumps.push(w.bumps);
+      if (w.bumps.length && !after) {
+        after = speed(w);
+        expect(w.puck.vx).toBeLessThan(0);
+      }
+    });
+    expect(bumps.filter(b => b.length)).toEqual([[0]]);
+    expect(after).toBeCloseTo(KICK, 6);
+    expect(w.puck.x).toBeLessThan(berg.x - berg.r - PUCK_R - 100);
+  });
+
+  it('keeps a fast puck faster than the kick, minus the restitution', () => {
+    const [berg] = obs(createWorld());
+    const w = ice(berg.x, berg.y + berg.r + PUCK_R + 5, 0, -2000);
+    step(w, DT);
+    expect(w.bumps).toEqual([0]);
+    expect(w.puck.vy).toBeGreaterThan(2000 * 0.9 * 0.99);
+  });
+
+  it('lets a sliding penguin carry a resting puck along its slide', () => {
+    // The centre penguin leaves the top board at tick 0, sliding down.
+    for (const dx of [0, 30]) {
+      const w = ice(W / 2 + dx, 400);
+      for (let i = 0; i < 600 && !w.bumps.length; i++) {
+        step(w, DT);
+      }
+      expect(w.bumps).toEqual([5]);
+      const p = obs(w)[5];
+      expect(p.vy).toBeGreaterThan(0);
+      expect(w.puck.vy).toBeGreaterThan(p.vy);
+      expect(speed(w)).toBeCloseTo(KICK, 6);
+      expect(Math.sign(Math.round(w.puck.vx))).toBe(Math.sign(dx));
+    }
+  });
+
+  it('makes paddles slide around obstacles, never into them', () => {
+    const [berg] = obs(createWorld());
+    // Aimed just past the far side of the iceberg: the paddle goes around it.
+    const p = paddle(0, berg.x - 200, berg.y);
+    p.tx = berg.x + 160;
+    p.ty = berg.y + 20;
+    const w = ice(W / 2, H - 100, 0, 0, [p]);
+    run(w, 240, () => expect(overlap(w)).toBeLessThan(1e-6));
+    expect([p.x, p.y]).toEqual([p.tx, p.ty]);
+
+    // Aimed at its centre: it stops on its edge.
+    [p.tx, p.ty] = [berg.x, berg.y];
+    run(w, 240, () => expect(overlap(w)).toBeLessThan(1e-6));
+    expect(Math.hypot(p.x - berg.x, p.y - berg.y)).toBeCloseTo(berg.r + PADDLE_R, 6);
+  });
+
+  it('lets a penguin push a paddle in its lane up to the board, where the paddle slips past', () => {
+    // Left lane: the penguin leaves the bottom board at tick 0, sliding up.
+    const lane = obs(createWorld())[4];
+    const p = paddle(0, lane.x, H / 2);
+    const w = ice(W / 2, H - 100, 0, 0, [p]);
+    let top = H;
+    let aside = 0;
+    run(w, PERIOD / 2, () => {
+      expect(overlap(w)).toBeLessThan(1e-6);
+      top = Math.min(top, p.y);
+      aside = Math.max(aside, Math.abs(p.x - lane.x));
+    });
+    // Carried to the top board, squeezed out sideways, back on its target below the penguin.
+    expect(top).toBe(PADDLE_R);
+    expect(aside).toBeGreaterThan(lane.r + PADDLE_R - 5);
+    expect([p.x, p.y]).toEqual([lane.x, H / 2]);
+  });
+
+  it('never leaves a puck inside a paddle or an iceberg when a paddle drives it into one', () => {
+    const [berg] = obs(createWorld());
+    const p = paddle(0, berg.x - 250, berg.y + 10);
+    [p.tx, p.ty] = [berg.x, berg.y];
+    const w = ice(berg.x - 150, berg.y, 0, 0, [p]);
+    run(w, 480, () => {
+      expect(overlap(w)).toBeLessThan(0.1);
+      expect(Number.isFinite(w.puck.x + w.puck.y + w.puck.vx + w.puck.vy)).toBe(true);
+    });
+  });
+
+  it('squeezes a puck out sideways when a penguin reaches the board it rests on', () => {
+    const w = ice(W / 2, PUCK_R);
+    // The centre penguin, sliding up, 300 ticks before it touches the top board.
+    w.tick = PERIOD - 300;
+    const lane = obs(w)[5];
+    let bumped = false;
+    run(w, 400, () => {
+      expect(overlap(w)).toBeLessThan(0.1);
+      expect(w.puck.y).toBeGreaterThanOrEqual(PUCK_R);
+      bumped ||= w.bumps.includes(5);
+    });
+    expect(bumped).toBe(true);
+    expect(Math.abs(w.puck.x - lane.x)).toBeGreaterThan(lane.r);
+  });
+
+  it('keeps every invariant through a long scrambled game among the obstacles', () => {
+    let seed = 7;
+    const rnd = (): number => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    const paddles = [0, 1, 2, 3, 4, 5].map(i => {
+      const team = (i & 1) as Team;
+      return paddle(team, ...spawnPoint(team, i >> 1), i);
+    });
+    const w = ice(W / 2, H / 2, 900, 700, paddles);
+    let worst = 0;
+    let fast = 0;
+    let outside = 0;
+    let bumps = 0;
+    let goals = 0;
+    for (let i = 0; i < 20000; i++) {
+      if (i % 20 === 0) {
+        for (const p of paddles) {
+          p.tx = rnd() < 0.5 ? w.puck.x : rnd() * 2400 - 200;
+          p.ty = rnd() < 0.5 ? w.puck.y : rnd() * 1500 - 200;
+        }
+      }
+      goals += +(step(w, DT) !== -1);
+      bumps += w.bumps.length;
+      const k = w.puck;
+      expect(Number.isFinite(k.x + k.y + k.vx + k.vy)).toBe(true);
+      worst = Math.max(worst, overlap(w));
+      fast = Math.max(fast, speed(w));
+      // Inside the rink, or in a goal mouth on its way in.
+      const mouth = Math.abs(k.y - H / 2) <= GOAL / 2;
+      outside += +(k.y < PUCK_R || k.y > H - PUCK_R || (!mouth && (k.x < 0 || k.x > W)));
+      for (const p of paddles) {
+        expect(clampPaddle(p.team, p.x, p.y)).toEqual([p.x, p.y]);
+      }
+    }
+    expect(worst).toBeLessThan(0.1);
+    expect(fast).toBeLessThanOrEqual(PUCK_MAX_SPEED + 1e-6);
+    expect(outside).toBe(0);
+    expect(bumps).toBeGreaterThan(100);
+    expect(goals).toBeGreaterThan(5);
+  });
+
+  it('is not there in the classic arena', () => {
+    const [berg] = obs(createWorld());
+    const w = world(berg.x - 200, berg.y, 1200, 0);
+    run(w, 120, () => expect(w.bumps).toEqual([]));
+    expect(w.puck.x).toBeGreaterThan(berg.x + 100);
+    expect(w.puck.vy).toBe(0);
   });
 });

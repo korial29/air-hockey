@@ -3,14 +3,24 @@ import { MAX_NAME, MAX_PLAYERS, SNAP_EVERY, TICK_HZ } from './constants';
 import { decodeSnapshot, encodeInput } from './protocol';
 import type { ServerText } from './protocol';
 import { Room } from './room';
-import type { Conn, PlayerInfo, Team, World } from './types';
+import type { Arena, Conn, PlayerInfo, Team, World } from './types';
 
 // The room is tested against a fake physics: paddles jump to their target,
 // the toucher and the goal outcome of the next step are driven by the test.
-const physics = vi.hoisted(() => ({ goal: -1 as -1 | 0 | 1, hit: -1, steps: 0 }));
+// New worlds start at tick `tick0` and record their arena in `arenas`.
+const physics = vi.hoisted(() => ({
+  goal: -1 as -1 | 0 | 1,
+  hit: -1,
+  steps: 0,
+  tick0: 0,
+  arenas: [] as string[],
+}));
 
 vi.mock('./physics', () => ({
-  createWorld: (): World => ({
+  createWorld: (arena: Arena): World => ({
+    arena: (physics.arenas.push(arena), arena),
+    tick: physics.tick0,
+    bumps: [],
     puck: { x: 800, y: 450, vx: 0, vy: 0 },
     paddles: [],
     score: [0, 0],
@@ -23,6 +33,7 @@ vi.mock('./physics', () => ({
   spawnPoint: (team: Team, n: number) => [team ? 1200 : 400, 100 + 100 * n],
   step: (w: World): Team | -1 => {
     physics.steps++;
+    w.tick++;
     w.hit = physics.hit;
     physics.hit = -1;
     w.paddles.forEach(p => {
@@ -78,9 +89,8 @@ describe('Room', () => {
   let room: Room;
 
   beforeEach(() => {
+    Object.assign(physics, { goal: -1, hit: -1, tick0: 0, arenas: [] });
     room = new Room();
-    physics.goal = -1;
-    physics.hit = -1;
   });
 
   afterEach(() => {
@@ -97,7 +107,7 @@ describe('Room', () => {
     expect(room.size).toBe(1);
     expect(texts(a)).toEqual([
       { t: 'roster', you: 0, players: [{ id: 0, name: 'Ann', color: 'hsl(0 80% 55%)', team: 0 }] },
-      { t: 'match', phase: 'wait', round: 0, wins: [0, 0], goals: 10, rounds: 3 },
+      { t: 'match', phase: 'wait', round: 0, wins: [0, 0], arena: 'ice', goals: 10, rounds: 3 },
     ]);
 
     const b = join(room, 'Bob');
@@ -274,6 +284,33 @@ describe('Room', () => {
     expect(snap.tick).toBe(SNAP_EVERY);
   });
 
+  it('plays on the arena of its rules and tells it in the match message', () => {
+    expect(physics.arenas).toEqual(['ice']);
+    room = new Room({ arena: 'classic' });
+    const a = join(room);
+    expect(texts(a).at(-1)).toMatchObject({ t: 'match', phase: 'wait', arena: 'classic' });
+    // Round start and last one out: fresh worlds, same arena.
+    const b = join(room);
+    expect(texts(a).at(-1)).toMatchObject({ t: 'match', phase: 'play', arena: 'classic' });
+    room.disconnect(a);
+    room.disconnect(b);
+    expect(physics.arenas).toEqual(['ice', 'classic', 'classic', 'classic']);
+  });
+
+  it('stamps snapshots with the world tick, 16 bits on the wire: obstacles wrap with it', () => {
+    physics.tick0 = 65530;
+    room = new Room();
+    const a = join(room);
+    const ticks = () =>
+      Array.from({ length: 3 }, () => {
+        for (let i = 0; i < SNAP_EVERY; i++) {
+          room.tick();
+        }
+        return decodeSnapshot(binaries(a).at(-1)!)!.tick;
+      });
+    expect(ticks()).toEqual([65534, 2, 6]);
+  });
+
   it('does no work while empty', () => {
     const c = fakeConn();
     room.connect(c);
@@ -337,7 +374,7 @@ describe('Room tournament', () => {
 
   beforeEach(() => {
     room = new Room(RULES);
-    Object.assign(physics, { goal: -1, hit: -1, steps: 0 });
+    Object.assign(physics, { goal: -1, hit: -1, steps: 0, tick0: 0 });
   });
 
   const matches = (c: FakeConn) => texts(c).filter(m => m.t === 'match');
@@ -442,9 +479,17 @@ describe('Room tournament', () => {
     ticks(5);
     expect(physics.steps).toBe(steps);
     expect(lastMatch(a).phase).toBe('break');
-    // Snapshots keep going out, with the final score of the round.
+    // Snapshots keep going out, with the final score of the round and the world tick (2 steps
+    // into the round) standing still, like the penguins.
     expect(binaries(a).length).toBeGreaterThan(sent);
     expect(decodeSnapshot(binaries(a).at(-1)!)!.score).toEqual([2, 0]);
+    expect(
+      new Set(
+        binaries(a)
+          .slice(sent)
+          .map(b => decodeSnapshot(b)!.tick),
+      ),
+    ).toEqual(new Set([2]));
     room.tick();
     expect(lastMatch(a)).toMatchObject({ t: 'match', phase: 'play', round: 2, wins: [1, 0] });
     expect(physics.steps).toBe(steps);

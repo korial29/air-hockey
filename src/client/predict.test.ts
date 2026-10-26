@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { H, PADDLE_MAX_SPEED, PADDLE_R, SNAP_EVERY, TICK_HZ, W } from '../shared/constants';
+import { obstacles } from '../shared/arena';
+import { H, PADDLE_MAX_SPEED, PADDLE_R, PUCK_R, SNAP_EVERY, TICK_HZ, W } from '../shared/constants';
 import { createWorld, step } from '../shared/physics';
 import type { Puck, Snapshot } from '../shared/types';
 import { predict, rebase, reset, view } from './predict';
@@ -20,6 +21,13 @@ const snap = (
   paddles,
 });
 
+/** A prediction on the classic (empty) rink, as the match message sets it. */
+const classic = () => {
+  const p = predict();
+  reset(p, 'play', 'classic');
+  return p;
+};
+
 /** Drawn puck and own paddle at time t. */
 const draw = (p: ReturnType<typeof predict>, s: Snapshot, t: number, target?: [number, number]) => {
   const v = view(p, s, t, target)!;
@@ -28,11 +36,11 @@ const draw = (p: ReturnType<typeof predict>, s: Snapshot, t: number, target?: [n
 
 describe('predict', () => {
   it('draws nothing before the first snapshot', () => {
-    expect(view(predict(), undefined, 100)).toBeUndefined();
+    expect(view(classic(), undefined, 100)).toBeUndefined();
   });
 
   it('moves the own paddle toward the pointer at the host speed cap, inside its half', () => {
-    const p = predict();
+    const p = classic();
     const s = snap({}, [
       { id: ME, x: 200, y: 450 },
       { id: OTHER, x: 1400, y: 450 },
@@ -56,7 +64,7 @@ describe('predict', () => {
   });
 
   it('redirects the puck on an own hit at once and ignores snapshots that miss it for a while', () => {
-    const p = predict();
+    const p = classic();
     rebase(p, snap({ x: 420, vx: -2000 }), ME, 0);
     expect(draw(p, snap({}), DT / 2).puck.vx).toBeLessThan(0);
     // Contact in 3 steps: the very frame that reaches it shows the puck going back.
@@ -78,7 +86,7 @@ describe('predict', () => {
   });
 
   it('rebases on a snapshot and slides the drawn puck onto it', () => {
-    const p = predict();
+    const p = classic();
     rebase(p, snap({ x: 800, y: 450, vx: 1000 }), ME, 0);
     let t = 0;
     for (; t < 100; t += 16) {
@@ -91,7 +99,7 @@ describe('predict', () => {
     expect(draw(p, snap({}), t).puck).toMatchObject({ x: shown.x, y: shown.y });
 
     // Reference: the snapshot simulated without any correction.
-    const ref = createWorld();
+    const ref = createWorld('classic');
     Object.assign(ref.puck, n);
     let err = Infinity;
     // Two steps per frame for 500 ms.
@@ -111,7 +119,7 @@ describe('predict', () => {
   });
 
   it('keeps a puck at rest still whatever the snapshot timing', () => {
-    const p = predict();
+    const p = classic();
     const s = snap({ x: 500.03125, y: 299.96875 });
     for (let t = 0; t < 3000; t += 16.7) {
       if ((t | 0) % 3) {
@@ -125,7 +133,7 @@ describe('predict', () => {
   it('tracks a fast puck through jittery snapshots without shaking', () => {
     // Host: a puck bouncing between the top and bottom walls; snapshots every SNAP_EVERY ticks,
     // 30 ms latency plus up to 6 ms of jitter.
-    const host = createWorld();
+    const host = createWorld('classic');
     Object.assign(host.puck, { x: 300, y: 450, vx: 300, vy: 2000 });
     const truth: Puck[] = [];
     const arrivals: [number, Snapshot][] = [];
@@ -137,7 +145,7 @@ describe('predict', () => {
         arrivals.push([i * DT + 30 + jitter, snap({ ...host.puck }, [])]);
       }
     }
-    const p = predict();
+    const p = classic();
     let last: Puck | undefined;
     let worst = 0;
     let shake = 0;
@@ -168,7 +176,7 @@ describe('predict', () => {
   });
 
   it('freezes the puck on a local goal, leaving the score and the serve to the host', () => {
-    const p = predict();
+    const p = classic();
     rebase(p, snap({ x: 60, y: 450, vx: -2000 }), ME, 0);
     const a = draw(p, snap({}), 150).puck;
     expect(p.w.score).toEqual([0, 0]);
@@ -186,10 +194,10 @@ describe('predict', () => {
   it.each(['break', 'end'] as const)(
     'draws snapshots as they are in %s, then restarts from the respawn',
     phase => {
-      const p = predict();
+      const p = classic();
       rebase(p, snap({ vx: 500 }), ME, 0);
       draw(p, snap({}), 50, [700, 200]);
-      reset(p, phase);
+      reset(p, phase, 'classic');
       expect(p.me).toBeUndefined();
 
       const frozen = snap({ x: 1000, y: 100 }, [{ id: ME, x: 650, y: 200 }]);
@@ -199,7 +207,7 @@ describe('predict', () => {
       expect(p.o).toEqual([0, 0]);
 
       // Next round: paddles respawned, puck served, same score; nothing slides.
-      reset(p, 'play');
+      reset(p, 'play', 'classic');
       const served = snap({ x: W / 4, y: 450 }, [{ id: ME, x: 150, y: 450 }]);
       rebase(p, served, ME, 600);
       expect(p.me).toMatchObject({ x: 150, y: 450, tx: 150, ty: 450 });
@@ -208,4 +216,47 @@ describe('predict', () => {
       expect(d.me).toBe(p.me);
     },
   );
+
+  it('rebases the world tick on each snapshot and draws the fractional tick at now', () => {
+    const p = predict();
+    rebase(p, { ...snap({}, []), tick: 100 }, ME, 0);
+    expect(p.w.tick).toBe(100);
+    const v = view(p, snap({}, []), 2.5 * DT)!;
+    expect(p.w.tick).toBe(102);
+    expect(v.tick).toBeCloseTo(102.5, 9);
+
+    // The u16 wrap: the arena repeats over it, so the local tick may run past 65535.
+    rebase(p, { ...snap({}, []), tick: 65535 }, ME, 3 * DT);
+    expect(view(p, snap({}, []), 4.25 * DT)!.tick).toBeCloseTo(65536.25, 9);
+    expect(obstacles('ice', 65536.25)).toEqual(obstacles('ice', 0.25));
+    rebase(p, { ...snap({}, []), tick: 3 }, ME, 7 * DT);
+    expect(view(p, snap({}, []), 7 * DT)!.tick).toBe(3);
+
+    // Frozen host: the snapshot as is, its tick included.
+    reset(p, 'break', 'ice');
+    const frozen = { ...snap({}, []), tick: 40 };
+    rebase(p, frozen, ME, 8 * DT);
+    expect(view(p, frozen, 9.5 * DT)).toBe(frozen);
+  });
+
+  it('bounces the local puck off the arena of the match and stamps each obstacle hit', () => {
+    const [berg] = obstacles('ice', 0);
+    // 20 units from the iceberg at 1000 units/s: contact in the 5th step, ~21 ms.
+    const s = snap({ x: berg.x - berg.r - PUCK_R - 20, y: berg.y, vx: 1000 }, []);
+    const p = predict();
+    reset(p, 'play', 'ice');
+    rebase(p, s, ME, 1000);
+    expect(p.hits).toEqual([]);
+    const v = view(p, s, 1050)!;
+    expect(v.puck.vx).toBeLessThan(0);
+    expect(Object.keys(p.hits)).toEqual(['0']);
+    expect(p.hits[0]).toBeCloseTo(1000 + 5 * DT, 9);
+
+    // The classic rink has nothing there.
+    const q = predict();
+    reset(q, 'play', 'classic');
+    rebase(q, s, ME, 1000);
+    expect(view(q, s, 1050)!.puck.vx).toBeGreaterThan(0);
+    expect(q.hits).toEqual([]);
+  });
 });

@@ -5,7 +5,7 @@ import { gzipSync } from 'node:zlib';
 
 const BUDGETS = [
   { file: 'dist/index.js', max: 15 * 1024 },
-  { file: 'dist/local.js', max: 4 * 1024 },
+  { file: 'dist/local.js', max: 5 * 1024 },
 ];
 
 // An entry plus every chunk it statically imports, concatenated.

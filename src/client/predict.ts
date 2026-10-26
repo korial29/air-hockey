@@ -3,9 +3,11 @@
 // snapshot (taken as the host state at its arrival) and simulated forward, so a fast puck is
 // drawn where it is and an own hit redirects it at once. Other paddles stand at their latest
 // snapshot position for collisions; they are drawn interpolated, INTERP_DELAY in the past.
+// Obstacles follow the world tick, rebased on the snapshot tick: the arena is a pure function of
+// it, so the local puck bounces off the same penguins as the host's.
 import { GOAL, H, PUCK_R, TICK_HZ, W } from '../shared/constants';
 import { createWorld, step } from '../shared/physics';
-import type { Paddle, Phase, Snapshot, World } from '../shared/types';
+import type { Arena, Paddle, Phase, Snapshot, World } from '../shared/types';
 
 /** Physics step, in ms. */
 const DT = 1000 / TICK_HZ;
@@ -37,14 +39,21 @@ export interface Prediction {
   off?: boolean;
   /** Score of the last snapshot. When it changes the puck was served: rebased without easing. */
   score: string;
+  /**
+   * hits[i]: time (ms, the clock of `now`) of the last local puck contact with obstacle i of
+   * obstacles(w.arena, tick), undefined before any. For hit animations.
+   */
+  hits: number[];
 }
 
+/** w.arena comes from the match message, through reset. */
 export const predict = (): Prediction => ({
   w: createWorld(),
   o: [0, 0],
   t: -1,
   hold: 0,
   score: '',
+  hits: [],
 });
 
 /** Steps w up to now. */
@@ -66,6 +75,7 @@ const advance = (p: Prediction, now: number): void => {
     if (p.me && w.hit == p.me.id) {
       p.hold = p.t + GRACE;
     }
+    w.bumps.forEach(i => (p.hits[i] = p.t + DT));
     p.o[0] *= EASE;
     p.o[1] *= EASE;
   }
@@ -104,14 +114,16 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
   p.t = now;
   p.hold = 0;
   p.wait = false;
+  w.tick = s.tick;
   Object.assign(k, n);
 };
 
 /**
  * Phase change: the host respawns paddles and maybe serves, so the own paddle and the puck
- * restart from the next snapshot.
+ * restart from the next snapshot. `arena`: the host's, from the same match message.
  */
-export const reset = (p: Prediction, phase: Phase): void => {
+export const reset = (p: Prediction, phase: Phase, arena: Arena): void => {
+  p.w.arena = arena;
   p.me = undefined;
   p.score = '';
   p.off = phase == 'break' || phase == 'end';
@@ -120,6 +132,8 @@ export const reset = (p: Prediction, phase: Phase): void => {
 /**
  * The state to draw at now: the snapshot interpolated in the past (s) for the other paddles and
  * the score, the local puck and own paddle in the present. `target`: the clamped pointer.
+ * Its tick is the fractional world tick at now: draw obstacles(p.w.arena, tick) with it. While
+ * the host is frozen (break, end) s comes back as is, its tick still.
  */
 export const view = (
   p: Prediction,
@@ -147,6 +161,7 @@ export const view = (
   }
   return {
     ...s,
+    tick: w.tick + (now - p.t) / DT,
     puck: { ...k, x, y },
     paddles: s.paddles.map(q => (q.id == me?.id ? me : q)),
   };

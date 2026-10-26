@@ -1,8 +1,10 @@
 // Fixed-step physics, shared by the host (authoritative) and the client (paddle prediction).
 // Paddles are kinematic (infinite mass): they push the puck, the puck never pushes them,
-// except when it is pinned against a wall (see the last pass of `step`).
+// except when it is pinned against a wall (see the last pass of `step`). Obstacles are kinematic
+// too: they push both, and kick the puck away like pinball bumpers.
+import { obstacles } from './arena';
 import { GOAL, H, PADDLE_MAX_SPEED, PADDLE_R, PUCK_MAX_SPEED, PUCK_R, W } from './constants';
-import type { Arena, Paddle, Team, World } from './types';
+import type { Arena, Obstacle, Paddle, Puck, Team, World } from './types';
 
 /** Restitution of walls, posts and paddle hits. */
 const E = 0.9;
@@ -10,6 +12,8 @@ const E = 0.9;
 const DRAG = 0.7;
 /** Minimum speed of a puck whose centre is past a goal line, so it always drops in. */
 const SLOT_SPEED = 300;
+/** Minimum speed of a puck leaving an obstacle: the pinball kick. */
+const KICK = 1000;
 /** Paddle-puck contact distance. */
 const RR = PUCK_R + PADDLE_R;
 /** Range of a paddle centre x within its half. */
@@ -29,7 +33,83 @@ const place = (p: Paddle, x: number, y: number): void => {
   p.y = cl(y, PADDLE_R, H - PADDLE_R);
 };
 
-/** Empty world: puck at the centre, no paddles, 0-0. */
+/** Puck counterpart of place: kept between the top and bottom walls. */
+const put = (k: Puck, x: number, y: number): void => {
+  k.x = x;
+  k.y = cl(y, PUCK_R, H - PUCK_R);
+};
+
+/**
+ * Pushes c out of circle o (an obstacle, the puck, a paddle) to the contact distance D, through
+ * fix (place or put). When a wall stops it, it slides along that wall instead: a penguin at a
+ * board squeezes it out sideways. Returns whether c was inside.
+ */
+const out = <T extends Puck | Paddle>(
+  c: T,
+  o: Puck | Obstacle,
+  D: number,
+  fix: (c: T, x: number, y: number) => void,
+): boolean => {
+  let nx = c.x - o.x;
+  let ny = c.y - o.y;
+  let d = Math.hypot(nx, ny);
+  if (d >= D) {
+    return false;
+  }
+  if (!d) {
+    nx = d = 1;
+  }
+  const y = o.y + (ny / d) * D;
+  fix(c, o.x + (nx / d) * D, y);
+  nx = c.x - o.x;
+  ny = c.y - o.y;
+  if (nx * nx + ny * ny < D * D) {
+    // The top or bottom wall held it: slide along x. Else the centre line or a side wall: along y.
+    if (c.y != y) {
+      fix(c, o.x + (nx < 0 ? -1 : 1) * Math.sqrt(D * D - ny * ny), c.y);
+    } else {
+      fix(c, c.x, o.y + (ny < 0 ? -1 : 1) * Math.sqrt(D * D - nx * nx));
+    }
+  }
+  return true;
+};
+
+/**
+ * Puck against the obstacles: out of them, bounce on the relative velocity (penguins move), then
+ * the kick: it leaves at KICK at least, the push added along the normal. Records w.bumps.
+ */
+const bump = (w: World, obs: Obstacle[]): void =>
+  obs.forEach((o, i) => {
+    const k = w.puck;
+    if (!out(k, o, o.r + PUCK_R, put)) {
+      return;
+    }
+    if (!w.bumps.includes(i)) {
+      w.bumps.push(i);
+    }
+    const d = Math.hypot(k.x - o.x, k.y - o.y);
+    const nx = (k.x - o.x) / d;
+    const ny = (k.y - o.y) / d;
+    const vn = (k.vx - o.vx) * nx + (k.vy - o.vy) * ny;
+    if (vn < 0) {
+      k.vx -= (1 + E) * vn * nx;
+      k.vy -= (1 + E) * vn * ny;
+    }
+    const s = Math.hypot(k.vx, k.vy);
+    if (s < KICK) {
+      // Smallest push along the normal that brings the speed to KICK.
+      const un = k.vx * nx + k.vy * ny;
+      const a = Math.sqrt(un * un - s * s + KICK * KICK) - un;
+      k.vx += a * nx;
+      k.vy += a * ny;
+    }
+  });
+
+/** A paddle out of the obstacles: it slides around them. */
+const avoid = (p: Paddle, obs: Obstacle[]): void =>
+  obs.forEach(o => out(p, o, o.r + PADDLE_R, place));
+
+/** Empty world at tick 0: puck at the centre, no paddles, 0-0. */
 export const createWorld = (arena: Arena = 'ice'): World => ({
   arena,
   tick: 0,
@@ -48,33 +128,41 @@ export const clampPaddle = (team: Team, x: number, y: number): [number, number] 
 
 /**
  * Spawn point for the n-th paddle of a team, spread over its half.
- * Four columns of three, from the goal outward; the columns next to the serve spot
- * (W / 4 from the goal) are 100 units away from it, more than PUCK_R + PADDLE_R.
+ * Four columns of three, from the goal outward; the column next to the serve spot
+ * (W / 4 from the goal) is 100 units away from it, more than PUCK_R + PADDLE_R. The last two
+ * columns stand either side of the icebergs (x 450-460), the last one clear of the nearest
+ * penguin lane (x 720): no obstacle ever covers a spawn point.
  * Past 12 paddles the grid repeats, shifted down by 60 units.
  */
 export const spawnPoint = (team: Team, n: number): [number, number] => {
-  const x = ([3, 6, 10, 13][((n / 3) | 0) % 4] * W) / 32;
+  const x = [100, 210, 320, 600][((n / 3) | 0) % 4];
   const y = H / 2 + [0, -0.3, 0.3][n % 3] * H + 60 * ((n / 12) | 0);
   return clampPaddle(team, team ? W - x : x, y);
 };
 
 /**
- * Advances the world by dt seconds (always 1 / TICK_HZ in practice).
- * Moves paddles toward their target, moves the puck, resolves collisions.
+ * Advances the world by dt seconds (always 1 / TICK_HZ in practice) and w.tick by one.
+ * Moves paddles toward their target, moves the puck, resolves collisions with the obstacles
+ * of the arena at the new tick.
  * On a goal it bumps the score, re-serves the puck and returns the scoring team; -1 otherwise.
- * Sets w.hit to the paddle that touched the puck during the step (the last one if several), or -1.
+ * Sets w.hit to the paddle that touched the puck during the step (the last one if several), or -1,
+ * and w.bumps to the obstacles it touched.
  *
  * No tunnelling at 240 Hz: the puck moves at most 2400 / 240 = 10 units per step (< PUCK_R = 28
  * against walls and posts), a paddle 7200 / 240 = 30, so the closing distance per step is at
  * most 40 < PUCK_R + PADDLE_R = 72: an overlap is always caught before the centres cross.
+ * Penguins move about 1 unit per step: puck to obstacle closes at most 11 < 40 + 28 (the
+ * smallest obstacle), paddle to obstacle at most 31 < 40 + 44.
  */
 export const step = (w: World, dt: number): Team | -1 => {
   w.hit = -1;
+  w.bumps = [];
   if (!(dt > 0)) {
     return -1;
   }
   const k = w.puck;
   const m = PADDLE_MAX_SPEED * dt;
+  const obs = obstacles(w.arena, ++w.tick);
   let goal: Team | -1 = -1;
 
   for (const p of w.paddles) {
@@ -90,6 +178,7 @@ export const step = (w: World, dt: number): Team | -1 => {
       dy *= m / d;
     }
     place(p, ox + dx, oy + dy);
+    avoid(p, obs);
     p.vx = (p.x - ox) / dt;
     p.vy = (p.y - oy) / dt;
   }
@@ -172,38 +261,28 @@ export const step = (w: World, dt: number): Team | -1 => {
     }
   }
 
+  bump(w, obs);
+
+  // Whatever overlap is left (puck pinned against a wall, an obstacle or squeezed between paddles,
+  // paddle on the serve spot) pushes the paddle back, sliding along the centre line, a wall or an
+  // obstacle that stops it. A paddle that still cannot yield moves the puck instead, and the
+  // obstacles push the puck out again. Four passes leave < 0.1 units of overlap with 6 paddles,
+  // under a unit in a rare 16-paddle scrum against an obstacle.
+  for (let n = 0; n < 4; n++) {
+    for (const p of w.paddles) {
+      if (out(p, k, RR, place)) {
+        w.hit = p.id;
+        avoid(p, obs);
+        out(k, p, RR, put);
+      }
+    }
+    bump(w, obs);
+  }
+
   const s = Math.hypot(k.vx, k.vy);
   if (s > PUCK_MAX_SPEED) {
     k.vx *= PUCK_MAX_SPEED / s;
     k.vy *= PUCK_MAX_SPEED / s;
-  }
-
-  // Whatever overlap is left (puck pinned against a wall or squeezed between paddles, paddle on
-  // the serve spot) pushes the paddle back, sliding along the centre line or a side wall when it
-  // stands on one. A paddle that still cannot yield moves the puck instead. Three passes leave
-  // < 0.002 units of overlap with 4 paddles, < 0.1 in a 16-paddle scrum.
-  for (let n = 0; n < 3; n++) {
-    for (const p of w.paddles) {
-      let nx = p.x - k.x;
-      let ny = p.y - k.y;
-      let d = Math.hypot(nx, ny);
-      if (d < RR && d) {
-        w.hit = p.id;
-        place(p, k.x + (nx / d) * RR, k.y + (ny / d) * RR);
-        // Stopped by the centre line or a side wall: slide along it to the contact distance.
-        d = p.x - k.x;
-        if (d * d < RR * RR) {
-          place(p, p.x, k.y + (ny < 0 ? -1 : 1) * Math.sqrt(RR * RR - d * d));
-        }
-        nx = k.x - p.x;
-        ny = k.y - p.y;
-        d = Math.hypot(nx, ny);
-        if (d < RR && d) {
-          k.x = p.x + (nx / d) * RR;
-          k.y = cl(p.y + (ny / d) * RR, PUCK_R, H - PUCK_R);
-        }
-      }
-    }
   }
   return goal;
 };
