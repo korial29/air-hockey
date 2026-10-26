@@ -59,7 +59,9 @@ const fakeContext = () => {
             ? (a: number, ...r: number[]) => (m = [a, r[4]])
             : k == 'measureText'
               ? (s: string) => ({ width: s.length * 10 })
-              : () => {},
+              : String(k).startsWith('create')
+                ? () => ({ addColorStop: () => {} })
+                : () => {},
     set: (t, k, v) => {
       if (k == 'fillStyle') {
         styles.push(v);
@@ -238,8 +240,9 @@ describe('airHockey', () => {
         '3. p3',
       ]),
     );
-    expect(texts.styles).toEqual(expect.arrayContaining(['#fc3', '#d5dbe3']));
-    expect(texts.styles).not.toContain('#cd7f32');
+    expect(texts.styles).toEqual(expect.arrayContaining(['#fc3', '#cfd6df']));
+    // Bronze only on the empty 3rd block's band: no medal without a player.
+    expect(texts.styles.filter(s => s == '#cd7f32')).toHaveLength(1);
     expect(texts.some(t => t.includes('more'))).toBe(false);
 
     // 16 players: the ranking shows what fits, then "+N more"; the podium is full.

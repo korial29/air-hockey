@@ -58,6 +58,42 @@ const line = (color: string, w: number, ...p: number[]) => {
   c.stroke();
 };
 
+/**
+ * Fills the current path with color, then with a gradient on top: stops are [offset, color]
+ * pairs, so one overlay shades any player colour (light on one side, shadow on the other).
+ */
+const fill = (color: string, g: CanvasGradient, ...stops: [number, string][]) => {
+  c.fillStyle = color;
+  c.fill();
+  stops.forEach(([o, s]) => g.addColorStop(o, s));
+  c.fillStyle = g;
+  c.fill();
+};
+
+/** A sphere: lit from the top left. */
+const ball = (x: number, y: number, r: number, color: string) => {
+  c.beginPath();
+  c.arc(x, y, r, 0, 7);
+  fill(
+    color,
+    c.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.05, x, y, r),
+    [0, '#fffa'],
+    [0.45, '#fff0'],
+    [1, '#0007'],
+  );
+};
+
+/** A soft contact shadow on the floor. */
+const shadow = (x: number, y: number, rx: number, ry: number) => {
+  c.save();
+  c.translate(x, y);
+  c.scale(1, ry / rx);
+  c.beginPath();
+  c.arc(0, 0, rx, 0, 7);
+  fill('#0000', c.createRadialGradient(0, 0, 0, 0, 0, rx), [0, '#0008'], [1, '#0000']);
+  c.restore();
+};
+
 /** Covers the rink (in rink coordinates) with color, label in the middle. */
 export const veil = (color: string, label = '') => {
   rect(0, 0, W, H, color);
@@ -202,42 +238,94 @@ export const stadium = (ranking: Rank[], winner: Team | undefined, now: number) 
   const pw = Math.min(W * 0.36, f * 12);
   const sw = Math.min(u * 5, (W - pw) / 3.4);
   const top = podium(ranking);
+  const med = ['#fc3', '#cfd6df', '#cd7f32'];
+  // Depth of the blocks' top faces, seen from slightly above.
+  const d = sw * 0.16;
+  const at = (i: number) => (W - pw) / 2 + [0, -1, 1][i] * sw;
+  const ys = [3.4, 2.7, 2.2].map(h => CH - u * (0.4 + h));
   for (let i = 0; i < 3 && top[0]; i++) {
+    const m = at(i);
+    const y = ys[i];
+    const l = m - sw / 2;
+    const k = sw * 0.08;
+    // Top face: a trapezoid narrowing toward the back.
+    c.beginPath();
+    c.moveTo(l, y);
+    c.lineTo(l + k, y - d);
+    c.lineTo(l + sw - k, y - d);
+    c.lineTo(l + sw, y);
+    fill('#f4f7fb', c.createLinearGradient(0, y - d, 0, y), [0, '#fff0'], [1, '#b8c4d688']);
+    // Front face: lit in the middle, darker toward the edges and the floor.
+    c.beginPath();
+    c.rect(l, y, sw, CH - y);
+    fill(
+      '#d6deea',
+      c.createLinearGradient(l, 0, l + sw, 0),
+      [0, '#0004'],
+      [0.18, '#fff4'],
+      [0.5, '#fff0'],
+      [1, '#0005'],
+    );
+    fill('#0000', c.createLinearGradient(0, y, 0, CH), [0, '#0000'], [1, '#0006']);
+    rect(l, y + u * 0.14, sw, u * 0.16, med[i]);
+    line('#fff', 4, l, y, l + sw, y);
+    // Embossed rank: dark below right, light above left.
+    const n = i + 1 + '';
+    const ny = y + u * 0.95;
+    text(n, m + 4, ny + 4, u * 1.1, 'center', '#0004');
+    text(n, m - 2, ny - 2, u * 1.1, 'center', '#fff');
+    text(n, m, ny, u * 1.1, 'center', '#2a4170');
     const r = top[i];
-    const m = (W - pw) / 2 + [0, -1, 1][i] * sw;
-    const y = CH - u * (0.4 + [3.4, 2.7, 2.2][i]);
-    rect(m - sw / 2, y, sw, CH, '#dce3ee');
-    rect(m - sw / 2, y, sw, 10, '#fff');
-    rect(m + sw / 2 - 10, y, 10, CH, '#0002');
-    text(i + 1 + '', m, y + u * 0.75, u * 1.1, 'center', '#2a4170');
     if (r) {
-      text(`${r.goals} goal${r.goals > 1 ? 's' : ''}`, m, y + u * 1.65, f, 'center', '#2a4170', sw);
-      // The player: arms (raised by the winner), body, head; medal hanging on the chest.
-      const b = u * 0.55;
-      const t = y - u * 1.5;
-      for (const e of [-b, b]) {
-        line(
-          r.color,
-          u / 4,
-          m + e * 0.7,
-          t + u * 0.3,
-          m + e * (i ? 1.4 : 1.8),
-          t + u * (i ? 1.1 : -0.6),
-        );
-      }
-      circle(m, t + b, b, r.color);
-      rect(m - b, t + b, b * 2, y - t - b, r.color);
-      circle(m, t - u * 0.42, u * 0.48, r.color);
-      for (const e of [-1, 1]) {
-        circle(m + e * u * 0.17, t - u * 0.48, u * 0.09, '#fff');
-        circle(m + e * u * 0.17, t - u * 0.46, u * 0.045, '#000');
-      }
-      line('#d33', u * 0.12, m - b * 0.6, t + u * 0.1, m, t + u * 0.75, m + b * 0.6, t + u * 0.1);
-      circle(m, t + u * 0.8, u * 0.26, ['#fc3', '#d5dbe3', '#cd7f32'][i]);
-      circle(m, t + u * 0.8, u * 0.15, '#0002');
-      text(r.name, m, t - u * 1.4, f, 'center', '#fff', sw);
+      text(`${r.goals} goal${r.goals > 1 ? 's' : ''}`, m, ny + u * 0.9, f, 'center', '#2a4170', sw);
     }
   }
+  // The players, once every block is drawn: shadow, shoes, arms (raised by the winner),
+  // body, head, then the medal hanging on the chest.
+  top.forEach((r, i) => {
+    if (!r) {
+      return;
+    }
+    const m = at(i);
+    const g = ys[i] - d / 2;
+    const b = u * 0.55;
+    const t = g - u * 1.5;
+    shadow(m, g, b * 1.5, d * 0.3);
+    for (const e of [-1, 1]) {
+      ball(m + e * b * 0.45, g - u * 0.1, u * 0.17, '#1d2433');
+      const hx = m + e * b * (i ? 1.4 : 1.8);
+      const hy = t + u * (i ? 1.1 : -0.6);
+      line(r.color, u / 4, m + e * b * 0.7, t + u * 0.3, hx, hy);
+      line('#0003', u / 10, m + e * b * 0.7, t + u * 0.36, hx, hy + u * 0.06);
+      ball(hx, hy, u * 0.15, r.color);
+    }
+    c.beginPath();
+    c.roundRect(m - b, t, b * 2, g - u * 0.12 - t, b);
+    fill(
+      r.color,
+      c.createLinearGradient(m - b, 0, m + b, 0),
+      [0, '#0006'],
+      [0.3, '#fff5'],
+      [0.55, '#fff0'],
+      [1, '#0007'],
+    );
+    const h = t - u * 0.42;
+    ball(m, h, u * 0.48, r.color);
+    for (const e of [-1, 1]) {
+      ball(m + e * u * 0.17, h - u * 0.06, u * 0.1, '#fff');
+      circle(m + e * u * 0.17, h - u * 0.04, u * 0.05, '#000');
+    }
+    c.beginPath();
+    c.arc(m, h + u * 0.1, u * 0.18, 0.3, 2.8);
+    c.strokeStyle = '#0008';
+    c.lineWidth = u * 0.05;
+    c.stroke();
+    line('#c22', u * 0.12, m - b * 0.6, t + u * 0.1, m, t + u * 0.75);
+    line('#2a5bd7', u * 0.12, m + b * 0.6, t + u * 0.1, m, t + u * 0.75);
+    ball(m, t + u * 0.8, u * 0.26, med[i]);
+    text(i + 1 + '', m, t + u * 0.82, u * 0.24, 'center', '#0007');
+    text(r.name, m, t - u * 1.25, f, 'center', '#fff', sw);
+  });
 
   // Points ranking, small, bottom-right; players who left are greyed.
   const lh = f * 1.2;
