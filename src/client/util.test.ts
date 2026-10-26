@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlayerInfo, Rank, Snapshot } from '../shared/types';
-import { byTeam, grid, podium, sample, toField } from './util';
+import { BOT, CH, TOP, byTeam, flow, podium, sample, shown, toField } from './util';
 
 const snap = (x: number, paddles: { id: number; x: number; y: number }[] = []): Snapshot => ({
   tick: 0,
@@ -10,11 +10,19 @@ const snap = (x: number, paddles: { id: number; x: number; y: number }[] = []): 
 });
 
 describe('toField', () => {
-  it('maps client pixels to field units through the canvas rect', () => {
-    const rect = { left: 10, top: 20, width: 800, height: 450 };
-    expect(toField(10, 20, rect)).toEqual([0, 0]);
-    expect(toField(810, 470, rect)).toEqual([1600, 900]);
-    expect(toField(410, 245, rect)).toEqual([800, 450]);
+  // Half scale: the canvas is 800 × CH / 2 CSS px, the rink starts TOP / 2 px down.
+  const rect = { left: 10, top: 20, width: 800, height: CH / 2 };
+
+  it('maps client pixels to rink units through the canvas rect, below the top band', () => {
+    expect(CH).toBe(TOP + 900 + BOT);
+    expect(toField(10, 20 + TOP / 2, rect)).toEqual([0, 0]);
+    expect(toField(810, 20 + TOP / 2 + 450, rect)).toEqual([1600, 900]);
+    expect(toField(410, 20 + TOP / 2 + 225, rect)).toEqual([800, 450]);
+  });
+
+  it('gives y outside the rink over the HUD bands', () => {
+    expect(toField(10, 20, rect)).toEqual([0, -TOP]);
+    expect(toField(10, 20 + CH / 2, rect)).toEqual([0, 900 + BOT]);
   });
 });
 
@@ -99,20 +107,39 @@ describe('podium', () => {
   });
 });
 
-describe('grid', () => {
-  it('uses one column while every line fits', () => {
-    expect(grid(5, 9)).toEqual([1, 5]);
-    expect(grid(9, 9)).toEqual([1, 9]);
+describe('flow', () => {
+  it('fills rows left to right and wraps', () => {
+    expect(flow([3, 4, 2, 5], 8, 3)).toEqual([
+      [0, 0],
+      [3, 0],
+      [0, 1],
+      [2, 1],
+    ]);
   });
 
-  it('splits into two columns past the fit', () => {
-    expect(grid(10, 9)).toEqual([2, 5]);
-    expect(grid(16, 9)).toEqual([2, 8]);
+  it('stops at the last row, and gives an oversized item a row of its own', () => {
+    expect(flow([3, 4, 2, 5], 8, 1)).toEqual([
+      [0, 0],
+      [3, 0],
+    ]);
+    expect(flow([12, 1], 8, 2)).toEqual([
+      [0, 0],
+      [0, 1],
+    ]);
+    expect(flow([], 8, 2)).toEqual([]);
+    expect(flow([1], 8, 0)).toEqual([]);
+  });
+});
+
+describe('shown', () => {
+  it('shows every line that fits', () => {
+    expect(shown(5, 9)).toEqual([5, 0]);
+    expect(shown(9, 9)).toEqual([9, 0]);
   });
 
-  it('cuts lines that fit nowhere, and copes with nothing to show', () => {
-    expect(grid(20, 8)).toEqual([2, 8]);
-    expect(grid(0, 9)).toEqual([1, 0]);
-    expect(grid(3, 0)).toEqual([2, 0]);
+  it('keeps the last line for "+N more" past the fit', () => {
+    expect(shown(16, 7)).toEqual([6, 10]);
+    expect(shown(3, 0)).toEqual([0, 3]);
+    expect(shown(0, 0)).toEqual([0, 0]);
   });
 });

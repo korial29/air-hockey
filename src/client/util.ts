@@ -8,12 +8,20 @@ export interface Stamped {
   s: Snapshot;
 }
 
-/** Client (CSS px) coordinates → field units, given the canvas bounding rect. */
+/** HUD bands above and below the rink, in field units. The canvas is W × CH. */
+export const TOP = 160;
+export const BOT = 140;
+export const CH = TOP + H + BOT;
+
+/**
+ * Client (CSS px) coordinates → field units, given the canvas bounding rect.
+ * y is measured from the rink's top edge: the HUD bands give negative y or y past H.
+ */
 export const toField = (
   cx: number,
   cy: number,
   r: { left: number; top: number; width: number; height: number },
-): [number, number] => [((cx - r.left) * W) / r.width, ((cy - r.top) * H) / r.height];
+): [number, number] => [((cx - r.left) * W) / r.width, ((cy - r.top) * CH) / r.height - TOP];
 
 /**
  * Positions of b, moved back toward a by (1 - f); the puck velocity is b's.
@@ -58,10 +66,29 @@ export const podium = (ranking: Rank[]): Rank[] =>
     .slice(0, 3);
 
 /**
- * Ranking table shape for n lines when `fit` rows fit on screen: one column while it fits,
- * then two (filled column by column). Lines past cols × rows are cut.
+ * Flows items of widths ws into rows of width room, left to right: the [x, row] of each item
+ * that fits in `rows` rows. An item wider than room still gets a row of its own.
  */
-export const grid = (n: number, fit: number): [cols: number, rows: number] => {
-  const cols = n > fit ? 2 : 1;
-  return [cols, Math.max(0, Math.min(Math.ceil(n / cols), fit))];
+export const flow = (ws: number[], room: number, rows: number): [x: number, row: number][] => {
+  const at: [number, number][] = [];
+  let x = 0;
+  let row = 0;
+  for (const w of ws) {
+    if (x && x + w > room) {
+      x = 0;
+      row++;
+    }
+    if (row >= rows) {
+      break;
+    }
+    at.push([x, row]);
+    x += w;
+  }
+  return at;
+};
+
+/** n lines in room lines: all of them when they fit, else room - 1 and a "+N more" line. */
+export const shown = (n: number, room: number): [lines: number, more: number] => {
+  const k = n > room ? Math.max(0, room - 1) : n;
+  return [k, n - k];
 };

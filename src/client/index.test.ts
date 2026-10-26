@@ -3,6 +3,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { decodeInput, encodeSnapshot } from '../shared/protocol';
 import type { Rank, SocketLike } from '../shared/types';
 import { airHockey } from './index';
+import { TOP } from './util';
 
 vi.mock('../shared/physics', async importOriginal => ({
   ...(await importOriginal<object>()),
@@ -36,21 +37,39 @@ beforeAll(() => {
   HTMLCanvasElement.prototype.getContext = (() => null) as never;
 });
 
-/** A 2D context that accepts every call and records the text drawn. */
+/**
+ * A 2D context that accepts every call and records the text drawn, the canvas y of each
+ * text in field units (through setTransform), and the fill styles set.
+ */
 const fakeContext = () => {
   const texts: string[] = [];
+  const ys = new Map<string, number>();
+  const styles: string[] = [];
+  let m = [1, 0];
   const ctx = new Proxy({} as Record<string | symbol, unknown>, {
     get: (t, k) =>
       k in t
         ? t[k]
         : k == 'fillText'
-          ? (s: string) => texts.push(s)
-          : k == 'measureText'
-            ? (s: string) => ({ width: s.length * 10 })
-            : () => {},
+          ? (s: string, _x: number, y: number) => {
+              texts.push(s);
+              ys.set(s, y + m[1] / m[0]);
+            }
+          : k == 'setTransform'
+            ? (a: number, ...r: number[]) => (m = [a, r[4]])
+            : k == 'measureText'
+              ? (s: string) => ({ width: s.length * 10 })
+              : () => {},
+    set: (t, k, v) => {
+      if (k == 'fillStyle') {
+        styles.push(v);
+      }
+      t[k] = v;
+      return true;
+    },
   });
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as never);
-  return texts;
+  return Object.assign(texts, { ys, styles });
 };
 
 const rank = (id: number, team: 0 | 1, goals: number, left?: boolean): Rank => ({
@@ -123,9 +142,10 @@ describe('airHockey', () => {
     const game = airHockey(document.body, { name: 'Ana', socket });
     socket.onopen!();
     const canvas = document.body.firstElementChild!.shadowRoot!.querySelector('canvas')!;
-    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 450 }) as DOMRect;
+    // Half scale: 800 × 600 CSS px for 1600 × 1200 field units, the rink TOP / 2 px down.
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 }) as DOMRect;
     const move = (x: number) =>
-      canvas.dispatchEvent(new MouseEvent('pointermove', { clientX: x, clientY: 100 }));
+      canvas.dispatchEvent(new MouseEvent('pointermove', { clientX: x, clientY: 180 }));
 
     move(100);
     frame(0);
@@ -152,10 +172,11 @@ describe('airHockey', () => {
     game.on('match', match);
     const send = (m: object) => socket.onmessage!({ data: JSON.stringify({ t: 'match', ...m }) });
     const draw = () => {
-      texts.length = 0;
+      texts.length = texts.styles.length = 0;
       frame(0);
       return texts;
     };
+    const y = (s: string) => texts.ys.get(s)!;
     socket.onopen!();
 
     // Before the roster, and with no ranking at all.
@@ -163,7 +184,7 @@ describe('airHockey', () => {
     expect(match).toHaveBeenCalledWith({ phase: 'wait', round: 0, wins: [0, 0] });
     expect(draw()).toContain('Waiting for a player on each side');
     send({ phase: 'end', round: 3, wins: [1, 2], winner: 1, ranking: [] });
-    expect(draw()).toContain('🏆 Right wins');
+    expect(draw()).toContain('🏆 Right team wins');
 
     const players = [{ id: 3, name: 'Ana', color: '#f00', team: 0 }];
     socket.onmessage!({ data: JSON.stringify({ t: 'roster', you: 3, players }) });
@@ -172,11 +193,20 @@ describe('airHockey', () => {
         tick: 1,
         score: [4, 2],
         puck: { x: 1, y: 1, vx: 0, vy: 0 },
-        paddles: [],
+        paddles: [{ id: 3, x: 400, y: 450 }],
       }),
     });
     send({ phase: 'play', round: 2, rounds: 3, goals: 10, wins: [1, 0] });
-    expect(draw()).toEqual(expect.arrayContaining(['4 : 2', 'Round 2/3 · 1–0 · first to 10']));
+    expect(draw()).toEqual(
+      expect.arrayContaining(['4 : 2', 'Round 2/3 · 1–0 · first to 10', 'Left', 'Right']),
+    );
+    // HUD in the bands, outside the rink [TOP, TOP + 900]; paddle names on the rink.
+    expect(y('4 : 2')).toBeLessThan(TOP);
+    expect(y('Round 2/3 · 1–0 · first to 10')).toBeLessThan(TOP);
+    expect(y('Left')).toBeGreaterThan(TOP + 900);
+    expect(y('Right')).toBeGreaterThan(TOP + 900);
+    expect(texts.filter(t => t == 'Ana')).toHaveLength(2);
+    expect(y('GOAL!')).toBeUndefined();
 
     const ranking = [rank(1, 0, 2), rank(2, 0, 5), rank(3, 1, 0, true)];
     send({ phase: 'break', round: 2, wins: [2, 0], winner: 0, ranking });
@@ -188,21 +218,31 @@ describe('airHockey', () => {
       ranking,
     });
     expect(draw()).toEqual(expect.arrayContaining(['Left wins round 2', 'Left 2 – 0 Right']));
+    expect(y('Left wins round 2')).toBeLessThan(TOP);
+    expect(y('Left 2 – 0 Right')).toBeLessThan(TOP);
 
     send({ phase: 'end', round: 2, wins: [2, 0], winner: 0, ranking });
+    // Title, winners, podium (step numbers, goals, names), medals, points ranking.
     expect(draw()).toEqual(
       expect.arrayContaining([
-        '🏆 Left wins',
+        '🏆 Left team wins',
         'p1',
         'p2',
-        '🥇 p2 · 5 goals',
-        '🥈 p1 · 2 goals',
+        '1',
+        '2',
+        '3',
+        '5 goals',
+        '2 goals',
+        'Points',
+        '1. p1',
         '3. p3',
       ]),
     );
-    expect(texts.some(t => t.startsWith('🥉'))).toBe(false);
+    expect(texts.styles).toEqual(expect.arrayContaining(['#fc3', '#d5dbe3']));
+    expect(texts.styles).not.toContain('#cd7f32');
+    expect(texts.some(t => t.includes('more'))).toBe(false);
 
-    // 16 players still draw: two columns, every line shown.
+    // 16 players: the ranking shows what fits, then "+N more"; the podium is full.
     send({
       phase: 'end',
       round: 3,
@@ -210,7 +250,11 @@ describe('airHockey', () => {
       winner: 0,
       ranking: Array.from({ length: 16 }, (_, i) => rank(i + 1, (i % 2) as 0 | 1, i)),
     });
-    expect(draw()).toEqual(expect.arrayContaining(['1. p1', '16. p16']));
+    expect(draw()).toEqual(
+      expect.arrayContaining(['1. p1', '5. p5', '+11 more', 'p16', '15 goals', 'p14']),
+    );
+    expect(texts).not.toContain('6. p6');
+    expect(texts.styles).toContain('#cd7f32');
 
     expect(match).toHaveBeenCalledTimes(6);
     game.destroy();
