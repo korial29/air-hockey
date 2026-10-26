@@ -51,7 +51,9 @@ const unique = (name: string, taken: string[]): string => {
 };
 
 const fresh = (info: PlayerInfo): Rank => ({ ...info, points: 0, goals: 0, hits: 0 });
-const idle = ({ goals, rounds }: Rules, { arena, size, count }: World): Match => ({
+/** A new seed for the icebergs (rocks), never 0 (the fixed layout). */
+const seed = (): number => 1 + ((Math.random() * 0xfffffffe) >>> 0);
+const idle = ({ goals, rounds }: Rules, { arena, size, count, seed }: World): Match => ({
   t: 'match',
   phase: 'wait',
   round: 0,
@@ -59,6 +61,7 @@ const idle = ({ goals, rounds }: Rules, { arena, size, count }: World): Match =>
   arena,
   size,
   count,
+  seed,
   goals,
   rounds,
 });
@@ -261,7 +264,7 @@ export class Room {
   /** A world on the rink of layout(0), in the first scene, for a room nobody joined yet. */
   private empty(): World {
     const { size, count } = layout(0);
-    return createWorld(scene(this.rules.arena, 0), size, count);
+    return createWorld(scene(this.rules.arena, 0), size, count, seed());
   }
 
   /** The scene of the current round: the first one while waiting. */
@@ -377,7 +380,8 @@ export class Room {
    * first one while waiting), when that is fair: while waiting, during the countdown, or mid-round
    * while the puck waits at its serve spot (after a goal) and nobody has touched it yet. Paddles
    * respawn on it (see shape), the puck keeps its serve spot, scaled; the score stays, so does
-   * the countdown. The caller tells the clients.
+   * the countdown. The icebergs (rocks) take a new place while waiting, keep the round's one
+   * otherwise. The caller tells the clients.
    * Returns whether it did.
    */
   private fit(): boolean {
@@ -392,7 +396,7 @@ export class Room {
     }
     const { x, y } = w.puck;
     const r = size / w.size;
-    this.shape(w.score);
+    this.shape(w.score, phase === 'wait' ? seed() : w.seed);
     if (phase === 'play') {
       Object.assign(this.world.puck, { x: x * r, y: y * r });
     }
@@ -402,10 +406,11 @@ export class Room {
   /**
    * The world on the rink for the joined players (layout), in the scene of the round, at tick 0,
    * where no penguin stands on the centre spot: paddles back to their spawn points, puck served,
-   * every obstacle back and intact (a fresh w.obs, sized to the new count), score as given.
+   * every obstacle back and intact (a fresh w.obs, sized to the new count), the icebergs (rocks)
+   * placed by `seed`, score as given.
    * Returns the paddles per team.
    */
-  private shape(score: [number, number]): number[] {
+  private shape(score: [number, number], seed: number): number[] {
     const w = this.world;
     const { size, count } = layout(this.size);
     const n = [0, 0];
@@ -413,20 +418,20 @@ export class Room {
       [p.tx, p.ty] = [p.x, p.y] = spawnPoint(p.team, n[p.team]++, size);
     });
     const arena = this.scene();
-    Object.assign(w, createWorld(arena, size, count), { paddles: w.paddles, score });
-    Object.assign(this.m, { arena, size, count });
+    Object.assign(w, createWorld(arena, size, count, seed), { paddles: w.paddles, score });
+    Object.assign(this.m, { arena, size, count, seed });
     this.last = undefined;
     return n;
   }
 
   /**
    * Next round, in its scene, on the rink for the players joined right now (set until the next
-   * round): paddles back to their spawn points, puck served, head start for the smaller team,
-   * then the readySec countdown (none at 0) before play.
+   * round), the icebergs (rocks) in a new place: paddles back to their spawn points, puck served,
+   * head start for the smaller team, then the readySec countdown (none at 0) before play.
    */
   private next(): void {
     this.m.round++;
-    const [a, b] = this.shape([0, 0]);
+    const [a, b] = this.shape([0, 0], seed());
     const { goals, headStart, readySec } = this.rules;
     this.world.score[a < b ? 0 : 1] = Math.min(goals - 1, headStart * Math.abs(a - b));
     this.timer = Math.round(readySec * TICK_HZ);

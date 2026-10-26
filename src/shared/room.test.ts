@@ -8,7 +8,8 @@ import type { Arena, Conn, PlayerInfo, Team, World } from './types';
 // The room is tested against a fake physics: paddles jump to their target (in step and in the
 // countdown's skate), the toucher, the goal outcome and the obstacles broken by the next step are
 // driven by the test.
-// New worlds start at tick `tick0` and record their arena and geometry in `arenas` and `rinks`.
+// New worlds start at tick `tick0` and record their arena, geometry and seed in `arenas`, `rinks`
+// and `seeds`.
 // Spawn points and the input clamp scale with the size like the real ones.
 const physics = vi.hoisted(() => ({
   goal: -1 as -1 | 0 | 1,
@@ -20,13 +21,15 @@ const physics = vi.hoisted(() => ({
   tick0: 0,
   arenas: [] as string[],
   rinks: [] as [number, number][],
+  seeds: [] as number[],
 }));
 
 vi.mock('./physics', () => ({
-  createWorld: (arena: Arena, size = 1, count = 7): World => ({
+  createWorld: (arena: Arena, size = 1, count = 7, seed = 0): World => ({
     arena: (physics.arenas.push(arena), physics.rinks.push([size, count]), arena),
     size,
     count,
+    seed: (physics.seeds.push(seed), seed),
     tick: physics.tick0,
     bumps: [],
     live: false,
@@ -120,7 +123,15 @@ describe('Room', () => {
   let room: Room;
 
   beforeEach(() => {
-    Object.assign(physics, { goal: -1, hit: -1, breaks: [], tick0: 0, arenas: [], rinks: [] });
+    Object.assign(physics, {
+      goal: -1,
+      hit: -1,
+      breaks: [],
+      tick0: 0,
+      arenas: [],
+      rinks: [],
+      seeds: [],
+    });
     room = new Room();
   });
 
@@ -146,10 +157,12 @@ describe('Room', () => {
         arena: 'ice',
         size: 1,
         count: 3,
+        seed: physics.seeds[0],
         goals: 10,
         rounds: 3,
       },
     ]);
+    expect(physics.seeds).toEqual([expect.any(Number)]);
 
     const b = join(room, 'Bob');
     expect(lastRoster(a)).toEqual({ ...lastRoster(b), you: 0 });
@@ -469,6 +482,7 @@ describe('Room tournament', () => {
       skates: 0,
       tick0: 0,
       rinks: [],
+      seeds: [],
     });
     room = new Room(RULES);
   });
@@ -633,6 +647,39 @@ describe('Room tournament', () => {
       join(room, 'B');
       expect(matches(a).map(m => m.phase)).toEqual(['wait', 'play']);
     });
+  });
+
+  it('places the icebergs anew at each round start and while waiting, kept within a round', () => {
+    // Seeds as drawn from Math.random: never 0, the fixed layout.
+    const draws = [0, 0.25, 0.5, 0.75, 0.999999999];
+    vi.spyOn(Math, 'random').mockImplementation(() => draws.shift()!);
+    const seed = (r: number) => 1 + ((r * 0xfffffffe) >>> 0);
+    physics.seeds = [];
+    room = new Room(RULES);
+    const a = join(room, 'A');
+    expect(physics.seeds).toEqual([seed(0)]);
+    expect(seed(0)).toBe(1);
+    expect(lastMatch(a)).toMatchObject({ phase: 'wait', seed: 1 });
+    // Round 1: a new draw, in the world and the match message.
+    const b = join(room, 'B');
+    expect(physics.seeds.at(-1)).toBe(seed(0.25));
+    expect(lastMatch(a)).toMatchObject({ phase: 'ready', round: 1, seed: seed(0.25) });
+    // A refit mid-countdown keeps the round's place.
+    const c = join(room, 'C');
+    expect(lastMatch(a)).toMatchObject({ phase: 'ready', size: Math.sqrt(1.5), seed: seed(0.25) });
+    expect(physics.seeds.slice(-2)).toEqual([seed(0.25), seed(0.25)]);
+    // Round 2: another one.
+    start();
+    winRound(a, 0);
+    nextRound();
+    expect(lastMatch(c)).toMatchObject({ round: 2, seed: seed(0.5) });
+    // Rebuilt while waiting: another one again.
+    room.disconnect(b);
+    room.disconnect(c);
+    expect(lastMatch(a)).toMatchObject({ phase: 'wait', size: 1, seed: seed(0.75) });
+    expect(physics.seeds.at(-1)).toBe(seed(0.75));
+    expect(new Set(physics.seeds.map(String)).size).toBe(4);
+    expect(seed(0.999999999)).toBeLessThan(2 ** 32);
   });
 
   it('brings every obstacle back, intact, at round start', () => {

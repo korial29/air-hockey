@@ -112,6 +112,7 @@ describe('createWorld', () => {
       arena: 'ice',
       size: 1,
       count: 7,
+      seed: 0,
       tick: 0,
       bumps: [],
       live: false,
@@ -127,6 +128,32 @@ describe('createWorld', () => {
       count: 3,
       puck: { x: W, y: H, vx: 0, vy: 0 },
     });
+  });
+
+  it('places the icebergs by its seed: step and skate go around them there', () => {
+    // Seed 25 draws the bottom pair at y 768, 102 above its seed-0 place: out of a puck's reach
+    // on that row.
+    const [, , berg] = obstacles('ice', 0, 1, 7, 25);
+    expect(obstacles('ice', 0)[2].y - berg.y).toBeGreaterThan(berg.r + PUCK_R + 10);
+    const shot = (seed: number) => {
+      const w = createWorld('ice', 1, 7, seed);
+      Object.assign(w.puck, { x: berg.x - berg.r - PUCK_R - 5, y: berg.y, vx: 300 });
+      w.live = true;
+      const bumps: number[] = [];
+      run(w, 20, () => bumps.push(...w.bumps));
+      return [w.seed, bumps, w.puck.vx < 0];
+    };
+    expect(shot(25)).toEqual([25, [2], true]);
+    expect(shot(0)).toEqual([0, [], false]);
+    // A paddle aiming at its centre stops on its edge.
+    const w = createWorld('ice', 1, 7, 25);
+    const p = paddle(0, berg.x - 200, berg.y);
+    [p.tx, p.ty] = [berg.x, berg.y];
+    w.paddles = [p];
+    for (let i = 0; i < 120; i++) {
+      skate(w, DT);
+    }
+    expect(Math.hypot(p.x - berg.x, p.y - berg.y)).toBeCloseTo(berg.r + PADDLE_R, 6);
   });
 });
 

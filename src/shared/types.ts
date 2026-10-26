@@ -67,7 +67,12 @@ export interface World {
   size: number;
   /** How many obstacles of the arena are in play (see obstacles). Set at round start. */
   count: number;
-  /** Physics steps since the world was created; obstacles(arena, tick) gives the obstacles. */
+  /** Places the icebergs (rocks) across the width (see obstacles); 0: the fixed layout. */
+  seed: number;
+  /**
+   * Physics steps since the world was created; obstacles(arena, tick, size, count, seed) gives the
+   * obstacles.
+   */
   tick: number;
   /** Indices in obstacles(arena, tick) the puck touched during the last step. */
   bumps: number[];
@@ -77,8 +82,8 @@ export interface World {
    */
   live: boolean;
   /**
-   * State of each obstacle in play, indexed like obstacles(arena, tick, size, count). Reset at
-   * round start (every obstacle back, intact).
+   * State of each obstacle in play, indexed like obstacles(arena, tick, size, count, seed).
+   * Reset at round start (every obstacle back, intact).
    */
   obs: ObstacleState[];
   puck: Puck;

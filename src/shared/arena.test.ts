@@ -593,6 +593,176 @@ describe('the sea arena', () => {
   });
 });
 
+describe('icebergs (rocks) across the width', () => {
+  const ALL = [2, 3, 4, 5, 6, 7].flatMap(count =>
+    [1, Math.SQRT2, Math.sqrt(3), MAX_SIZE].map(size => ({ size, count })),
+  );
+  /** 500 seeds as the room draws them (1 to 2^32 - 1), spread out, plus the extremes. */
+  const SEEDS = [...Array(498).keys()]
+    .map(i => 1 + ((i * 2654435761) >>> 0))
+    .concat(1, 2 ** 32 - 1);
+  /** The bands of y, size 1: top pair, bottom pair. */
+  const BANDS = [
+    [217, 355],
+    [758, 918],
+  ];
+  /** Distance from (x, y) to the segment from (ax, ay) to (bx, by). */
+  const seg = (x: number, y: number, ax: number, ay: number, bx: number, by: number): number => {
+    const [dx, dy] = [bx - ax, by - ay];
+    const u = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)));
+    return Math.hypot(x - ax - u * dx, y - ay - u * dy);
+  };
+
+  it('keeps the fixed layout for seed 0, and the movers whatever the seed', () => {
+    for (const arena of ['ice', 'sea'] as Arena[]) {
+      for (const { size, count } of ALL) {
+        expect(obstacles(arena, 0, size, count, 0)).toEqual(obstacles(arena, 0, size, count));
+      }
+      expect(
+        obstacles(arena, 0, 1, 7, 0)
+          .slice(0, 4)
+          .map(o => o.y),
+      ).toEqual([270, 270, 870, 870]);
+      for (const seed of SEEDS.slice(0, 50)) {
+        for (const t of [0, 333.5, 1500]) {
+          const a = obstacles(arena, t, 1, 7);
+          const b = obstacles(arena, t, 1, 7, seed);
+          expect(b.slice(4)).toEqual(a.slice(4));
+          // Same x, kind and size: only y moves.
+          b.slice(0, 4).forEach((o, i) => expect({ ...o, y: 0 }).toEqual({ ...a[i], y: 0 }));
+        }
+      }
+    }
+  });
+
+  it('draws y from the seed alone: the same on every call, still within a round', () => {
+    for (const seed of SEEDS) {
+      const a = obstacles('ice', 0, Math.SQRT2, 7, seed);
+      expect(obstacles('ice', 0, Math.SQRT2, 7, seed)).toEqual(a);
+      expect(obstacles('ice', 1777.5, Math.SQRT2, 7, seed).slice(0, 4)).toEqual(a.slice(0, 4));
+      // The sea puts its rocks where the ice puts its icebergs.
+      expect(
+        obstacles('sea', 0, Math.SQRT2, 7, seed)
+          .slice(0, 4)
+          .map(o => o.y),
+      ).toEqual(a.slice(0, 4).map(o => o.y));
+    }
+  });
+
+  it('places each pair at the same y, mirrored, anywhere in its band, scaled', () => {
+    for (const { size, count } of ALL) {
+      const ys: number[][] = [[], []];
+      for (const seed of SEEDS) {
+        const obs = obstacles('ice', 0, size, count, seed).filter(fixed);
+        for (let i = 0; i < obs.length; i += 2) {
+          const [a, b] = [obs[i], obs[i + 1]];
+          expect(b.x).toBeCloseTo(W * size - a.x, 9);
+          expect([b.y, b.r]).toEqual([a.y, a.r]);
+          ys[i / 2].push(a.y / size);
+        }
+      }
+      ys.forEach((y, i) => {
+        if (y.length) {
+          const [lo, hi] = BANDS[i];
+          expect(Math.min(...y)).toBeGreaterThanOrEqual(lo - 1e-9);
+          expect(Math.max(...y)).toBeLessThanOrEqual(hi + 1e-9);
+          // Spread over the band: both ends reached, many distinct places.
+          expect(Math.min(...y)).toBeLessThan(lo + 5);
+          expect(Math.max(...y)).toBeGreaterThan(hi - 5);
+          expect(new Set(y.map(v => Math.round(v))).size).toBeGreaterThan(100);
+        }
+      });
+    }
+    // The pairs draw apart: the bottom one is not the top one shifted.
+    const corr = SEEDS.map(seed => obstacles('ice', 0, 1, 7, seed)).filter(
+      ([a, , b]) => (a.y - 217) / 138 < 0.5 != (b.y - 758) / 160 < 0.5,
+    ).length;
+    expect(corr / SEEDS.length).toBeGreaterThan(0.4);
+    expect(corr / SEEDS.length).toBeLessThan(0.6);
+  });
+
+  it.each(['ice', 'sea'] as Arena[])(
+    'keeps every guarantee for any seed at every count and size (%s)',
+    arena => {
+      const sea = arena == 'sea';
+      /** Smallest margin seen per guarantee: all of them must stay positive. */
+      const worst = {
+        boards: Infinity,
+        shot: Infinity,
+        spots: Infinity,
+        spawn: Infinity,
+        gaps: 1e9,
+      };
+      const see = (k: keyof typeof worst, v: number) => (worst[k] = Math.min(worst[k], v));
+      for (const { size, count } of ALL) {
+        const [X, Y] = [W * size, H * size];
+        const mouth = [...Array(21).keys()].map(k => Y / 2 + (k / 20 - 0.5) * GOAL * size);
+        const spawns = ([0, 1] as Team[]).flatMap(team =>
+          [...Array(MAX_PLAYERS).keys()].map(n => spawnPoint(team, n, size)),
+        );
+        for (const seed of SEEDS) {
+          for (const o of obstacles(arena, 0, size, count, seed).filter(fixed)) {
+            // A paddle and a puck between it and the boards.
+            see('boards', Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r) - FIT);
+            // A straight shot from the centre spot reaches any point of either mouth.
+            for (const y of mouth) {
+              for (const x of [0, X]) {
+                see('shot', seg(o.x, o.y, X / 2, Y / 2, x, y) - o.r - PUCK_R);
+              }
+            }
+            // Serve spots, centre spot and spawn points clear.
+            for (const x of [X / 4, X / 2, (3 * X) / 4]) {
+              see('spots', dist(o, x, Y / 2) - o.r - PUCK_R - 100);
+            }
+            for (const [x, y] of spawns) {
+              see('spawn', dist(o, x, y) - o.r - PADDLE_R - 10);
+            }
+          }
+        }
+        // Top and bottom pairs, and every fixed obstacle to every mover over a period: a paddle and
+        // a puck on the ice, the puck alone at sea (see the sea's squeeze).
+        for (const seed of SEEDS.slice(0, 100)) {
+          for (let t = 0; t < PERIOD; t += 16) {
+            const obs = obstacles(arena, t, size, count, seed);
+            for (const o of obs.filter(fixed)) {
+              for (const q of obs) {
+                if (q != o) {
+                  see('gaps', dist(o, q.x, q.y) - o.r - q.r - (fixed(q) || !sea ? FIT : SLIP));
+                }
+              }
+            }
+          }
+        }
+      }
+      for (const v of Object.values(worst)) {
+        expect(v).toBeGreaterThan(0);
+      }
+      // The bands are about as wide as they can be: the tightest guarantees come within a unit.
+      expect(Math.min(worst.boards, worst.shot)).toBeLessThan(1.5);
+    },
+    20_000,
+  );
+
+  it('squeezes a rock and a shark under a paddle and a puck for 1/9 to 1/4 of the period', () => {
+    const FULL = [...Array(PERIOD).keys()];
+    for (const seed of [0, ...SEEDS.slice(0, 20)]) {
+      const [a, , b] = obstacles('sea', 0, 1, 7, seed);
+      let tight = 0;
+      let low = Infinity;
+      for (const t of FULL) {
+        const left = obstacles('sea', t, 1, 7, seed)[4];
+        const gap = Math.min(...[a, b].map(o => dist(o, left.x, left.y) - o.r - left.r));
+        low = Math.min(low, gap);
+        tight += +(gap < FIT);
+      }
+      // 84 at the worst draw (128 − rock radius from x alone); the puck needs 2 · PUCK_R + 20.
+      expect(low).toBeGreaterThan(83.9);
+      expect(tight / FULL.length).toBeGreaterThan(1 / 9);
+      expect(tight / FULL.length).toBeLessThan(1 / 4);
+    }
+  });
+});
+
 describe('fixed', () => {
   it('is true for icebergs and rocks, false for penguins and sharks', () => {
     expect([...ice(), ...sea()].map(o => [o.kind, fixed(o)])).toEqual([
