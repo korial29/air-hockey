@@ -1,8 +1,8 @@
-import { MAX_NAME, MAX_PLAYERS, SNAP_EVERY, TICK_HZ } from './constants';
+import { MAX_NAME, MAX_PLAYERS, RULES, SNAP_EVERY, TICK_HZ } from './constants';
 import { clampPaddle, createWorld, spawnPoint, step } from './physics';
 import { decodeInput, encodeSnapshot, parseText } from './protocol';
 import type { ClientText, ServerText } from './protocol';
-import type { Conn, Every, Paddle, PlayerInfo, World } from './types';
+import type { Conn, Every, Paddle, PlayerInfo, Rules, World } from './types';
 
 interface Player {
   conn: Conn;
@@ -39,6 +39,12 @@ export class Room {
   private world: World = createWorld();
   private ticks = 0;
   private halt: (() => void) | undefined;
+  private rules: Rules;
+
+  /** Missing rules fall back to RULES. */
+  public constructor(rules: Partial<Rules> = {}) {
+    this.rules = { ...RULES, ...rules };
+  }
 
   /** Number of joined players. */
   public get size(): number {

@@ -17,7 +17,7 @@ export interface AirHockeyOptions {
   socket?: SocketLike;
 }
 
-export type AirHockeyEvent = 'roster' | 'score' | 'goal' | 'open' | 'close';
+export type AirHockeyEvent = 'roster' | 'score' | 'goal' | 'match' | 'open' | 'close';
 
 export interface AirHockey {
   on(event: AirHockeyEvent, cb: (payload: unknown) => void): () => void;

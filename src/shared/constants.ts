@@ -1,3 +1,5 @@
+import type { Rules } from './types';
+
 // Field units. The table is landscape: team 0 defends the left goal, team 1 the right one.
 export const W = 1600;
 export const H = 900;
@@ -20,6 +22,19 @@ export const INTERP_DELAY = 100;
 
 /** Network fixed point: a coordinate travels as round(v * SCALE) in a Uint16. */
 export const SCALE = 32;
+
+/** Default match rules. */
+export const RULES: Rules = {
+  rounds: 3,
+  goals: 10,
+  hit: 1,
+  goal: 20,
+  roundWin: 10,
+  matchWin: 30,
+  headStart: 1,
+  breakSec: 3,
+  endSec: 15,
+};
 
 export const MAX_PLAYERS = 16;
 export const MAX_NAME = 16;

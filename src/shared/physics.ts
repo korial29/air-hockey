@@ -34,6 +34,7 @@ export const createWorld = (): World => ({
   puck: { x: W / 2, y: H / 2, vx: 0, vy: 0 },
   paddles: [],
   score: [0, 0],
+  hit: -1,
 });
 
 /** Clamps a paddle centre to its team's half and inside the walls. */

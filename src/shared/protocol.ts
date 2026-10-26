@@ -2,14 +2,27 @@
 // Text frames carry rare JSON messages (join, roster, goal, full).
 // Binary frames carry the hot path: inputs (client → host) and snapshots (host → client).
 import { SCALE } from './constants';
-import type { PlayerInfo, Snapshot, Team } from './types';
+import type { Phase, PlayerInfo, Rank, Snapshot, Team } from './types';
 
 export type ClientText = { t: 'join'; name: string };
 
 export type ServerText =
   | { t: 'roster'; you: number; players: PlayerInfo[] }
   | { t: 'goal'; team: Team; score: [number, number] }
-  | { t: 'full' };
+  | { t: 'full' }
+  | {
+      /** Sent on every phase change, and to a player who joins mid-match. */
+      t: 'match';
+      phase: Phase;
+      /** Current round, from 1; 0 in 'wait'. */
+      round: number;
+      /** Rounds won by each team. */
+      wins: [number, number];
+      /** 'break': the team that won the round. 'end': the team that won the match. */
+      winner?: Team;
+      /** 'break' and 'end': everyone who played this match, best points first. */
+      ranking?: Rank[];
+    };
 
 export const MSG_INPUT = 1;
 export const MSG_SNAPSHOT = 2;
