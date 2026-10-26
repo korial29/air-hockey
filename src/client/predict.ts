@@ -158,7 +158,7 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
 export const reset = (p: Prediction, phase: Phase, arena: Arena, size = 1, count = 7): void => {
   const { w } = p;
   if (count != w.count || arena != w.arena) {
-    p.hits = [];
+    p.hits.length = 0;
     w.obs = [];
   }
   Object.assign(w, { arena, size, count });
