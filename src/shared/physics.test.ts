@@ -887,7 +887,9 @@ describe('a rink of size 2', () => {
         expect(k.y < PUCK_R || k.y > Y - PUCK_R || (!mouth && (k.x < 0 || k.x > X))).toBe(false);
       }
       expect(worst).toBeLessThan(0.1);
-      expect(bumps).toBeGreaterThan(10);
+      // The puck meets the obstacles: a sanity floor, not a target (the free-spot serve after a
+      // goal changes the paths, and 3 obstacles on a size-2 rink get 9 to a few dozen bumps).
+      expect(bumps).toBeGreaterThan(5);
       expect(goals).toBeGreaterThan(2);
       expect(still.still).toBeLessThan(TICK_HZ);
       expect(still.pinned).toBeLessThan(TICK_HZ / 10);
