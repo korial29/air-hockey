@@ -250,6 +250,8 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       if (ice) {
         circle(x, y, pr * 0.75, '#2b3646');
       }
+      // The puck itself blinks toward a light yellow, in step with the beacon's glow.
+      circle(x, y, pr, `rgba(255,214,90,${0.15 + 0.6 * (0.5 + 0.5 * Math.sin(now / 400))})`);
       for (const p of s.paddles) {
         const info = players.get(p.id);
         const { x, y } = p;
