@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { decodeSnapshot, encodeInput } from '../shared/protocol';
 import type { ServerText } from '../shared/protocol';
+import { RULES } from '../shared/constants';
 import { Room } from '../shared/room';
+import type { Rules } from '../shared/types';
 import { serve } from './index';
 
 const until = async (check: () => boolean, ms = 2000): Promise<void> => {
@@ -120,6 +122,21 @@ describe('serve', () => {
     // Upgrades are no longer handled, and a second stop is harmless.
     expect(http.listenerCount('upgrade')).toBe(0);
     await expect(stop()).resolves.toBeUndefined();
+  });
+
+  it('gives the rules to every room', async () => {
+    await stop();
+    stop = serve({ server: http, rules: { goals: 3 } });
+    const connect = vi.spyOn(Room.prototype, 'connect');
+    const a = client('/a', 'a');
+    const b = client('/b', 'b');
+    await until(() => !!a.roster() && !!b.roster());
+    const rules = connect.mock.contexts.map(r => (r as unknown as { rules: Rules }).rules);
+    expect(rules).toEqual([
+      { ...RULES, goals: 3 },
+      { ...RULES, goals: 3 },
+    ]);
+    expect(a.texts.at(-1)).toEqual({ t: 'match', phase: 'wait', round: 0, wins: [0, 0] });
   });
 
   it('closes the HTTP server it created', async () => {

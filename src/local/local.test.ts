@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { decodeSnapshot } from '../shared/protocol';
 import type { ServerText } from '../shared/protocol';
-import type { SocketLike } from '../shared/types';
+import { RULES } from '../shared/constants';
+import { Room } from '../shared/room';
+import type { Rules, SocketLike } from '../shared/types';
 import { localSocket } from './index';
 
 const until = async (check: () => boolean, ms = 2000): Promise<void> => {
@@ -18,8 +20,8 @@ let rooms = 0;
 const sockets: SocketLike[] = [];
 
 /** A socket driven like the client does: join right after onopen. */
-const player = (room: string, name: string) => {
-  const sock = localSocket(room);
+const player = (room: string, name: string, rules?: Partial<Rules>) => {
+  const sock = localSocket(room, rules);
   sockets.push(sock);
   const texts: ServerText[] = [];
   const binaries: ArrayBuffer[] = [];
@@ -114,6 +116,15 @@ describe('localSocket', () => {
     listeners.get('pagehide')!();
     await until(a.isClosed);
     expect(listeners.size).toBe(0);
+  });
+
+  it("gives the rules to the host's room", async () => {
+    const connect = vi.spyOn(Room.prototype, 'connect');
+    const a = player(`r${rooms++}`, 'a', { rounds: 5 });
+    await until(() => a.names().length === 1);
+    const room = connect.mock.contexts[0] as unknown as { rules: Rules };
+    expect(room.rules).toEqual({ ...RULES, rounds: 5 });
+    connect.mockRestore();
   });
 
   it('hosts alone without navigator.locks', async () => {

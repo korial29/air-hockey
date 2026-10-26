@@ -1,7 +1,7 @@
 import { parseText } from '../shared/protocol';
 import type { ClientText } from '../shared/protocol';
 import { Room } from '../shared/room';
-import type { Conn, Every, SocketLike } from '../shared/types';
+import type { Conn, Every, Rules, SocketLike } from '../shared/types';
 
 type Data = string | ArrayBuffer;
 
@@ -52,8 +52,11 @@ const workerEvery: Every = (cb, ms) => {
  *
  * Without navigator.locks (old browsers, or a non-secure context such as plain
  * http on a LAN address) every tab hosts its own Room and plays alone.
+ *
+ * `rules` are the match rules of the Room this tab creates when it hosts (missing ones fall
+ * back to RULES). Only the host's count: pass the same ones from every tab.
  */
-export const localSocket = (room: string): SocketLike => {
+export const localSocket = (room: string, rules?: Partial<Rules>): SocketLike => {
   const key = 'air-hockey:' + room;
   const id = Math.random().toString(36).slice(2);
   const ch = new BroadcastChannel(key);
@@ -87,7 +90,7 @@ export const localSocket = (room: string): SocketLike => {
     release = done;
     hostId = id;
     remotes = new Map();
-    game = new Room();
+    game = new Room(rules);
     game.start(workerEvery);
     game.connect(self);
     pending().forEach(d => game!.receive(self, d));

@@ -2,11 +2,14 @@ import { GOAL, H, INTERP_DELAY, PADDLE_R, PUCK_R, W } from '../shared/constants'
 import { clampPaddle } from '../shared/physics';
 import { decodeSnapshot, encodeInput, parseText } from '../shared/protocol';
 import type { ServerText } from '../shared/protocol';
-import type { PlayerInfo, SocketLike } from '../shared/types';
-import { byTeam, sample, toField } from './util';
+import type { PlayerInfo, SocketLike, Team } from '../shared/types';
+import { byTeam, grid, podium, sample, toField } from './util';
 import type { Stamped } from './util';
 
-export type { PlayerInfo, SocketLike } from '../shared/types';
+export type { Phase, PlayerInfo, Rank, SocketLike, Team } from '../shared/types';
+
+/** Payload of the 'match' event: the host's match message, without its type tag. */
+export type MatchState = Omit<Extract<ServerText, { t: 'match' }>, 't'>;
 
 export interface AirHockeyOptions {
   /** Player name shown on screen. */
@@ -51,6 +54,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   let msg = '';
   let raf = 0;
   let dead = false;
+  let match: MatchState | undefined;
 
   const ws = opts.socket ?? (new WebSocket(opts.url!) as unknown as SocketLike);
   ws.binaryType = 'arraybuffer';
@@ -86,6 +90,10 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     } else if (m?.t == 'goal') {
       goalAt = performance.now();
       emit('goal', { team: m.team, score: m.score });
+    } else if (m?.t == 'match') {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { t, ...rest } = m;
+      emit('match', (match = rest));
     } else if (m?.t == 'full') {
       msg = 'Room is full';
     }
@@ -118,17 +126,26 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       c.arc(x, y, r, 0, 7);
       c.fill();
     };
-    const text = (s: string, x: number, y: number, size = f, align: CanvasTextAlign = 'center') => {
+    const text = (
+      s: string,
+      x: number,
+      y: number,
+      size = f,
+      align: CanvasTextAlign = 'center',
+      color = '#fff',
+      max?: number,
+    ) => {
       c.font = `bold ${size}px sans-serif`;
       c.textAlign = align;
-      c.fillStyle = '#fff';
-      c.fillText(s, x, y);
+      c.fillStyle = color;
+      c.fillText(s, x, y, max);
     };
-    const veil = (color: string, label: string) => {
+    const veil = (color: string, label = '') => {
       c.fillStyle = color;
       c.fillRect(0, 0, W, H);
       text(label, W / 2, H / 2, f * 2);
     };
+    const won = (t?: Team) => (t == null ? '' : `${t ? 'Right' : 'Left'} wins`);
 
     c.setTransform(k, 0, 0, k, 0, 0);
     c.textBaseline = 'middle';
@@ -167,9 +184,73 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       }),
     );
 
+    const { phase, round = 0, wins = [0, 0], winner, ranking = [] } = match ?? {};
     const a = 1 - (now - goalAt) / 600;
-    if (a > 0) {
+    if (phase == 'wait' || phase == 'play') {
+      text(
+        phase == 'wait'
+          ? 'Waiting for a player on each side'
+          : `Round ${round} · ${wins.join('–')}`,
+        W / 2,
+        f * 3.2,
+      );
+    }
+    if (a > 0 && phase != 'break' && phase != 'end') {
       veil(`rgba(255,204,51,${a / 2})`, 'GOAL!');
+    }
+    if (phase == 'break') {
+      veil('#000a', `${won(winner)} round ${round}`);
+      text(`Left ${wins.join(' – ')} Right`, W / 2, H / 2 + f * 2, f * 1.4);
+    }
+    if (phase == 'end') {
+      // Text unit: f at least, larger when the ranking leaves room for it.
+      const e = Math.max(f, Math.min(f * 2, H / (6 + ranking.length * 1.3)));
+      veil('#000e');
+      text(`🏆 ${won(winner) || 'Match over'}`, W / 2, e * 0.9, e * 1.4);
+      // The winning team's players, in their colours, squeezed to fit the width.
+      c.font = `bold ${e}px sans-serif`;
+      const team = ranking.filter(r => r.team == winner && !r.left);
+      const ws = team.map(r => c.measureText(r.name).width + e);
+      const z = Math.min(1, (W - e * 2) / ws.reduce((u, v) => u + v, 0));
+      let x = W / 2 - (ws.reduce((u, v) => u + v, -e) * z) / 2;
+      team.forEach((r, i) => {
+        text(r.name, x, e * 2.1, e, 'left', r.color, (ws[i] - e) * z);
+        x += ws[i] * z;
+      });
+      // Top scorers: gold in the middle and higher, silver left, bronze right.
+      podium(ranking).forEach((r, i) =>
+        text(
+          `${[...'🥇🥈🥉'][i]} ${r.name} · ${r.goals} goal${r.goals > 1 ? 's' : ''}`,
+          W / 2 + [0, -1, 1][i] * W * 0.32,
+          e * (i ? 3.7 : 3.3),
+          e,
+          'center',
+          r.color,
+          W * 0.3,
+        ),
+      );
+      // Full ranking by points, one or two columns; players who left are greyed.
+      const y0 = e * 5;
+      const room = H - y0 - e * 0.3;
+      const [cols, rows] = grid(ranking.length, Math.floor(room / e / 0.9) - 1);
+      const lh = Math.min(e * 1.4, room / (rows + 1));
+      const cw = Math.min((W - e) / cols, e * 18);
+      const nw = e * 2.4;
+      for (let i = 0; i < cols * rows && i < ranking.length; i++) {
+        const r = ranking[i];
+        const x0 = W / 2 + cw * (Math.floor(i / rows) - cols / 2);
+        const y = y0 + lh * ((i % rows) + 1);
+        const right = (j: number) => x0 + cw - e / 2 - (2 - j) * nw;
+        if (i % rows == 0) {
+          ['Pts', 'Goals', 'Hits'].forEach((h, j) =>
+            text(h, right(j), y0, e, 'right', '#fff8', nw - e / 3),
+          );
+        }
+        c.globalAlpha = r.left ? 0.4 : 1;
+        text(`${i + 1}. ${r.name}`, x0 + e / 2, y, e, 'left', r.color, cw - 3 * nw - e);
+        [r.points, r.goals, r.hits].forEach((v, j) => text(v + '', right(j), y, e, 'right'));
+        c.globalAlpha = 1;
+      }
     }
     const label = msg || (open ? '' : 'Connecting…');
     if (label) {

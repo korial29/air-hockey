@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { PlayerInfo, Snapshot } from '../shared/types';
-import { byTeam, sample, toField } from './util';
+import type { PlayerInfo, Rank, Snapshot } from '../shared/types';
+import { byTeam, grid, podium, sample, toField } from './util';
 
 const snap = (x: number, paddles: { id: number; x: number; y: number }[] = []): Snapshot => ({
   tick: 0,
@@ -62,5 +62,57 @@ describe('byTeam', () => {
     });
     const players = [p(1, 1), p(2, 0), p(3, 1)];
     expect(byTeam(players)).toEqual([[players[1]], [players[0], players[2]]]);
+  });
+});
+
+const rank = (id: number, goals: number): Rank => ({
+  id,
+  name: `p${id}`,
+  color: '#000',
+  team: 0,
+  points: 100 - id,
+  goals,
+  hits: 0,
+});
+
+describe('podium', () => {
+  it('keeps the three best scorers, most goals first', () => {
+    const r = [rank(1, 2), rank(2, 5), rank(3, 1), rank(4, 3)];
+    expect(podium(r).map(p => p.id)).toEqual([2, 4, 1]);
+  });
+
+  it('orders ties by the ranking array', () => {
+    const r = [rank(1, 1), rank(2, 4), rank(3, 4), rank(4, 4)];
+    expect(podium(r).map(p => p.id)).toEqual([2, 3, 4]);
+  });
+
+  it('skips players without a goal, leaving steps empty', () => {
+    expect(podium([rank(1, 0), rank(2, 3), rank(3, 0)]).map(p => p.id)).toEqual([2]);
+    expect(podium([rank(1, 0)])).toEqual([]);
+    expect(podium([])).toEqual([]);
+  });
+
+  it('does not reorder the ranking it reads', () => {
+    const r = [rank(1, 1), rank(2, 5)];
+    podium(r);
+    expect(r.map(p => p.id)).toEqual([1, 2]);
+  });
+});
+
+describe('grid', () => {
+  it('uses one column while every line fits', () => {
+    expect(grid(5, 9)).toEqual([1, 5]);
+    expect(grid(9, 9)).toEqual([1, 9]);
+  });
+
+  it('splits into two columns past the fit', () => {
+    expect(grid(10, 9)).toEqual([2, 5]);
+    expect(grid(16, 9)).toEqual([2, 8]);
+  });
+
+  it('cuts lines that fit nowhere, and copes with nothing to show', () => {
+    expect(grid(20, 8)).toEqual([2, 8]);
+    expect(grid(0, 9)).toEqual([1, 0]);
+    expect(grid(3, 0)).toEqual([2, 0]);
   });
 });

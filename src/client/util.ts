@@ -1,6 +1,6 @@
 // Pure client helpers: no DOM, unit-tested.
 import { H, W } from '../shared/constants';
-import type { PlayerInfo, Snapshot } from '../shared/types';
+import type { PlayerInfo, Rank, Snapshot } from '../shared/types';
 
 /** A snapshot stamped with its receive time (ms, performance.now()). */
 export interface Stamped {
@@ -46,3 +46,19 @@ export const sample = (buf: Stamped[], t: number): Snapshot | undefined => {
 /** Players split by team: [team 0, team 1], roster order kept. */
 export const byTeam = (players: PlayerInfo[]): PlayerInfo[][] =>
   [0, 1].map(t => players.filter(p => p.team == t));
+
+/** Top 3 scorers, most goals first. Ties keep the ranking order; nobody without a goal. */
+export const podium = (ranking: Rank[]): Rank[] =>
+  ranking
+    .filter(r => r.goals > 0)
+    .sort((a, b) => b.goals - a.goals)
+    .slice(0, 3);
+
+/**
+ * Ranking table shape for n lines when `fit` rows fit on screen: one column while it fits,
+ * then two (filled column by column). Lines past cols × rows are cut.
+ */
+export const grid = (n: number, fit: number): [cols: number, rows: number] => {
+  const cols = n > fit ? 2 : 1;
+  return [cols, Math.max(0, Math.min(Math.ceil(n / cols), fit))];
+};
