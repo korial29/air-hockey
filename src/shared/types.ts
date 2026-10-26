@@ -40,6 +40,19 @@ export interface Obstacle {
   vy: number;
 }
 
+/** What happened to an obstacle. Only the puck damages obstacles, and only once it is live. */
+export interface ObstacleState {
+  /** Puck hits taken: an iceberg shatters at ICEBERG_HP, a penguin is shot out at 1. */
+  hits: number;
+  /**
+   * Tick it was removed at (shattered or shot out), -1 while in play. It is a ghost from
+   * gone + RESPAWN - GHOST and back in play, intact, at gone + RESPAWN.
+   */
+  gone: number;
+  /** Direction the puck sent it, radians: a shot-out penguin flies this way. */
+  angle: number;
+}
+
 export interface World {
   arena: Arena;
   /**
@@ -58,6 +71,11 @@ export interface World {
    * so a penguin cannot start a round alone, let alone score.
    */
   live: boolean;
+  /**
+   * State of each obstacle in play, indexed like obstacles(arena, tick, size, count). Reset at
+   * round start (every obstacle back, intact).
+   */
+  obs: ObstacleState[];
   puck: Puck;
   paddles: Paddle[];
   score: [number, number];
@@ -83,6 +101,8 @@ export interface Rules {
   matchWin: number;
   /** Uneven teams: the smaller team starts each round with headStart goals per missing player. */
   headStart: number;
+  /** Countdown before each round, in seconds: paddles move, the puck waits. 0: none. */
+  readySec: number;
   /** Pause after a round, in seconds. */
   breakSec: number;
   /** Time the final ranking stays on screen before a new match, in seconds. */
@@ -91,9 +111,10 @@ export interface Rules {
 
 /**
  * wait: fewer than one player per team, free play, nothing counted.
+ * ready: countdown before a round: paddles move, the puck and the obstacles wait.
  * play: a round is on. break: between rounds. end: final ranking shown.
  */
-export type Phase = 'wait' | 'play' | 'break' | 'end';
+export type Phase = 'wait' | 'ready' | 'play' | 'break' | 'end';
 
 /** One line of the individual ranking. */
 export interface Rank {
@@ -119,6 +140,11 @@ export interface Snapshot {
   paddles: { id: number; x: number; y: number }[];
   /** World.live: the puck reacts to obstacles. */
   live?: boolean;
+  /**
+   * World.obs on the wire, with `gone` as ticks since removal (or -1), so it survives the u16 tick
+   * wrap: { hits, since, angle } per obstacle in play.
+   */
+  obs?: { hits: number; since: number; angle: number }[];
 }
 
 /**

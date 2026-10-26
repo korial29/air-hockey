@@ -1,6 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import type { PlayerInfo, Rank, Snapshot } from '../shared/types';
-import { BOT, CH, TOP, byTeam, flow, podium, rnd, sample, shown, toField } from './util';
+import { MAX_SIZE, PADDLE_R, PUCK_R, W } from '../shared/constants';
+import {
+  BOT,
+  CH,
+  MIN_PADDLE_PX,
+  MIN_PUCK_PX,
+  TOP,
+  byTeam,
+  drawnR,
+  flow,
+  podium,
+  rnd,
+  sample,
+  shown,
+  toField,
+} from './util';
 
 const snap = (x: number, paddles: { id: number; x: number; y: number }[] = []): Snapshot => ({
   tick: 0,
@@ -36,6 +51,25 @@ describe('toField', () => {
     expect(x).toBeCloseTo(2000 * Math.SQRT2);
     expect(y).toBeCloseTo(1125 * Math.SQRT2);
     expect(toField(10, 20, rect, 2)).toEqual([0, -TOP * 2]);
+  });
+});
+
+describe('drawnR', () => {
+  // CSS px per world unit of a canvas `css` px wide on a rink of the given size.
+  const px = (css: number, size: number) => css / (W * size);
+
+  it('raises the puck and paddles to their minimum at size 2 on a small canvas', () => {
+    const phone = px(343, MAX_SIZE);
+    expect(drawnR(PUCK_R, MIN_PUCK_PX, phone) * phone).toBeCloseTo(MIN_PUCK_PX);
+    expect(drawnR(PADDLE_R, MIN_PADDLE_PX, phone) * phone).toBeCloseTo(MIN_PADDLE_PX);
+    expect(drawnR(PUCK_R, MIN_PUCK_PX, phone)).toBeGreaterThan(PUCK_R * 2);
+  });
+
+  it('keeps the true radii on a big canvas, or on a small one at size 1 when they fit', () => {
+    const big = px(1440, MAX_SIZE);
+    expect(drawnR(PUCK_R, MIN_PUCK_PX, big)).toBe(PUCK_R);
+    expect(drawnR(PADDLE_R, MIN_PADDLE_PX, big)).toBe(PADDLE_R);
+    expect(drawnR(PADDLE_R, MIN_PADDLE_PX, px(800, 1))).toBe(PADDLE_R);
   });
 });
 

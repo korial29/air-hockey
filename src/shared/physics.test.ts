@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
+  GHOST,
   GOAL,
   H,
+  ICEBERG_HP,
   PADDLE_MAX_SPEED,
   PADDLE_R,
   PUCK_MAX_SPEED,
   PUCK_R,
+  RESPAWN,
   TICK_HZ,
   W,
 } from './constants';
 import { PERIOD, obstacles } from './arena';
-import { clampPaddle, createWorld, spawnPoint, step } from './physics';
+import { clampPaddle, createWorld, skate, spawnPoint, step } from './physics';
 import type { Arena, Paddle, Team, World } from './types';
 
 const DT = 1 / TICK_HZ;
@@ -43,10 +46,10 @@ const world = (
   return w;
 };
 
-/** Steps until a goal or `n` steps; returns the scoring team or -1. */
-const run = (w: World, n: number, each?: () => void): number => {
+/** Steps (on the host unless told) until a goal or `n` steps; returns the scoring team or -1. */
+const run = (w: World, n: number, each?: () => void, host = true): number => {
   for (let i = 0; i < n; i++) {
-    const t = step(w, DT);
+    const t = step(w, DT, host);
     each?.();
     if (t !== -1) {
       return t;
@@ -58,13 +61,19 @@ const run = (w: World, n: number, each?: () => void): number => {
 const speed = (w: World): number => Math.hypot(w.puck.vx, w.puck.vy);
 
 /** The obstacles the world stands among. */
-const obs = (w: World) => obstacles(w.arena, w.tick);
+const obs = (w: World) => obstacles(w.arena, w.tick, w.size, w.count);
 
-/** How deep the puck sinks into a paddle or an obstacle, or a paddle into an obstacle; ≤ 0 if not. */
+/** Those in play: removed ones and their ghosts touch nothing. */
+const solid = (w: World) => obs(w).filter((_, i) => w.obs[i].gone < 0);
+
+/**
+ * How deep the puck sinks into a paddle or an obstacle in play, or a paddle into an obstacle in
+ * play; ≤ 0 if not.
+ */
 const overlap = (w: World): number => {
   const k = w.puck;
   let worst = -Infinity;
-  for (const o of obs(w)) {
+  for (const o of solid(w)) {
     worst = Math.max(worst, o.r + PUCK_R - Math.hypot(k.x - o.x, k.y - o.y));
     for (const p of w.paddles) {
       worst = Math.max(worst, o.r + PADDLE_R - Math.hypot(p.x - o.x, p.y - o.y));
@@ -85,6 +94,7 @@ describe('createWorld', () => {
       tick: 0,
       bumps: [],
       live: false,
+      obs: Array(7).fill({ hits: 0, gone: -1, angle: 0 }),
       puck: { x: W / 2, y: H / 2, vx: 0, vy: 0 },
       paddles: [],
       score: [0, 0],
@@ -163,6 +173,43 @@ describe('paddles', () => {
       expect(p.y).toBeGreaterThanOrEqual(PADDLE_R);
     });
     expect([edge(), p.y]).toEqual([W / 2, PADDLE_R]);
+  });
+});
+
+describe('skate (countdown)', () => {
+  /** Everything skate must leave alone. */
+  const rest = (w: World) =>
+    JSON.stringify([w.puck, w.tick, w.obs, w.live, w.hit, w.bumps, w.score, w.size, w.count]);
+
+  it('moves the paddles like step, sub-stepped, around the obstacles; the rest of the world waits', () => {
+    const w = createWorld('ice', 2, 7);
+    const a = paddle(0, 300, 300, 1);
+    const b = paddle(1, 3700, 300, 2);
+    [a.tx, a.ty, b.tx, b.ty] = [1700, 1900, 2300, 1900];
+    w.paddles = [a, b];
+    const before = rest(w);
+    skate(w, DT);
+    // Twice the top speed on a rink of size 2.
+    expect(Math.hypot(a.x - 300, a.y - 300)).toBeCloseTo(2 * PADDLE_MAX_SPEED * DT);
+    for (let i = 0; i < 480; i++) {
+      skate(w, DT);
+      expect(overlap(w)).toBeLessThan(1e-6);
+    }
+    expect([a.x, a.y, b.x, b.y]).toEqual([1700, 1900, 2300, 1900]);
+    expect(rest(w)).toBe(before);
+  });
+
+  it('stops a paddle against the served puck, never pushing it nor putting it in play', () => {
+    const w = createWorld('classic');
+    const p = paddle(0, 200, H / 2);
+    [p.tx, p.ty] = [W / 2, H / 2];
+    w.paddles = [p];
+    const before = rest(w);
+    for (let i = 0; i < 240; i++) {
+      skate(w, DT);
+    }
+    expect(Math.hypot(p.x - W / 2, p.y - H / 2)).toBeCloseTo(RR, 6);
+    expect(rest(w)).toBe(before);
   });
 });
 
@@ -497,11 +544,17 @@ describe('ice arena', () => {
     w.tick = PERIOD - 300;
     const lane = obs(w)[5];
     let bumped = false;
-    run(w, 400, () => {
-      expect(overlap(w)).toBeLessThan(0.1);
-      expect(w.puck.y).toBeGreaterThanOrEqual(PUCK_R);
-      bumped ||= w.bumps.includes(5);
-    });
+    // Prediction steps: the penguin is not shot out, so its push at the board is what is tested.
+    run(
+      w,
+      400,
+      () => {
+        expect(overlap(w)).toBeLessThan(0.1);
+        expect(w.puck.y).toBeGreaterThanOrEqual(PUCK_R);
+        bumped ||= w.bumps.includes(5);
+      },
+      false,
+    );
     expect(bumped).toBe(true);
     expect(Math.abs(w.puck.x - lane.x)).toBeGreaterThan(lane.r);
   });
@@ -522,6 +575,8 @@ describe('ice arena', () => {
     let outside = 0;
     let bumps = 0;
     let goals = 0;
+    let removed = 0;
+    let back = 0;
     for (let i = 0; i < 20000; i++) {
       if (i % 20 === 0) {
         for (const p of paddles) {
@@ -529,8 +584,20 @@ describe('ice arena', () => {
           p.ty = rnd() < 0.5 ? w.puck.y : rnd() * 1500 - 200;
         }
       }
+      const before = w.obs.map(o => o.gone);
       goals += +(step(w, DT) !== -1);
       bumps += w.bumps.length;
+      w.obs.forEach((o, j) => {
+        removed += +(before[j] < 0 && o.gone >= 0);
+        back += +(before[j] >= 0 && o.gone < 0);
+        // In play: below its last hit. Removed: since this very step at most, back in RESPAWN.
+        if (o.gone < 0) {
+          expect(o.hits).toBeLessThan(obs(w)[j].kind == 'iceberg' ? ICEBERG_HP : 1);
+        } else {
+          expect(w.tick - o.gone).toBeGreaterThanOrEqual(0);
+          expect(w.tick - o.gone).toBeLessThan(RESPAWN);
+        }
+      });
       const k = w.puck;
       expect(Number.isFinite(k.x + k.y + k.vx + k.vy)).toBe(true);
       worst = Math.max(worst, overlap(w));
@@ -545,8 +612,11 @@ describe('ice arena', () => {
     expect(worst).toBeLessThan(0.1);
     expect(fast).toBeLessThanOrEqual(PUCK_MAX_SPEED + 1e-6);
     expect(outside).toBe(0);
-    expect(bumps).toBeGreaterThan(100);
+    // Fewer bumps than with unbreakable obstacles: they spend much of the game removed.
+    expect(bumps).toBeGreaterThan(40);
     expect(goals).toBeGreaterThan(5);
+    expect(removed).toBeGreaterThan(10);
+    expect(back).toBeGreaterThan(10);
   });
 
   it('is not there in the classic arena', () => {
@@ -740,7 +810,7 @@ describe('a rink of size 2', () => {
         bumps += w.bumps.length;
         const k = w.puck;
         expect(Number.isFinite(k.x + k.y + k.vx + k.vy)).toBe(true);
-        for (const o of obstacles(w.arena, w.tick, S, count)) {
+        for (const o of solid(w)) {
           worst = Math.max(worst, o.r + PUCK_R - Math.hypot(k.x - o.x, k.y - o.y));
           for (const p of paddles) {
             worst = Math.max(worst, o.r + PADDLE_R - Math.hypot(p.x - o.x, p.y - o.y));
@@ -759,4 +829,189 @@ describe('a rink of size 2', () => {
       expect(goals).toBeGreaterThan(2);
     },
   );
+});
+
+describe('breakable obstacles', () => {
+  /** Minimum speed of a puck leaving an obstacle (physics.ts). */
+  const KICK = 1000;
+  /** The centre penguin stands at the centre of the rink at this tick, sliding down. */
+  const MID = PERIOD / 4;
+  const ice = (x: number, y: number, vx = 0, vy = 0, paddles: Paddle[] = []): World =>
+    world(x, y, vx, vy, paddles, 'ice');
+  const [berg] = obs(createWorld());
+  /**
+   * Sends the puck at the first iceberg from its left, 30 units off: the kick on each contact.
+   * Returns the bumps of the steps that had some, and the tick the first of them landed on.
+   */
+  const shoot = (w: World): [number[][], number] => {
+    Object.assign(w.puck, { x: berg.x - berg.r - PUCK_R - 30, y: berg.y, vx: 300, vy: 0 });
+    const bumps: number[][] = [];
+    let at = -1;
+    run(w, 60, () => {
+      if (w.bumps.length && at < 0) {
+        at = w.tick;
+        expect(speed(w)).toBeCloseTo(KICK, 6);
+        expect(w.puck.vx).toBeLessThan(0);
+      }
+      bumps.push(w.bumps);
+    });
+    return [bumps.filter(b => b.length), at];
+  };
+
+  it('starts every obstacle of the arena in play, intact; none on the classic rink', () => {
+    expect(createWorld('ice', 2, 3).obs).toEqual(Array(3).fill({ hits: 0, gone: -1, angle: 0 }));
+    expect(createWorld('classic').obs).toEqual([]);
+  });
+
+  it(`shatters an iceberg on its ${ICEBERG_HP}th puck hit, with the kick every time`, () => {
+    const w = ice(0, 0);
+    for (let n = 1; n <= ICEBERG_HP; n++) {
+      const [bumps, at] = shoot(w);
+      expect(bumps).toEqual([[0]]);
+      expect(w.obs[0].hits).toBe(n);
+      // Hit head-on from the left: sent right.
+      expect(w.obs[0].angle).toBeCloseTo(0, 9);
+      // Removed at the tick of the step that broke it.
+      expect(w.obs[0].gone).toBe(n < ICEBERG_HP ? -1 : at);
+    }
+    // Gone: the puck slides straight through where it stood.
+    Object.assign(w.puck, { x: berg.x - berg.r - PUCK_R - 30, y: berg.y, vx: 1200, vy: 0 });
+    run(w, 60, () => expect(w.bumps).toEqual([]));
+    expect(w.puck.x).toBeGreaterThan(berg.x + berg.r);
+    expect(w.puck.vy).toBe(0);
+    expect(w.obs.slice(1).every(o => o.hits == 0 && o.gone == -1)).toBe(true);
+  });
+
+  it('counts a puck held against an iceberg once, however long it stays', () => {
+    const p = paddle(0, berg.x - berg.r - 2 * PUCK_R - PADDLE_R - 10, berg.y);
+    [p.tx, p.ty] = [berg.x, berg.y];
+    const w = ice(berg.x - berg.r - PUCK_R - 5, berg.y, 0, 0, [p]);
+    let held = 0;
+    run(w, 480, () => (held += +w.bumps.includes(0)));
+    expect(held).toBeGreaterThan(400);
+    expect(w.obs[0]).toMatchObject({ hits: 1, gone: -1 });
+  });
+
+  it('takes no damage from a served puck nobody touched', () => {
+    const w = ice(0, 0);
+    w.live = false;
+    Object.assign(w.puck, { x: berg.x - berg.r - PUCK_R - 30, y: berg.y, vx: 1200, vy: 0 });
+    run(w, 60, () => expect(w.bumps).toEqual([]));
+    expect(w.obs[0]).toEqual({ hits: 0, gone: -1, angle: 0 });
+  });
+
+  it('shoots a penguin out on the first hit, toward where the puck sent it', () => {
+    for (const [dx, dy] of [
+      [-1, 0],
+      [-1, -1],
+      [0, 1],
+    ]) {
+      const w = ice(0, 0);
+      w.tick = MID;
+      const [x, y] = [W / 2 + dx * 150, H / 2 + dy * 150];
+      Object.assign(w.puck, { x, y, vx: -dx * 800, vy: -dy * 800 });
+      run(w, 60, () => {
+        if (w.bumps.length) {
+          // Bounced back with the kick, at least.
+          expect(w.bumps).toEqual([5]);
+          expect(w.puck.vx * -dx + w.puck.vy * -dy).toBeLessThan(0);
+          expect(speed(w)).toBeGreaterThanOrEqual(KICK - 1e-6);
+        }
+      });
+      expect(w.obs[5].hits).toBe(1);
+      expect(w.obs[5].gone).toBeGreaterThan(MID);
+      expect(w.obs[5].gone).toBeLessThan(w.tick);
+      // From the puck to the penguin's centre at impact: roughly the way the puck came.
+      const a = w.obs[5].angle;
+      expect(Math.cos(a) * -dx + Math.sin(a) * -dy).toBeGreaterThan(0.9 * Math.hypot(dx, dy));
+    }
+  });
+
+  it('lets the puck and the paddles through a removed obstacle and its ghost', () => {
+    for (const since of [0, RESPAWN - GHOST - 1, RESPAWN - GHOST, RESPAWN - 61]) {
+      const w = ice(0, 0);
+      w.tick = 5000;
+      // It comes back in RESPAWN - since ticks: the run below ends before that.
+      w.obs[0].gone = w.tick - since;
+      const p = paddle(0, berg.x + 200, berg.y + 100);
+      [p.tx, p.ty] = [berg.x + 20, berg.y];
+      w.paddles = [p];
+      // Across the iceberg's left side, clear of the paddle that comes from its right.
+      Object.assign(w.puck, { x: berg.x - 60, y: berg.y - 150, vx: 0, vy: 1200 });
+      run(w, 60, () => expect(w.bumps).toEqual([]));
+      expect([p.x, p.y]).toEqual([p.tx, p.ty]);
+      expect(w.puck.vx).toBe(0);
+      expect(w.puck.y).toBeGreaterThan(berg.y);
+      expect(w.obs[0].hits).toBe(0);
+    }
+  });
+
+  it('brings a removed obstacle back intact RESPAWN ticks after, then it bounces and breaks again', () => {
+    const w = ice(0, 0);
+    w.obs[0] = { hits: ICEBERG_HP, gone: 50, angle: 1 };
+    w.tick = 50 + RESPAWN - 2;
+    step(w, DT);
+    expect(w.obs[0].gone).toBe(50);
+    step(w, DT);
+    expect(w.tick).toBe(50 + RESPAWN);
+    expect(w.obs[0]).toMatchObject({ hits: 0, gone: -1 });
+    expect(shoot(w)[0]).toEqual([[0]]);
+    expect(w.obs[0]).toMatchObject({ hits: 1, gone: -1 });
+  });
+
+  it('pushes a puck and a paddle out of an obstacle that comes back on them: no kick, no damage', () => {
+    for (const [i, x, y] of [
+      [0, berg.x - 20, berg.y + 10],
+      // The centre penguin, on its way down through the middle of the rink.
+      [5, W / 2 + 15, H / 2 - 20],
+    ]) {
+      const p = paddle(1, W - berg.x + 30, berg.y - 20);
+      const w = ice(x, y, 0, 0, [p]);
+      w.tick = MID + PERIOD * 2;
+      // Both mirrored icebergs come back now, and the centre penguin.
+      for (const j of [0, 1, 5]) {
+        w.obs[j].gone = w.tick + 1 - RESPAWN;
+      }
+      step(w, DT);
+      expect(w.obs[i]).toEqual({ hits: 0, gone: -1, angle: 0 });
+      expect(w.bumps).toEqual([]);
+      expect(w.puck).toMatchObject({ vx: 0, vy: 0 });
+      expect(overlap(w)).toBeLessThan(0);
+      // Paddles slide out like out of any obstacle.
+      expect(Math.hypot(p.x - (W - berg.x), p.y - berg.y)).toBeCloseTo(berg.r + PADDLE_R, 6);
+    }
+    // The iceberg leaves the resting puck alone from then on.
+    const w = ice(berg.x - 20, berg.y + 10);
+    w.tick = 5000;
+    w.obs[0].gone = w.tick + 1 - RESPAWN;
+    run(w, 240, () => expect(w.bumps).toEqual([]));
+    expect(w.obs[0]).toEqual({ hits: 0, gone: -1, angle: 0 });
+    expect(speed(w)).toBe(0);
+  });
+
+  it('leaves a served puck where it is when an obstacle comes back on it', () => {
+    const w = ice(berg.x, berg.y);
+    w.live = false;
+    w.tick = 5000;
+    w.obs[0].gone = w.tick + 1 - RESPAWN;
+    step(w, DT);
+    expect(w.obs[0].gone).toBe(-1);
+    expect(w.puck).toEqual({ x: berg.x, y: berg.y, vx: 0, vy: 0 });
+  });
+
+  it('bounces a prediction off the same obstacles without damage, and brings them back on time', () => {
+    const w = ice(0, 0);
+    for (let n = 0; n < ICEBERG_HP + 1; n++) {
+      Object.assign(w.puck, { x: berg.x - berg.r - PUCK_R - 30, y: berg.y, vx: 300, vy: 0 });
+      let bumped = false;
+      run(w, 60, () => (bumped ||= w.bumps.includes(0)), false);
+      expect(bumped).toBe(true);
+      expect(w.puck.vx).toBeLessThan(0);
+    }
+    expect(w.obs[0]).toEqual({ hits: 0, gone: -1, angle: 0 });
+    w.tick = 5000;
+    w.obs[5] = { hits: 1, gone: w.tick + 1 - RESPAWN, angle: 2 };
+    step(w, DT, false);
+    expect(w.obs[5]).toMatchObject({ hits: 0, gone: -1 });
+  });
 });
