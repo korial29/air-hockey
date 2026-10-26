@@ -18,7 +18,7 @@ import {
   text,
   veil,
 } from './render';
-import { CH, TOP, sample, toField } from './util';
+import { CH, MIN_PADDLE_PX, MIN_PUCK_PX, TOP, drawnR, sample, toField } from './util';
 import type { Stamped } from './util';
 
 export type { Phase, PlayerInfo, Rank, SocketLike, Team } from '../shared/types';
@@ -33,6 +33,8 @@ export interface AirHockeyOptions {
   url?: string;
   /** Any WebSocket-like socket, e.g. localSocket('room') from 'air-hockey/local'. */
   socket?: SocketLike;
+  /** Full screen button in the top band, where the browser allows it. Default true. */
+  fullscreen?: boolean;
 }
 
 export type AirHockeyEvent = 'roster' | 'score' | 'goal' | 'match' | 'open' | 'close';
@@ -48,10 +50,20 @@ type Listener = [AirHockeyEvent, (payload: unknown) => void];
 export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHockey => {
   const wrap = document.createElement('div');
   const root = wrap.attachShadow({ mode: 'open' });
-  root.innerHTML = `<style>canvas{display:block;width:100%;aspect-ratio:${W}/${CH};touch-action:none;border-radius:16px}</style><canvas></canvas>`;
+  // The canvas keeps its W × CH aspect in full screen too, centred on the dark background: its
+  // bounding rect stays the drawn area, which the pointer mapping relies on.
+  root.innerHTML =
+    `<style>div{position:relative}canvas{display:block;width:100%;aspect-ratio:${W}/${CH};touch-action:none;border-radius:16px}` +
+    `button{position:absolute;right:1%;height:clamp(24px,9%,40px);top:calc(${(50 * TOP) / CH}% - clamp(12px,4.5%,20px));aspect-ratio:1;padding:0;border:0;border-radius:8px;background:#fff2;color:#fff;cursor:pointer}` +
+    `button:hover{background:#fff4}button:focus-visible{outline:2px solid #fff}svg{width:70%;height:70%}` +
+    `:host(:fullscreen){display:flex;align-items:center;justify-content:center;background:#08131d}` +
+    `:host(:fullscreen) div{width:min(100vw,100vh * ${W / CH})}:host(:fullscreen) canvas{border-radius:0}</style>` +
+    `<div><canvas></canvas><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path/></svg></button></div>`;
   container.append(wrap);
   const canvas = root.querySelector('canvas')!;
   const c = canvas.getContext('2d');
+  const button = root.querySelector('button')!;
+  const path = root.querySelector('path')!;
 
   const listeners = new Set<Listener>();
   const emit = (event: AirHockeyEvent, payload?: unknown) =>
@@ -157,6 +169,24 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   canvas.addEventListener('pointermove', onPointer, ac);
   canvas.addEventListener('pointerdown', onPointer, ac);
 
+  // Full screen on the wrapper: Escape or the button again leaves it.
+  const full = () => document.fullscreenElement == wrap;
+  const syncFull = () => {
+    button.setAttribute('aria-label', full() ? 'Exit full screen' : 'Full screen');
+    path.setAttribute(
+      'd',
+      full() ? 'M9 4v5H4m16 0h-5V4m0 16v-5h5M4 15h5v5' : 'M4 9V4h5m6 0h5v5m0 6v5h-5m-6 0H4v-5',
+    );
+  };
+  syncFull();
+  button.hidden = opts.fullscreen == false || !document.fullscreenEnabled;
+  button.addEventListener(
+    'click',
+    () => (full() ? document.exitFullscreen() : wrap.requestFullscreen()).catch(() => {}),
+    ac,
+  );
+  document.addEventListener('fullscreenchange', syncFull, ac);
+
   const ro = new ResizeObserver(() => {
     canvas.width = canvas.clientWidth * devicePixelRatio;
     canvas.height = (canvas.width * CH) / W;
@@ -183,6 +213,10 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     // bigger rink. Names keep their size on screen: g world units.
     c.setTransform(k / size, 0, 0, k / size, 0, k * TOP);
     const g = f * size;
+    // Puck and paddles never drawn under MIN_PUCK_PX and MIN_PADDLE_PX: CSS px per world unit.
+    const px = k / devicePixelRatio / size;
+    const pr = drawnR(PUCK_R, MIN_PUCK_PX, px);
+    const dr = drawnR(PADDLE_R, MIN_PADDLE_PX, px);
 
     const s = view(P, sample(buf, now - INTERP_DELAY), now, me);
     // Time of the puck's last contact with each obstacle; absent before prediction tracks it.
@@ -209,21 +243,21 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     if (s) {
       const { x, y, vx, vy } = s.puck;
       // Top speeds scale with the rink: so does the speed that leaves a trail.
-      streak(trail, x, y, Math.hypot(vx, vy) > 1000 * size, ice ? '#2a9df4' : '#fff');
-      circle(x, y, PUCK_R, ice ? '#141a24' : '#fff');
+      streak(trail, x, y, Math.hypot(vx, vy) > 1000 * size, ice ? '#2a9df4' : '#fff', pr);
+      circle(x, y, pr, ice ? '#141a24' : '#fff');
       if (ice) {
-        circle(x, y, PUCK_R * 0.75, '#2b3646');
+        circle(x, y, pr * 0.75, '#2b3646');
       }
       for (const p of s.paddles) {
         const info = players.get(p.id);
         const { x, y } = p;
-        circle(x, y, PADDLE_R, info?.color ?? '#888');
-        circle(x, y, PADDLE_R / 2, '#0003');
+        circle(x, y, dr, info?.color ?? '#888');
+        circle(x, y, dr / 2, '#0003');
         // Above the paddle, or below it against the top wall.
         text(
           info?.name ?? '',
           x,
-          y < PADDLE_R + g ? y + PADDLE_R + g / 2 : y - PADDLE_R - g / 2,
+          y < dr + g ? y + dr + g / 2 : y - dr - g / 2,
           g,
           'center',
           ice ? '#163049' : '#fff',

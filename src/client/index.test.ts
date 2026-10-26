@@ -6,7 +6,8 @@ import { clampPaddle } from '../shared/physics';
 import type { Obstacle, Rank, SocketLike } from '../shared/types';
 import { airHockey } from './index';
 import type * as Predict from './predict';
-import { TOP } from './util';
+import { PADDLE_R, PUCK_R } from '../shared/constants';
+import { MIN_PADDLE_PX, MIN_PUCK_PX, TOP } from './util';
 
 vi.mock('../shared/physics', async importOriginal => ({
   ...(await importOriginal<object>()),
@@ -72,7 +73,7 @@ beforeAll(() => {
  * A 2D context that accepts every call and records the text drawn, the canvas y of each
  * text in field units (through setTransform), the fill styles set, and in `at` each text
  * with its canvas y and font size in canvas pixels. Also the stroke styles, the alphas and
- * the translations.
+ * the translations, and in `arcs` each arc's fill style and radius in canvas pixels.
  */
 const fakeContext = () => {
   const texts: string[] = [];
@@ -82,6 +83,7 @@ const fakeContext = () => {
   const strokes: string[] = [];
   const alphas: number[] = [];
   const moves: [number, number][] = [];
+  const arcs: [string, number][] = [];
   let m = [1, 0];
   const ctx = new Proxy({} as Record<string | symbol, unknown>, {
     get: (t, k) =>
@@ -97,11 +99,13 @@ const fakeContext = () => {
             ? (a: number, ...r: number[]) => (m = [a, r[4]])
             : k == 'translate'
               ? (x: number, y: number) => moves.push([x, y])
-              : k == 'measureText'
-                ? (s: string) => ({ width: s.length * 10 })
-                : String(k).startsWith('create')
-                  ? () => ({ addColorStop: () => {} })
-                  : () => {},
+              : k == 'arc'
+                ? (_x: number, _y: number, r: number) => arcs.push([String(t.fillStyle), r * m[0]])
+                : k == 'measureText'
+                  ? (s: string) => ({ width: s.length * 10 })
+                  : String(k).startsWith('create')
+                    ? () => ({ addColorStop: () => {} })
+                    : () => {},
     set: (t, k, v) => {
       if (k == 'fillStyle') {
         styles.push(v);
@@ -117,7 +121,7 @@ const fakeContext = () => {
     },
   });
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as never);
-  return Object.assign(texts, { ys, at, styles, strokes, alphas, moves });
+  return Object.assign(texts, { ys, at, styles, strokes, alphas, moves, arcs });
 };
 
 const rank = (id: number, team: 0 | 1, goals: number, left?: boolean): Rank => ({
@@ -521,6 +525,8 @@ describe('airHockey', () => {
     const game = airHockey(document.body, { name: 'Ana', socket });
     const canvas = document.body.firstElementChild!.shadowRoot!.querySelector('canvas')!;
     canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 }) as DOMRect;
+    // 1200 px wide: paddles stay above their minimum drawn size even at size 2.
+    canvas.width = 1200;
     const draw = () => {
       texts.length = texts.styles.length = texts.at.length = 0;
       vi.mocked(obstacles).mockClear();
@@ -565,9 +571,10 @@ describe('airHockey', () => {
     expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7);
     expect(texts.styles).toContain('#e6f2f9');
     const [above, name] = label();
-    // 300 px canvas: 0.15 px per unit, the paddle at (TOP + 450) · 0.15 px, the name above it.
-    expect(above).toBeCloseTo((TOP + 450 - 44 - 40) * 0.15);
-    expect(name).toBeCloseTo(12);
+    // 1200 px canvas: 0.6 px per unit, the paddle at (TOP + 450) · 0.6 px, the name above it
+    // (font 35 units: 21 px).
+    expect(above).toBeCloseTo((TOP + 450 - 44 - 17.5) * 0.6);
+    expect(name).toBeCloseTo(21);
     expect(draw().styles).not.toContain('#e6f2f9');
 
     // Size 2, 5 obstacles: requested as such, the rink is painted again, once.
@@ -578,7 +585,7 @@ describe('airHockey', () => {
     expect(texts.styles).toContain('#e6f2f9');
     // The name keeps its size on screen, the paddle (radius 44) shrinks to half.
     expect(label()[1]).toBeCloseTo(name);
-    expect(label()[0]).toBeCloseTo((TOP + 450 - 22 - 40) * 0.15);
+    expect(label()[0]).toBeCloseTo((TOP + 450 - 22 - 17.5) * 0.6);
     expect(texts.styles).toContain('#f00');
     expect(draw().styles).not.toContain('#e6f2f9');
 
@@ -600,6 +607,142 @@ describe('airHockey', () => {
     move();
     frame(0);
     expect(decodeInput(socket.sent.at(-1) as ArrayBuffer)).toEqual({ x: 500, y: 250 });
+    game.destroy();
+  });
+
+  it('draws the puck and paddles at least MIN_PUCK_PX and MIN_PADDLE_PX wide, physics aside', () => {
+    const texts = fakeContext();
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    const canvas = document.body.firstElementChild!.shadowRoot!.querySelector('canvas')!;
+    socket.onopen!();
+    const players = [{ id: 3, name: 'Ana', color: '#f00', team: 0 }];
+    socket.onmessage!({ data: JSON.stringify({ t: 'roster', you: 3, players }) });
+    const match = (size: number) =>
+      socket.onmessage!({
+        data: JSON.stringify({ t: 'match', phase: 'play', arena: 'ice', size, count: 5 }),
+      });
+    const snap = (size: number) =>
+      socket.onmessage!({
+        data: encodeSnapshot({
+          tick: 42,
+          score: [0, 0],
+          puck: { x: 1000 * size, y: 560 * size, vx: 0, vy: 0 },
+          paddles: [{ id: 3, x: 400 * size, y: 450 * size }],
+        }),
+      });
+    // Drawn radii in CSS px: [puck, paddle], and the canvas y of the name over the paddle.
+    const radii = (width: number, dpr = 1) => {
+      vi.spyOn(window, 'devicePixelRatio', 'get').mockReturnValue(dpr);
+      canvas.width = width * dpr;
+      texts.arcs.length = texts.at.length = 0;
+      frame(0);
+      const r = (color: string) => texts.arcs.find(([s]) => s == color)![1] / dpr;
+      return [r('#141a24'), r('#f00'), texts.at.find(([s]) => s == 'Ana')![1] / dpr];
+    };
+
+    match(2);
+    snap(2);
+    // 8 players on a phone: 343 CSS px for 4000 world units, the puck would be 2.4 px wide.
+    const [puck, paddle, y] = radii(343);
+    expect(puck).toBeCloseTo(MIN_PUCK_PX);
+    expect(paddle).toBeCloseTo(MIN_PADDLE_PX);
+    // The name clears the drawn paddle: its font is 12 px, half of it above the paddle.
+    expect(y).toBeCloseTo(((TOP + 450) * 343) / 2000 - MIN_PADDLE_PX - 6);
+    // Same CSS size on a 3x screen.
+    radii(343, 3).forEach((v, i) => expect(v).toBeCloseTo([puck, paddle, y][i], 1));
+    // A wide canvas draws the true radii: 1440 px for 4000 units.
+    const [p2, d2] = radii(1440);
+    expect(p2).toBeCloseTo((PUCK_R * 1440) / 4000);
+    expect(d2).toBeCloseTo((PADDLE_R * 1440) / 4000);
+    // Size 1 on the phone: the paddle is 7.5 px, raised; the puck 4.8 px, raised too.
+    match(1);
+    snap(1);
+    expect(radii(343).slice(0, 2)).toEqual(
+      [MIN_PUCK_PX, MIN_PADDLE_PX].map(v => expect.closeTo(v)),
+    );
+    game.destroy();
+  });
+
+  it('has a full screen button on the wrapper, unless disabled or unsupported', () => {
+    const fs = (on: boolean) =>
+      Object.defineProperty(document, 'fullscreenEnabled', { value: on, configurable: true });
+    const mount = (opts: object = {}) => {
+      const socket = fakeSocket();
+      const game = airHockey(document.body, { name: 'Ana', socket, ...opts });
+      const wrap = document.body.lastElementChild as HTMLElement;
+      return { game, wrap, button: wrap.shadowRoot!.querySelector('button')! };
+    };
+    const request = vi.fn(() => Promise.resolve());
+    const exit = vi.fn(() => Promise.reject(new Error('not in full screen')));
+    HTMLElement.prototype.requestFullscreen = request;
+    document.exitFullscreen = exit;
+    let current: Element | null = null;
+    Object.defineProperty(document, 'fullscreenElement', {
+      get: () => current,
+      configurable: true,
+    });
+
+    fs(true);
+    const { game, wrap, button } = mount();
+    expect(button.hidden).toBe(false);
+    expect(button.type).toBe('button');
+    expect(button.getAttribute('aria-label')).toBe('Full screen');
+    button.click();
+    expect(request).toHaveBeenCalledOnce();
+    expect(request.mock.contexts[0]).toBe(wrap);
+    // Entered: the label and the icon say how to leave; the button leaves.
+    const icon = button.querySelector('path')!.getAttribute('d');
+    current = wrap;
+    document.dispatchEvent(new Event('fullscreenchange'));
+    expect(button.getAttribute('aria-label')).toBe('Exit full screen');
+    expect(button.querySelector('path')!.getAttribute('d')).not.toBe(icon);
+    button.click();
+    expect(exit).toHaveBeenCalledOnce();
+    expect(request).toHaveBeenCalledOnce();
+    // Left with Escape: back to the first state.
+    current = null;
+    document.dispatchEvent(new Event('fullscreenchange'));
+    expect(button.getAttribute('aria-label')).toBe('Full screen');
+    expect(button.querySelector('path')!.getAttribute('d')).toBe(icon);
+    game.destroy();
+
+    expect(mount({ fullscreen: false }).button.hidden).toBe(true);
+    fs(false);
+    expect(mount().button.hidden).toBe(true);
+    // @ts-expect-error jsdom has none: restore that
+    delete document.fullscreenEnabled;
+    delete (document as { fullscreenElement?: unknown }).fullscreenElement;
+  });
+
+  it('maps the pointer through the canvas rect after the canvas changes size', () => {
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    socket.onopen!();
+    const players = [{ id: 3, name: 'Ana', color: '#f00', team: 0 }];
+    socket.onmessage!({ data: JSON.stringify({ t: 'roster', you: 3, players }) });
+    socket.onmessage!({ data: JSON.stringify({ t: 'match', phase: 'play', size: 2 }) });
+    const canvas = document.body.firstElementChild!.shadowRoot!.querySelector('canvas')!;
+    const input = (rect: DOMRect, fx: number, fy: number) => {
+      canvas.getBoundingClientRect = () => rect;
+      canvas.dispatchEvent(
+        new MouseEvent('pointermove', {
+          clientX: rect.left + rect.width * fx,
+          clientY: rect.top + rect.height * fy,
+        }),
+      );
+      frame(0);
+      return decodeInput(socket.sent.at(-1) as ArrayBuffer);
+    };
+    // The same spot of the drawn canvas, in the page and letterboxed in full screen.
+    const page = input({ left: 16, top: 60, width: 800, height: 600 } as DOMRect, 0.25, 0.5);
+    expect(page).toEqual({ x: 1000, y: ((750 - TOP) * 2000) / 1000 });
+    const full = input({ left: 240, top: 0, width: 1440, height: 1080 } as DOMRect, 0.25, 0.5);
+    expect(full).toEqual(page);
     game.destroy();
   });
 

@@ -552,9 +552,16 @@ export const obstacle = (
 /**
  * The puck's trail, in world units: p holds the last positions drawn (x, y pairs), the one at
  * x, y is pushed. Drawn as a fading streak while the puck is fast; a jump (serve) starts it over.
- * Speeds scale with the rink, so does the jump.
+ * Speeds scale with the rink, so does the jump. r is the drawn puck radius: the streak is as wide.
  */
-export const streak = (p: number[], x: number, y: number, fast: boolean, color: string) => {
+export const streak = (
+  p: number[],
+  x: number,
+  y: number,
+  fast: boolean,
+  color: string,
+  r = PUCK_R,
+) => {
   const n = p.length;
   if (!fast || Math.hypot(x - p[n - 2], y - p[n - 1]) > 300 * u) {
     p.length = 0;
@@ -565,7 +572,7 @@ export const streak = (p: number[], x: number, y: number, fast: boolean, color: 
   }
   for (let i = 2; i < p.length; i += 2) {
     c.globalAlpha = (i / p.length) * 0.5;
-    line(color, (PUCK_R * 2 * i) / p.length, p[i - 2], p[i - 1], p[i], p[i + 1]);
+    line(color, (r * 2 * i) / p.length, p[i - 2], p[i - 1], p[i], p[i + 1]);
   }
   c.globalAlpha = 1;
 };

@@ -11,8 +11,12 @@ const rules = Object.fromEntries(
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const form = $<HTMLFormElement>('form');
 const fields = form.elements as unknown as Record<'name' | 'mode' | 'url', HTMLInputElement>;
-const play = $('play');
 const status = $('status');
+/** Shown while playing; the join form and the intro the rest of the time. */
+const playing = (on: boolean) => {
+  ['play', 'status', 'leave'].forEach(id => ($(id).hidden = !on));
+  [form, $('intro')].forEach(el => (el.hidden = on));
+};
 
 let game: AirHockey | undefined;
 
@@ -30,15 +34,13 @@ const join = () => {
   });
   status.textContent = server ? `Playing on ${url}` : 'Playing locally';
   game.on('close', () => (status.textContent = 'Disconnected'));
-  form.hidden = true;
-  play.hidden = false;
+  playing(true);
 };
 
 const leave = () => {
   game?.destroy();
   game = undefined;
-  play.hidden = true;
-  form.hidden = false;
+  playing(false);
 };
 
 fields.mode.addEventListener('change', syncMode);
