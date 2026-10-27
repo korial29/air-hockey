@@ -109,8 +109,8 @@ export const draw = (seed: number, i: number): number => {
 };
 
 /**
- * Icebergs, vortices and whirlwinds: they break after ICEBERG_HP hits. Penguins and genies move, go
- * on one. Sharks move and never go: they eat the puck.
+ * Icebergs, vortices and whirlwinds: they break after ICEBERG_HP hits. Penguins move, go on one.
+ * Sharks and genies move and never go: a shark eats the puck, a genie casts a spell.
  */
 export const fixed = (o: Obstacle): boolean => ['iceberg', 'vortex', 'whirlwind'].includes(o.kind);
 
@@ -137,7 +137,8 @@ export const swirl = (o: Obstacle, size = 1): 1 | -1 => (o.x < (W * size) / 2 ? 
  * `seed` (an integer, picked by the host each round) places the icebergs (vortices, whirlwinds),
  * each on a cell of CELLS in its half, and draws the genies' waypoints; 0 keeps the fixed layout
  * of the icebergs (BERGS). `times[i]` (ObstacleState.times): each time iceberg i comes back, it
- * takes another cell of its half.
+ * takes another cell of its half. `lags[i]`: ticks genie i floats behind t (its spells, see
+ * ObstacleState.lag).
  */
 export const obstacles = (
   arena: Arena,
@@ -146,7 +147,9 @@ export const obstacles = (
   count = 7,
   seed = 0,
   times: (number | undefined)[] = [],
+  lags: number[] = [],
 ): Obstacle[] => {
+  const mask = MASKS[count - 2] ?? 127;
   const sea = arena == 'sea';
   const [still, mover] = (
     { sea: ['vortex', 'shark'], desert: ['whirlwind', 'genie'] } as Record<
@@ -184,11 +187,16 @@ export const obstacles = (
             };
           }),
         ),
-        ...LANES.map(([x, phase, m]): Obstacle => {
+        ...LANES.map(([x, phase, m], l): Obstacle => {
           if (arena == 'desert') {
+            // Its index once filtered: the slots kept before it.
+            let k = 0;
+            for (let b = 0; b < 4 + l; b++) {
+              k += (mask >> b) & 1;
+            }
             // Waypoint n to n + 1 (64 of them over the u16 tick), eased in and out (smoothstep):
-            // e and its rate.
-            const f = (t / WANDER) % 64;
+            // e and its rate. Behind the tick by its lag.
+            const f = ((((t - (lags[k] ?? 0)) / WANDER) % 64) + 64) % 64;
             const n = f | 0;
             const u = f - n;
             const e = u * u * (3 - 2 * u);
@@ -221,7 +229,7 @@ export const obstacles = (
           };
         }),
       ]
-        .filter((_, i) => (MASKS[count - 2] ?? 127) & (1 << i))
+        .filter((_, i) => mask & (1 << i))
         .map(o => ({
           ...o,
           x: o.x * size,

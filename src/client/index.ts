@@ -12,7 +12,7 @@ import {
 import { clampPaddle, solid } from '../shared/physics';
 import { decodeSnapshot, encodeInput, parseText } from '../shared/protocol';
 import type { ServerText } from '../shared/protocol';
-import type { Obstacle, PlayerInfo, SocketLike, Team } from '../shared/types';
+import type { PlayerInfo, SocketLike, Team } from '../shared/types';
 import { predict, rebase, reset, view } from './predict';
 import {
   beacon,
@@ -40,8 +40,8 @@ import type { Stamped } from './util';
 
 export type { Phase, PlayerInfo, Rank, SocketLike, Team } from '../shared/types';
 
-/** How long a genie's bolt flashes, ms. */
-const ZAP = 500;
+/** Ticks a genie's bolt takes to fade out at the end of its spell. */
+const ZAP = 72;
 
 /** A puck let up by a vortex: its splash lasts RISE ms, the puck pops up in the first 60 %. */
 const RISE = 700;
@@ -119,9 +119,6 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   let sunk = -1;
   let rose = -1e4;
   let spot = [0, 0];
-  /** Per paddle id: its stun last frame, and when and from where the bolt that froze it struck. */
-  const stuns = new Map<number, number>();
-  const zaps = new Map<number, number[]>();
 
   const ws = opts.socket ?? (new WebSocket(opts.url!) as unknown as SocketLike);
   ws.binaryType = 'arraybuffer';
@@ -264,9 +261,17 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     const tick = s?.tick ?? 0;
     // Times each one was removed: an iceberg comes back elsewhere, its ghost shows where.
     const ts = s?.obs?.map(o => o.times) ?? [];
-    const all = obstacles(arena, tick, size, count, seed, ts);
-    // Where the genie shot out last stood: its spell's bolt starts there.
-    let caster: Obstacle | undefined;
+    // A genie's spell, ticks since it struck (-1: none): it stands still, behind the tick by its lag.
+    const spell = (i: number) => s?.obs?.[i]?.cast ?? -1;
+    const all = obstacles(
+      arena,
+      tick,
+      size,
+      count,
+      seed,
+      ts,
+      s?.obs?.map((o, i) => (o.lag ?? 0) + Math.max(0, spell(i))) ?? [],
+    );
     all.forEach((o, i) => {
       // Absent: intact and in play. Removed: drawn from where it was then (one removal less),
       // ghost where it is now.
@@ -287,9 +292,6 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
               ts.map((t = 0, j) => t - +(j == i)),
             )[i]
           : o;
-      if (o.kind == 'genie' && since >= 0 && since < TICK_HZ) {
-        caster = then;
-      }
       obstacle(o, i, now - (hits?.[i] ?? -1e9), now, st, now - (back[i] ?? -1e9), then);
     });
     if (s) {
@@ -353,20 +355,6 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         circle(x, y, dr, info?.color ?? '#888');
         circle(x, y, dr / 2, '#0003');
         c.globalAlpha = 1;
-        // Struck by a genie's spell: a bolt from the genie for ZAP ms, then the paralysis and its
-        // countdown.
-        const st = p.stun ?? 0;
-        if (st > (stuns.get(p.id) ?? 0)) {
-          zaps.set(p.id, [now, caster?.x ?? x, caster?.y ?? y - 8 * dr]);
-        }
-        stuns.set(p.id, st);
-        if (st) {
-          stunned(x, y, dr, st / STUN, Math.ceil(st / TICK_HZ), now);
-        }
-        const [at = -1e9, bx, by] = zaps.get(p.id) ?? [];
-        if (now - at < ZAP) {
-          bolt(bx, by, x, y, (now - at) / ZAP, now);
-        }
         // Above the paddle, or below it against the top wall. At sea, over a dark shadow; dark on
         // the sand.
         const ny = y < dr + g ? y + dr + g / 2 : y - dr - g / 2;
@@ -376,6 +364,16 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         }
         text(name, x, ny, g, 'center', ice ? '#163049' : desert ? '#3b2410' : '#fff');
       }
+      // Genie spells: the victim paralysed, its seconds left on it, a bolt from the genie all along
+      // (fading out over the last ZAP ticks).
+      all.forEach((o, i) => {
+        const t = spell(i);
+        const v = s.paddles.find(p => p.id == s.obs?.[i]?.victim);
+        if (t >= 0 && v) {
+          stunned(v.x, v.y, dr, 1 - t / STUN, Math.ceil((STUN - t) / TICK_HZ), now);
+          bolt(o.x, o.y, v.x, v.y, Math.max(0, 1 - (STUN - t) / ZAP), now);
+        }
+      });
     }
     // Back to base rink coordinates: snow and veils cover the rink area whatever its size.
     c.setTransform(k, 0, 0, k, 0, k * TOP);

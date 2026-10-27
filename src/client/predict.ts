@@ -59,6 +59,8 @@ export interface Prediction {
   ready?: boolean;
   /** Score of the last snapshot. When it changes the puck was served: rebased without easing. */
   score: string;
+  /** Snapshot.live of the last snapshot: a serve takes it from true to false. */
+  live?: boolean;
   /**
    * hits[i]: time (ms, the clock of `now`) of the last local puck contact with obstacle i of
    * obstacles(w.arena, tick, w.size, w.count, w.seed), undefined before any. For hit animations.
@@ -105,9 +107,8 @@ const advance = (p: Prediction, now: number): void => {
   }
 };
 
-const paddle = ({ id, x, y, stun }: Snapshot['paddles'][number], size: number): Paddle => ({
+const paddle = ({ id, x, y }: Snapshot['paddles'][number], size: number): Paddle => ({
   id,
-  stun,
   team: x > (W * size) / 2 ? 1 : 0,
   x,
   y,
@@ -122,16 +123,15 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
   const { w } = p;
   const k = w.puck;
   const n = s.puck;
-  const served = p.score != (p.score = s.score + '');
+  // A goal, or a serve off a genie (the host's puck out of play again): no glide across the rink.
+  const served = p.score != (p.score = s.score + '') || (p.live && s.live === false);
+  p.live = s.live;
   const jump = p.off || p.t < 0 || served;
   if (!jump) {
     advance(p, now);
   }
-  // The own paddle keeps its local course, paralysed as the host says.
   w.paddles = s.paddles.map(q =>
-    q.id == you && p.me?.id == you && !p.off
-      ? Object.assign(p.me, { stun: q.stun })
-      : paddle(q, w.size),
+    q.id == you && p.me?.id == you && !p.off ? p.me : paddle(q, w.size),
   );
   p.me = w.paddles.find(q => q.id == you);
   // Unless the host has not seen our hit yet (its puck still runs against ours): then the local
@@ -150,7 +150,12 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
     Object.assign(k, n);
   }
   // The host's obstacles, in any case: what it removed lets the local puck through at once.
-  w.obs = (s.obs ?? []).map(({ since, ...o }) => ({ ...o, gone: since < 0 ? -1 : w.tick - since }));
+  // Ticks since become ticks: a spell still on (or none) holds the own paddle as on the host.
+  w.obs = (s.obs ?? []).map(({ since, cast = -1, ...o }) => ({
+    ...o,
+    gone: since < 0 ? -1 : w.tick - since,
+    ...(cast >= 0 && { cast: w.tick - cast }),
+  }));
 };
 
 /**
@@ -221,6 +226,10 @@ export const view = (
     puck: { ...k, x, y },
     held: w.held,
     paddles: s.paddles.map(q => (q.id == me?.id ? me : q)),
-    obs: w.obs.map(({ gone, ...o }) => ({ ...o, since: gone < 0 ? -1 : w.tick - gone + f })),
+    obs: w.obs.map(({ gone, cast = -1, ...o }) => ({
+      ...o,
+      since: gone < 0 ? -1 : w.tick - gone + f,
+      ...(cast >= 0 && { cast: w.tick - cast + f }),
+    })),
   };
 };

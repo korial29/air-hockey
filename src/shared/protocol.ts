@@ -1,7 +1,7 @@
 // Wire format.
 // Text frames carry rare JSON messages (join, roster, goal, full).
 // Binary frames carry the hot path: inputs (client → host) and snapshots (host → client).
-import { SCALE, TICK_HZ } from './constants';
+import { SCALE } from './constants';
 import type { Arena, Phase, PlayerInfo, Rank, Snapshot, Team } from './types';
 
 export type ClientText = { t: 'join'; name: string };
@@ -66,14 +66,13 @@ export const decodeInput = (buf: ArrayBuffer): { x: number; y: number } | null =
 };
 
 // [type u8][tick u16][score0 u8][score1 u8][puckX u16][puckY u16][count u8][flags u8]
-// [puckVx i16][puckVy i16][left u16, ms] then count × [id u8][x u16][y u16][stun u8, tenths of s]
-// then [obs u8] then obs × [hits u8][since u16][angle u8][times u8]: since 0xffff while in play,
-// else capped at 0xfffe; angle in 256ths of a turn, decoded in [0, 2π).
+// [puckVx i16][puckVy i16][left u16, ms] then count × [id u8][x u16][y u16]
+// then [obs u8] then obs × [hits u8][since u16][angle u8][times u8][cast u16][victim u8][lag u16]:
+// since 0xffff while in play, else capped at 0xfffe, cast (ticks since a genie's spell struck)
+// 0xffff without one; angle in 256ths of a turn, decoded in [0, 2π).
 const SNAP_HEAD = 17;
-const SNAP_PADDLE = 6;
-/** Ticks per tenth of a second: a stun travels in tenths. */
-const TENTH = TICK_HZ / 10;
-const SNAP_OB = 5;
+const SNAP_PADDLE = 5;
+const SNAP_OB = 10;
 const TURN = 2 * Math.PI;
 
 export const encodeSnapshot = (s: Snapshot): ArrayBuffer => {
@@ -98,15 +97,17 @@ export const encodeSnapshot = (s: Snapshot): ArrayBuffer => {
     v.setUint8(o, p.id);
     v.setUint16(o + 1, toWire(p.x));
     v.setUint16(o + 3, toWire(p.y));
-    v.setUint8(o + 5, Math.min(255, Math.ceil((p.stun ?? 0) / TENTH)));
   });
   v.setUint8(o, obs.length);
-  obs.forEach(({ hits, since, angle, times = 0 }, i) => {
+  obs.forEach(({ hits, since, angle, times = 0, cast = -1, victim = 0, lag = 0 }, i) => {
     const b = o + 1 + i * SNAP_OB;
     v.setUint8(b, Math.min(255, hits));
     v.setUint16(b + 1, since < 0 ? 0xffff : Math.min(0xfffe, since));
     v.setUint8(b + 3, Math.round((angle / TURN) * 256) & 255);
     v.setUint8(b + 4, times);
+    v.setUint16(b + 5, cast < 0 ? 0xffff : Math.min(0xfffe, cast));
+    v.setUint8(b + 7, victim);
+    v.setUint16(b + 8, lag);
   });
   return v.buffer;
 };
@@ -129,17 +130,19 @@ export const decodeSnapshot = (buf: ArrayBuffer): Snapshot | null => {
       id: v.getUint8(o),
       x: fromWire(v.getUint16(o + 1)),
       y: fromWire(v.getUint16(o + 3)),
-      stun: v.getUint8(o + 5) * TENTH,
     });
   }
   const obs = [];
   for (let b = o + 1; b < buf.byteLength; b += SNAP_OB) {
-    const since = v.getUint16(b + 1);
+    const [since, cast] = [v.getUint16(b + 1), v.getUint16(b + 5)];
     obs.push({
       hits: v.getUint8(b),
       since: since == 0xffff ? -1 : since,
       angle: (v.getUint8(b + 3) / 256) * TURN,
       times: v.getUint8(b + 4),
+      cast: cast == 0xffff ? -1 : cast,
+      victim: v.getUint8(b + 7),
+      lag: v.getUint16(b + 8),
     });
   }
   return {

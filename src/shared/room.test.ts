@@ -300,7 +300,7 @@ describe('Room', () => {
     for (let i = 0; i < SNAP_EVERY; i++) {
       room.tick();
     }
-    expect(decodeSnapshot(binaries(a)[0])!.paddles).toEqual([{ id: 0, x: 800, y: 300, stun: 0 }]);
+    expect(decodeSnapshot(binaries(a)[0])!.paddles).toEqual([{ id: 0, x: 800, y: 300 }]);
 
     room.receive(a, new ArrayBuffer(3));
     expect(clampPaddle).toHaveBeenCalledTimes(1);
@@ -710,9 +710,9 @@ describe('Room tournament', () => {
     ticks(BREAK);
     expect(lastMatch(a)).toMatchObject({ phase: 'ready', round: 2 });
     expect(snap(a).obs).toEqual([
-      { hits: 0, since: -1, angle: 0, times: 0 },
-      { hits: 0, since: -1, angle: 0, times: 0 },
-      { hits: 0, since: -1, angle: 0, times: 0 },
+      { hits: 0, since: -1, angle: 0, times: 0, cast: -1, victim: 0, lag: 0 },
+      { hits: 0, since: -1, angle: 0, times: 0, cast: -1, victim: 0, lag: 0 },
+      { hits: 0, since: -1, angle: 0, times: 0, cast: -1, victim: 0, lag: 0 },
     ]);
   });
 
@@ -1112,7 +1112,9 @@ describe('Room tournament', () => {
       expect(lastMatch(a)).toMatchObject({ phase: 'ready', round: 1, size: Math.SQRT2, count: 4 });
       expect(rink(c)).toEqual([Math.SQRT2, 4]);
       // As many obstacle states as obstacles on the new rink, all of them intact.
-      expect(snap(a).obs).toEqual(Array(4).fill({ hits: 0, since: -1, angle: 0, times: 0 }));
+      expect(snap(a).obs).toEqual(
+        Array(4).fill({ hits: 0, since: -1, angle: 0, times: 0, cast: -1, victim: 0, lag: 0 }),
+      );
       expect(snap(a).paddles.map(p => [p.x, p.y])).toEqual(
         [
           [400, 100],

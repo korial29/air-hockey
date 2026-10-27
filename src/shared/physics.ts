@@ -5,8 +5,9 @@
 // kinematic too: they push both, and kick the puck away like pinball bumpers, but for those that
 // grab it: a whirlwind spins it round and flings it out, a vortex sucks it under and lets it up
 // elsewhere, a shark eats it and spits it out in a random direction (see twirl). A genie makes it
-// vanish, served again on the centre spot, and its spell paralyses whoever touched it last for
-// STUN ticks: that paddle stays put (see drive). The host's puck breaks them (see bump): a removed
+// vanish, served again on the serve spot of the shooter's opponents, and casts a spell on the
+// shooter: for STUN ticks both stand still (see drive and around), then the genie floats on from
+// where it stood. The host's puck breaks them (see bump): a removed
 // obstacle touches nothing until it comes back, RESPAWN ticks later.
 // The rink is W · s × H · s for the world's size s: goals, serve spots and top speeds scale with
 // it, the radii do not.
@@ -170,12 +171,26 @@ const serve = (w: World, obs: Obstacle[], x: number): void => {
 /** Whether obstacle i is out of play (removed, ghost included): it touches nothing. */
 const off = (w: World, i: number): boolean => (w.obs[i]?.gone ?? -1) >= 0;
 
-/** Times each obstacle was removed this round: where the icebergs stand (see obstacles). */
-const times = (w: World) => w.obs.map(o => o.times);
+/** Whether genie i is casting its spell: it stands still, its victim too. */
+const casting = (w: World, i: number): boolean => (w.obs[i]?.cast ?? -1) >= 0;
+
+/**
+ * The obstacles of the world at tick t, where they stand: the icebergs placed by their removals,
+ * each genie behind t by its lag, a casting one still since its spell struck.
+ */
+const around = (w: World, t: number): Obstacle[] =>
+  obstacles(
+    w.arena,
+    t,
+    w.size,
+    w.count,
+    w.seed,
+    w.obs.map(s => s.times),
+    w.obs.map((s, i) => (s.lag ?? 0) + (casting(w, i) ? t - s.cast! : 0)),
+  ).map((o, i) => (casting(w, i) ? { ...o, vx: 0, vy: 0 } : o));
 
 /** The obstacles of the world at its tick, where they stand. */
-export const standing = (w: World): Obstacle[] =>
-  obstacles(w.arena, w.tick, w.size, w.count, w.seed, times(w));
+export const standing = (w: World): Obstacle[] => around(w, w.tick);
 
 /**
  * Puck against the obstacles in play: out of them, bounce on the relative velocity (penguins,
@@ -205,13 +220,18 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
       w.held = i;
       w.left = o.kind == 'shark' ? CHEW : HOLD + SWAY * draw(w.seed, w.tick & 0xffff);
     }
-    if (o.kind == 'genie') {
-      // The puck vanishes, served again on the centre spot; on the host, the genie's spell strikes
-      // whoever touched it last: paralysed STUN ticks.
-      serve(w, obs, (W * w.size) / 2);
-      const p = was && w.paddles.find(p => p.id == w.last);
-      if (p) {
-        p.stun = STUN;
+    if (o.kind == 'genie' && !casting(w, i)) {
+      // The puck vanishes, served again on the serve spot of the shooter's opponents (whoever
+      // touched it last), clear of every lane, or the centre spot with no shooter (a puck only
+      // goes in play on a touch); on the host, the genie's spell strikes the shooter: both stand
+      // still STUN ticks. A casting genie is a plain bumper: one victim at a time.
+      const p = w.paddles.find(p => p.id == w.last);
+      serve(w, obs, ((p ? 3 - 2 * p.team : 2) * W * w.size) / 4);
+      if (p && was) {
+        Object.assign((w.obs[i] ??= { hits: 0, gone: -1, angle: 0 }), {
+          cast: w.tick + 1,
+          victim: p.id,
+        });
       }
     } else {
       if (vn < 0) {
@@ -233,7 +253,8 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
         const st = (w.obs[i] ??= { hits: 0, gone: -1, angle: 0 });
         // From the puck to the obstacle's centre at impact: where a shot-out penguin flies.
         st.angle = Math.atan2(-ny, -nx);
-        if (o.kind != 'shark' && ++st.hits >= (fixed(o) ? ICEBERG_HP : 1)) {
+        // Sharks and genies never go.
+        if (!['shark', 'genie'].includes(o.kind) && ++st.hits >= (fixed(o) ? ICEBERG_HP : 1)) {
           st.gone = w.tick + 1;
           st.times = ((st.times ?? 0) + 1) & 255;
         }
@@ -389,9 +410,15 @@ export const step = (w: World, dt: number, host = true): Team | -1 => {
   w.bumps = [];
   let goal: Team | -1 = -1;
   const n = Math.ceil(w.size);
-  const at = (i: number) => obstacles(w.arena, w.tick + i / n, w.size, w.count, w.seed, times(w));
+  const at = (i: number) => around(w, w.tick + i / n);
   if (dt > 0) {
-    w.paddles.forEach(p => p.stun && p.stun--);
+    w.obs.forEach(st => {
+      // The spell over: the victim goes, the genie floats on from where it stood.
+      if ((st.cast ?? -1) >= 0 && w.tick + 1 - st.cast! >= STUN) {
+        st.lag = ((st.lag ?? 0) + STUN) & 0xffff;
+        st.cast = -1;
+      }
+    });
     at(1).forEach((o, i) => {
       const st = w.obs[i];
       if (st?.gone >= 0 && w.tick + 1 - st.gone >= RESPAWN) {
@@ -419,8 +446,9 @@ const drive = (p: Paddle, w: World, obs: Obstacle[], dt: number): void => {
   const ox = p.x;
   const oy = p.y;
   // Aim at the clamped target so a target across the line still gets the full speed budget.
-  // Paralysed: it stays where it is (obstacles still push it).
-  const [tx, ty] = p.stun ? [p.x, p.y] : clampPaddle(p.team, p.tx, p.ty, s);
+  // Under a genie's spell: it stays where it is (obstacles still push it).
+  const still = w.obs.some(st => (st.cast ?? -1) >= 0 && st.victim == p.id);
+  const [tx, ty] = still ? [p.x, p.y] : clampPaddle(p.team, p.tx, p.ty, s);
   let dx = tx - ox;
   let dy = ty - oy;
   const d = Math.hypot(dx, dy);
@@ -441,7 +469,7 @@ const drive = (p: Paddle, w: World, obs: Obstacle[], dt: number): void => {
  */
 export const skate = (w: World, dt: number): void => {
   const n = Math.ceil(w.size);
-  const obs = obstacles(w.arena, w.tick, w.size, w.count, w.seed, times(w));
+  const obs = standing(w);
   for (let i = 0; i < n; i++) {
     for (const p of w.paddles) {
       drive(p, w, obs, dt / n);

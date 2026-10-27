@@ -25,8 +25,6 @@ export interface Paddle {
   /** Target the player is pointing at; the paddle moves toward it at PADDLE_MAX_SPEED. */
   tx: number;
   ty: number;
-  /** Ticks it stays paralysed by a genie's spell (STUN at the strike); absent or 0: free. */
-  stun?: number;
 }
 
 /**
@@ -70,6 +68,14 @@ export interface ObstacleState {
    * whirlwind) comes back somewhere else in its band each time (see obstacles in arena.ts).
    */
   times?: number;
+  /**
+   * A genie's spell: the tick it struck at, -1 or absent when none. For STUN ticks the genie stands
+   * still and paddle `victim` is paralysed; then `lag` grows by STUN.
+   */
+  cast?: number;
+  victim?: number;
+  /** Ticks a genie stood still under its spells, mod 65536: its float is that far behind the tick. */
+  lag?: number;
 }
 
 export interface World {
@@ -176,18 +182,25 @@ export interface Snapshot {
   tick: number;
   score: [number, number];
   puck: Puck;
-  /** stun: Paddle.stun, to the tenth of a second. */
-  paddles: { id: number; x: number; y: number; stun?: number }[];
+  paddles: { id: number; x: number; y: number }[];
   /** World.live: the puck reacts to obstacles. */
   live?: boolean;
   /** World.held and World.left: the obstacle holding the puck and for how long still. */
   held?: number;
   left?: number;
   /**
-   * World.obs on the wire, with `gone` as ticks since removal (or -1), so it survives the u16 tick
-   * wrap: { hits, since, angle } per obstacle in play.
+   * World.obs on the wire, with `gone` as ticks since removal (or -1), and `cast` as ticks since
+   * the spell struck (or -1), so they survive the u16 tick wrap.
    */
-  obs?: { hits: number; since: number; angle: number; times?: number }[];
+  obs?: {
+    hits: number;
+    since: number;
+    angle: number;
+    times?: number;
+    cast?: number;
+    victim?: number;
+    lag?: number;
+  }[];
 }
 
 /**

@@ -849,7 +849,6 @@ const shark = (
 };
 
 const BLUE = '#3f8ee6';
-const SMOKE = ['#d6c2f5', '#9b72dd'];
 const BRASS = '#f2c230';
 
 /**
@@ -967,26 +966,6 @@ const MOVERS = [penguin, shark, genie];
 const KINDS = ['iceberg', 'penguin', 'vortex', 'shark', 'whirlwind', 'genie'];
 
 /**
- * A genie's ghost, where it will come back: its small golden oil lamp on the sand, spout toward
- * +x, purple smoke rising from it.
- */
-const lamp = (x: number, y: number, r: number, now: number) => {
-  c.globalAlpha = 0.95;
-  ring(x - r * 0.45, y, r * 0.15, GOLD, r * 0.07);
-  line(GOLD, r * 0.12, x, y, x + r * 0.75, y - r * 0.15);
-  oval(x, y, r * 0.45, r * 0.27, '#e0a82e');
-  for (let j = 0; j < 4; j++) {
-    const h = (now / 12 + j * r * 0.4) % (r * 1.6);
-    circle(
-      x + r * 0.8 + Math.sin(now / 250 + j) * r * 0.12,
-      y - r * 0.2 - h,
-      r * 0.08 + h * 0.2,
-      '#b9a0ec88',
-    );
-  }
-};
-
-/**
  * Iceberg i shattering, q: 0 → 1 over 800 ms. Its facets slide apart on the ice, slowing down,
  * spinning a little and fading, in a puff of ice dust.
  */
@@ -1028,33 +1007,24 @@ const shatter = (x: number, y: number, r: number, i: number, q: number) => {
 
 /**
  * A penguin shot out, q: 0 → 1 over 1 s, from where the puck hit it (x, y) along a. It flies off,
- * spinning and shrinking, stars around its head, feathers left behind; gone past the boards. A
- * genie (sea 2) leaves wisps of smoke. Sharks are never shot out.
+ * spinning and shrinking, stars around its head, feathers left behind; gone past the boards.
+ * Sharks and genies are never shot out.
  */
-const shot = (
-  x: number,
-  y: number,
-  r: number,
-  a: number,
-  q: number,
-  now: number,
-  sea = 0,
-  i = 0,
-) => {
+const shot = (x: number, y: number, r: number, a: number, q: number, now: number, i = 0) => {
   c.globalAlpha = 1 - q;
   for (let j = 0; j < 6; j++) {
     const b = a + 3.14 + (rnd(j + 30) - 0.5) * 3;
     const d = r * (0.4 + q * (1.2 + rnd(j + 40)));
     c.beginPath();
     c.ellipse(x + Math.cos(b) * d, y + Math.sin(b) * d, r * 0.3, r * 0.1, b + q * j, 0, 7);
-    fills([j % 3 ? '#f7fbff' : BLACK, j % 2 ? '#fff' : '#bdf3ff', SMOKE[j % 2]][sea]);
-    strokes(sea ? '#fff' : '#7fb6d6', 2 * u);
+    fills(j % 3 ? '#f7fbff' : BLACK);
+    strokes('#7fb6d6', 2 * u);
   }
   c.globalAlpha = Math.min(1, 4 - 4 * q);
   const d = r * 24 * q;
   const vx = Math.cos(a);
   const vy = Math.sin(a);
-  MOVERS[sea](x + vx * d, y + vy * d, r * (1 - 0.35 * q), vx, vy, 1 - q, now, i);
+  penguin(x + vx * d, y + vy * d, r * (1 - 0.35 * q), vx, vy, 1 - q, now, i);
   c.globalAlpha = 1;
 };
 
@@ -1064,10 +1034,10 @@ export type ObstacleView = NonNullable<Snapshot['obs']>[number];
 /**
  * An obstacle, in world units; age: ms since the puck last hit it, back: ms since it came back in
  * play. st: its state, absent while intact and in play. Once removed (st.since ≥ 0), from where it
- * was then: an iceberg shatters, a vortex closes in foam, a whirlwind dissipates, a penguin or a
- * genie is shot out (a shark never goes). Then nothing until its ghost, at o (its lane goes on): see-through, beating
- * faster and faster, a ring closing on it, bubbles rising at sea; a genie's is its oil lamp. Back
- * in play it pops in.
+ * was then: an iceberg shatters, a vortex closes in foam, a whirlwind dissipates, a penguin is
+ * shot out (sharks and genies never go). Then nothing until its ghost, at o (its lane goes on):
+ * see-through, beating faster and faster, a ring closing on it, bubbles rising at sea. Back in
+ * play it pops in.
  */
 export const obstacle = (
   o: Obstacle,
@@ -1089,7 +1059,7 @@ export const obstacle = (
       if (fixed) {
         (sea ? dust : shatter)(from.x, from.y, from.r, i, ms / 800, sea, now);
       } else {
-        shot(from.x, from.y, from.r, st!.angle, ms / 1000, now, sea, i);
+        shot(from.x, from.y, from.r, st!.angle, ms / 1000, now, i);
       }
     }
     return;
@@ -1132,8 +1102,6 @@ export const obstacle = (
       sea,
       now,
     );
-  } else if (ms >= 0 && sea > 1) {
-    lamp(x, y, r, now);
   } else {
     MOVERS[sea](x, y, r, vx, vy, Math.max(0, 1 - age / 800), now, i);
   }

@@ -230,7 +230,11 @@ export class Room {
           live: w.live,
           held: w.held,
           left: w.left,
-          obs: w.obs.map(({ gone, ...o }) => ({ ...o, since: gone < 0 ? -1 : w.tick - gone })),
+          obs: w.obs.map(({ gone, cast = -1, ...o }) => ({
+            ...o,
+            since: gone < 0 ? -1 : w.tick - gone,
+            cast: cast < 0 ? -1 : w.tick - cast,
+          })),
         }),
       );
     }
@@ -426,7 +430,6 @@ export class Room {
     const obs = standing(w);
     w.paddles.forEach(p => {
       [p.tx, p.ty] = [p.x, p.y] = spawnPoint(p.team, n[p.team]++, size, obs);
-      p.stun = 0;
     });
     Object.assign(this.m, { arena, size, count, seed });
     this.last = undefined;
