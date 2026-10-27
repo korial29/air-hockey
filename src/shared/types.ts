@@ -44,7 +44,7 @@ export interface Obstacle {
   x: number;
   y: number;
   r: number;
-  /** Units per second: 0 for the fixed ones, the slide of a penguin or a genie, a shark's swim. */
+  /** Units per second: 0 for the fixed ones, the slide of a penguin, a shark's swim, a genie's float. */
   vx: number;
   vy: number;
 }
@@ -85,6 +85,10 @@ export interface World {
    * so a penguin cannot start a round alone, let alone score.
    */
   live: boolean;
+  /** Index of the whirlwind holding the puck (see twirl in physics.ts), -1 when none does. */
+  held: number;
+  /** Seconds until that whirlwind flings the puck out. */
+  left: number;
   /**
    * State of each obstacle in play, indexed like obstacles(arena, tick, size, count, seed).
    * Reset at round start (every obstacle back, intact).
@@ -157,6 +161,9 @@ export interface Snapshot {
   paddles: { id: number; x: number; y: number }[];
   /** World.live: the puck reacts to obstacles. */
   live?: boolean;
+  /** World.held and World.left: the whirlwind holding the puck and for how long still. */
+  held?: number;
+  left?: number;
   /**
    * World.obs on the wire, with `gone` as ticks since removal (or -1), so it survives the u16 tick
    * wrap: { hits, since, angle } per obstacle in play.

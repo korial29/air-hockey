@@ -33,6 +33,8 @@ vi.mock('./physics', () => ({
     tick: physics.tick0,
     bumps: [],
     live: false,
+    held: -1,
+    left: 0,
     obs: Array.from({ length: count }, () => ({ hits: 0, gone: -1, angle: 0 })),
     puck: { x: 800, y: 450, vx: 0, vy: 0 },
     paddles: [],

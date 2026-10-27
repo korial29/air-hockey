@@ -1,11 +1,12 @@
 // Fixed-step physics, shared by the host (authoritative) and the client (paddle prediction).
 // Paddles are kinematic (infinite mass): they push the puck, the puck never pushes them,
 // except when it is pinned against a wall (see the last pass of `step`). Obstacles are kinematic
-// too: they push both, and kick the puck away like pinball bumpers. The host's puck breaks them
-// (see bump): a removed obstacle touches nothing until it comes back, RESPAWN ticks later.
+// too: they push both, and kick the puck away like pinball bumpers, but for whirlwinds: they catch
+// the puck, spin it round and fling it out (see twirl). The host's puck breaks them (see bump): a
+// removed obstacle touches nothing until it comes back, RESPAWN ticks later.
 // The rink is W · s × H · s for the world's size s: goals, serve spots and top speeds scale with
 // it, the radii do not.
-import { fixed, obstacles, swirl } from './arena';
+import { draw, fixed, obstacles, swirl } from './arena';
 import {
   GOAL,
   H,
@@ -27,12 +28,18 @@ const DRAG = 0.7;
 const SLOT_SPEED = 300;
 /** Minimum speed of a puck leaving an obstacle: the pinball kick (× size). */
 const KICK = 1000;
+/** Turns per second of a puck caught in a whirlwind. */
+export const TURNS = 2.5;
 /**
- * Speed a whirlwind adds across the normal, in its sense (swirl), after the bounce and before the
- * kick (× size): a slow head-on hit leaves at the kick, 37° off the normal. Once per step and
- * whirlwind (see bump).
+ * Seconds a whirlwind holds the puck: HOLD, plus up to SWAY drawn at random. SWAY is 2 turns, so
+ * the puck leaves in any direction.
  */
-export const SPIN = 600;
+export const HOLD = 0.6;
+export const SWAY = 0.8;
+/** Speed a whirlwind flings the puck out at (× size). */
+export const FLING = 1400;
+/** Speed a caught puck sinks into the whirlwind's eye and comes back out at, units per second. */
+const SINK = 600;
 /** Clearance a served puck keeps from paddles and obstacles, and the step between serve spots tried. */
 const SERVE_GAP = 40;
 const SERVE_STEP = 160;
@@ -109,39 +116,34 @@ const off = (w: World, i: number): boolean => (w.obs[i]?.gone ?? -1) >= 0;
 
 /**
  * Puck against the obstacles in play: out of them, bounce on the relative velocity (penguins,
- * sharks and genies move), a whirlwind's spin, then the kick: it leaves at KICK · size at least,
- * the push added along the normal. Records w.bumps.
- * The spin: SPIN · size across the normal, in the whirlwind's sense (swirl), on the first contact
- * of a step with it, host and prediction alike. It leaves the normal speed as it is and comes
- * before the kick, so the puck still leaves, at the kick at least, and the later passes of the
- * step change nothing (bounce, spin and kick are each done once). The cap at the end of the
- * step bounds the sum.
+ * sharks and genies move), then the kick: it leaves at KICK · size at least, the push added along
+ * the normal. A whirlwind catches the puck instead (w.held, see twirl). Records w.bumps.
+ * The hold lasts HOLD + SWAY · a draw of the seed and the u16 tick of the catch: host and
+ * prediction draw the same.
  * On the host (`was`: the bumps of the previous step) a new contact is a hit: one that did not
  * touch that obstacle in the previous step, nor earlier in this one, so a puck held against it
  * counts once. A fixed obstacle (iceberg, rock, whirlwind) goes at its ICEBERG_HP-th hit, a mover
  * (penguin, shark, genie) at the first one, removed at once at the tick this step lands on. The
- * puck bounces and gets the kick all the same.
+ * puck bounces and gets the kick all the same; a whirlwind that goes flings it at once.
  */
 const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
   obs.forEach((o, i) => {
     const k = w.puck;
     const kick = KICK * w.size;
-    if (!w.live || off(w, i) || !out(k, o, o.r + PUCK_R, put, w.size)) {
+    if (!w.live || w.held >= 0 || off(w, i) || !out(k, o, o.r + PUCK_R, put, w.size)) {
       return;
     }
     const d = Math.hypot(k.x - o.x, k.y - o.y);
     const nx = (k.x - o.x) / d;
     const ny = (k.y - o.y) / d;
     const vn = (k.vx - o.vx) * nx + (k.vy - o.vy) * ny;
+    if (o.kind == 'whirlwind') {
+      w.held = i;
+      w.left = HOLD + SWAY * draw(w.seed, w.tick & 0xffff);
+    }
     if (vn < 0) {
       k.vx -= (1 + E) * vn * nx;
       k.vy -= (1 + E) * vn * ny;
-    }
-    const fresh = !w.bumps.includes(i);
-    if (fresh && o.kind == 'whirlwind') {
-      const t = SPIN * w.size * swirl(o, w.size);
-      k.vx -= t * ny;
-      k.vy += t * nx;
     }
     const s = Math.hypot(k.vx, k.vy);
     if (s < kick) {
@@ -151,7 +153,7 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
       k.vx += a * nx;
       k.vy += a * ny;
     }
-    if (fresh) {
+    if (!w.bumps.includes(i)) {
       w.bumps.push(i);
       if (was && !was.includes(i)) {
         const st = (w.obs[i] ??= { hits: 0, gone: -1, angle: 0 });
@@ -163,6 +165,38 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
       }
     }
   });
+
+/**
+ * A caught puck for dt, round whirlwind w.held of obs: TURNS a second in its sense (swirl), its
+ * centre sinking at SINK to the eye's edge (o.r - PUCK_R: no paddle reaches it there), back out
+ * to the rim as w.left runs out. Then, or as soon as the whirlwind goes, it flies off along its
+ * circle at FLING · size from just past the rim (o.r + PUCK_R + 1), from where it turned to: a
+ * random direction.
+ * Its velocity follows the circle, for drawing between steps.
+ */
+const twirl = (w: World, obs: Obstacle[], dt: number): void => {
+  const k = w.puck;
+  const o = obs[w.held];
+  const d = swirl(o, w.size);
+  const a = Math.atan2(k.y - o.y, k.x - o.x) + d * TURNS * 2 * Math.PI * dt;
+  let r = Math.hypot(k.x - o.x, k.y - o.y);
+  w.left -= dt;
+  const gone = w.left <= 0 || off(w, w.held);
+  // Out once the time left only just covers the way out, from the eye's edge to the rim. Flung
+  // from the rim, whatever the last step left.
+  r = gone
+    ? o.r + PUCK_R + 1
+    : r + cl((w.left * SINK < 2 * PUCK_R ? o.r + PUCK_R : o.r - PUCK_R) - r, -SINK * dt, SINK * dt);
+  const x = o.x + Math.cos(a) * r;
+  const y = o.y + Math.sin(a) * r;
+  [k.vx, k.vy] = [(x - k.x) / dt, (y - k.y) / dt];
+  [k.x, k.y] = [x, y];
+  if (gone) {
+    w.held = -1;
+    k.vx = -Math.sin(a) * d * FLING * w.size;
+    k.vy = Math.cos(a) * d * FLING * w.size;
+  }
+};
 
 /** A paddle out of the obstacles in play: it slides around them. */
 const avoid = (p: Paddle, w: World, obs: Obstacle[]): void =>
@@ -177,6 +211,8 @@ export const createWorld = (arena: Arena = 'ice', size = 1, count = 7, seed = 0)
   tick: 0,
   bumps: [],
   live: false,
+  held: -1,
+  left: 0,
   obs: obstacles(arena, 0, size, count, seed).map(() => ({ hits: 0, gone: -1, angle: 0 })),
   puck: { x: (W * size) / 2, y: (H * size) / 2, vx: 0, vy: 0 },
   paddles: [],
@@ -218,9 +254,9 @@ export const spawnPoint = (team: Team, n: number, size = 1): [number, number] =>
  * No tunnelling at 240 Hz: the puck moves at most 2400 / 240 = 10 units per step (< PUCK_R = 28
  * against walls and posts), a paddle 7200 / 240 = 30, so the closing distance per step is at
  * most 40 < PUCK_R + PADDLE_R = 72: an overlap is always caught before the centres cross.
- * Penguins, genies and sharks (zig-zag included) move under 1.4 units per step: puck to obstacle
- * closes at most 11.4 < 40 + 28 (the smallest obstacle, a penguin or a genie), paddle to obstacle
- * 31.4 < 40 + 44.
+ * Penguins, sharks (zig-zag included) and genies (at their fastest, mid-glide) move under 1.6
+ * units per step: puck to obstacle closes at most 11.6 < 40 + 28 (the smallest obstacle, a penguin
+ * or a genie), paddle to obstacle 31.6 < 40 + 44. A caught puck moves with its whirlwind's turn.
  * On a bigger rink top speeds grow with the size, so the step runs in ceil(size) sub-steps, the
  * obstacles taken at fractional ticks: the distances per sub-step stay those above.
  */
@@ -304,6 +340,12 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
   let goal: Team | -1 = -1;
 
   w.paddles.forEach(p => drive(p, w, obs, dt));
+  if (w.held >= 0) {
+    // In a whirlwind it only turns, out of reach: paddles go round it.
+    twirl(w, obs, dt);
+    w.paddles.forEach(p => out(p, k, RR, place, s) && avoid(p, w, obs));
+    return -1;
+  }
 
   const f = DRAG ** dt;
   k.vx *= f;

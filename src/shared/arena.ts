@@ -31,13 +31,16 @@
 // the serve spots and the centre-line gap allow together: SR + ZA = 114.
 // The pair zig-zags in mirror, the centre shark across the centre line: half a zig on each
 // side, so it favours neither team over time.
-// The desert (an Arabian Nights desert) is the ice layout, slot for slot and with every ice
-// guarantee: whirlwinds of sand where the icebergs are (same size, same y per seed), genies in
-// the penguin lanes, floating board to board like penguins, straight down their lane (any sway is
-// the renderer's). A whirlwind also spins the puck (see SPIN in physics.ts), in a sense of its
-// own: clockwise on screen left of the centre line, counter-clockwise on the right (swirl).
-// A bigger rink scales all of it while paddle and puck keep their size, and fewer obstacles leave
-// wider gaps: every guarantee holds at every size and count.
+// The desert (an Arabian Nights desert) is the ice layout, slot for slot: whirlwinds of sand where
+// the icebergs are (same size, same y per seed), genies in the penguin lanes. A whirlwind catches
+// the puck, spins it round and flings it out in a random direction (see twirl in physics.ts), in a
+// sense of its own: clockwise on screen left of the centre line, counter-clockwise on the right
+// (swirl). A genie floats at random within its band: anywhere along its lane, board to board, and
+// up to GA off it either side, gliding from one waypoint drawn from the round's seed to the next
+// every WANDER ticks. The pair wanders in mirror. GA trades some of the ice's room for a livelier
+// float: whirlwinds to the nearest lane down to 128, lane to lane 140, the pair's lanes to a
+// centre-line paddle 122. The puck alone still fits everywhere (≥ 76) and the spawn columns stay
+// clear: the last one is 6 off the band.
 import { H, MAX_SIZE, TICK_HZ, W } from './constants';
 import type { Arena, Obstacle } from './types';
 
@@ -73,14 +76,18 @@ export const ZA = 70;
 export const ZN = 3;
 /** Sideways speed of a shark, units per second: 4 · ZA per back-and-forth, about 197. */
 const ZV = (8 * ZA * ZN * TICK_HZ) / PERIOD;
+/** How far a genie strays either side of its lane, and ticks from one waypoint to the next. */
+export const GA = 30;
+export const WANDER = 1024;
 /** Obstacles kept for a count of 2 to 7 (see obstacles): bit i keeps index i of the full layout. */
 const MASKS = [0b11, 0b100011, 0b1010011, 0b1110011, 0b1011111, 0b1111111];
 
 /**
- * A share in [0, 1) for pair i of a seed: murmur3's integer finalizer, so host and clients draw
- * the same, with no shared random state.
+ * A share in [0, 1) for draw i of a seed (pair i of icebergs, a genie's waypoint, a whirlwind's
+ * hold): murmur3's integer finalizer, so host and clients draw the same, with no shared random
+ * state.
  */
-const draw = (seed: number, i: number): number => {
+export const draw = (seed: number, i: number): number => {
   let h = seed * 2 + i;
   h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
@@ -114,7 +121,8 @@ export const swirl = (o: Obstacle, size = 1): 1 | -1 => (o.x < (W * size) / 2 ? 
  * Fresh objects every call.
  *
  * `seed` (an integer, picked by the host each round) places the icebergs (rocks, whirlwinds)
- * across the width, each pair in its band (see BERGS); 0 keeps the fixed layout.
+ * across the width, each pair in its band (see BERGS), and draws the genies' waypoints; 0 keeps
+ * the fixed layout of the icebergs.
  */
 export const obstacles = (arena: Arena, t: number, size = 1, count = 7, seed = 0): Obstacle[] => {
   const sea = arena == 'sea';
@@ -139,6 +147,27 @@ export const obstacles = (arena: Arena, t: number, size = 1, count = 7, seed = 0
           })),
         ),
         ...LANES.map(([x, phase, m]): Obstacle => {
+          if (arena == 'desert') {
+            // Waypoint n to n + 1 (64 of them over the u16 tick), eased in and out (smoothstep):
+            // e and its rate.
+            const f = (t / WANDER) % 64;
+            const n = f | 0;
+            const u = f - n;
+            const e = u * u * (3 - 2 * u);
+            const de = (6 * u * (1 - u) * TICK_HZ) / WANDER;
+            // Draws of this lane (the pair shares them) along the axis j (0: x, 1: y), from waypoint n.
+            const at = (j: number, n: number) =>
+              draw(seed, 2 + 128 * +(x == W / 2) + 64 * j + (n % 64));
+            const [dx, dy] = [0, 1].map(j => at(j, n + 1) - at(j, n));
+            return {
+              kind: mover,
+              x: x + m * GA * (2 * (at(0, n) + dx * e) - 1),
+              y: r + span * (at(1, n) + dy * e),
+              r,
+              vx: 2 * m * GA * dx * de,
+              vy: span * dy * de,
+            };
+          }
           // Share of the period, 0 → 1: down in the first half, back up in the second one.
           const u = (t / PERIOD + phase) % 1;
           const up = u >= 0.5;

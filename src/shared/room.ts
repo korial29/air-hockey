@@ -220,6 +220,8 @@ export class Room {
           puck: w.puck,
           paddles: w.paddles,
           live: w.live,
+          held: w.held,
+          left: w.left,
           obs: w.obs.map(({ hits, gone, angle }) => ({
             hits,
             since: gone < 0 ? -1 : w.tick - gone,
