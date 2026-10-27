@@ -44,6 +44,8 @@ export const ICEBERG_HP = 3;
 export const RESPAWN = 10 * TICK_HZ;
 /** Its ghost shows, blocking nothing, for the last GHOST ticks before it returns (3 s). */
 export const GHOST = 3 * TICK_HZ;
+/** Ticks a genie's spell paralyses the paddle that shot the puck at it (5 s). */
+export const STUN = 5 * TICK_HZ;
 
 /** Default match rules. */
 export const RULES: Rules = {

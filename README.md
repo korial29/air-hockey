@@ -181,7 +181,7 @@ serve({ port: 8787, rules: { arena: 'sea', goals: 5, rounds: 1 } });
 - **Teams**: players are spread left and right as they join, each with a paddle in their half. Up to 16 players.
 - **The rink grows with the players**, so everybody keeps the same room: ×1 at 2 players, ×1.41 at 4, ×1.73 at 6, ×2 from 8. Obstacles go from 3 to 7 with the player count. The rink adapts while waiting, at round start and at every serve until someone touches the puck.
 - **Three scenes, one per round**: ice, sea, desert.
-- **Obstacles bounce the puck like pinball bumpers**, except those that grab it. Icebergs, vortices and whirlwinds stand in front of the goals, each on a random square of a grid there, every game and every round: one side's in the top half, the other's in the bottom half. They break after 3 hits and come back on another square. Penguins cross the width, genies float at random along their lane; both are shot out on the first hit. Everything comes back after 10 s, with a ghost for the last 3 s (a genie's ghost is its oil lamp).
+- **Obstacles bounce the puck like pinball bumpers**, except those that grab it. Icebergs, vortices and whirlwinds stand in front of the goals, each on a random square of a grid there, every game and every round: one side's in the top half, the other's in the bottom half. They break after 3 hits and come back on another square. Penguins cross the width, genies float at random along their lane; both are shot out on the first hit. A genie hit makes the puck vanish, served again on the centre spot, and strikes whoever shot it with lightning: that paddle is paralysed for 5 s, a countdown on it. Everything comes back after 10 s, with a ghost for the last 3 s (a genie's ghost is its oil lamp).
 - **Some obstacles grab the puck.** A whirlwind spins it round for about a second and flings it out in a random direction. A vortex sucks it under the water and lets it up, at rest, somewhere else on the rink. A shark, zig-zagging across the width, eats it and spits it out in a random direction; sharks are never shot out. A puck that comes up splashes and pops back to its size.
 - **One goalie per crease**: in the half-disc marked in front of each goal, only the defender nearest the goal stops the puck. The other defenders in it turn see-through and the puck goes through them, so a wall of paddles cannot shut a goal.
 - **Serves**: a served puck ignores obstacles until a player touches it, and is never served under a paddle.
@@ -195,7 +195,7 @@ serve({ port: 8787, rules: { arena: 'sea', goals: 5, rounds: 1 } });
 - [x] Unique colour per player, name above the paddle, team rosters
 - [x] Teams, 3-round matches (one scene each), individual points ranking, podium screen
 - [x] One goalie per crease: no wall of defenders in front of a goal
-- [x] Three scenes taking turns, each with its own play: ice (icebergs, sliding penguins), sea (vortices that swallow the puck, zig-zagging sharks that spit it out, wooden goals), Arabian Nights desert (whirlwinds that catch and fling the puck, wandering genies, Moorish arches)
+- [x] Three scenes taking turns, each with its own play: ice (icebergs, sliding penguins), sea (vortices that swallow the puck, zig-zagging sharks that spit it out, wooden goals), Arabian Nights desert (whirlwinds that catch and fling the puck, wandering genies whose lightning paralyses the shooter, Moorish arches)
 - [x] Breakable obstacles with respawn and ghost
 - [x] Rink that grows with the number of players
 - [x] Client-side prediction: your paddle and the puck react at once

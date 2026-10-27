@@ -426,6 +426,7 @@ export class Room {
     const obs = standing(w);
     w.paddles.forEach(p => {
       [p.tx, p.ty] = [p.x, p.y] = spawnPoint(p.team, n[p.team]++, size, obs);
+      p.stun = 0;
     });
     Object.assign(this.m, { arena, size, count, seed });
     this.last = undefined;

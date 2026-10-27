@@ -1221,6 +1221,54 @@ export const splash = (x: number, y: number, r: number, q: number) => {
   c.globalAlpha = 1;
 };
 
+/** Lightning yellow and white-hot. */
+const ZAP = ['#ffd84a', '#fffbe0'];
+
+/**
+ * A genie's lightning bolt from (x0, y0) to (x1, y1), q 0 → 1: a jagged white-hot line in a yellow
+ * glow, its zigzag drawn anew every 40 ms, fading.
+ */
+export const bolt = (x0: number, y0: number, x1: number, y1: number, q: number, now: number) => {
+  const [dx, dy] = [x1 - x0, y1 - y0];
+  const l = Math.hypot(dx, dy) || 1;
+  const p = [x0, y0];
+  for (let i = 1; i < 10; i++) {
+    const j = (rnd(i + ((now / 40) | 0) * 11) - 0.5) * l * 0.12;
+    p.push(x0 + (dx * i) / 10 - (dy / l) * j, y0 + (dy * i) / 10 + (dx / l) * j);
+  }
+  p.push(x1, y1);
+  c.globalAlpha = 1 - q;
+  line(ZAP[0], 16 * u, ...p);
+  line(ZAP[1], 6 * u, ...p);
+  c.globalAlpha = 1;
+};
+
+/**
+ * A paddle paralysed by a genie's spell, at x, y, drawn radius r: dimmed, sparks crackling round
+ * it, a ring draining with the time left (f, 1 → 0) and the seconds left on it (n).
+ */
+export const stunned = (x: number, y: number, r: number, f: number, n: number, now: number) => {
+  circle(x, y, r, '#0007');
+  c.beginPath();
+  c.arc(x, y, r * 1.3, -Math.PI / 2, -Math.PI / 2 + f * 2 * Math.PI);
+  strokes(ZAP[0], r * 0.16);
+  for (let i = 0; i < 4; i++) {
+    const a = now / 120 + i * 1.6;
+    const [cs, sn] = [Math.cos(a), Math.sin(a)];
+    line(
+      ZAP[1],
+      r * 0.07,
+      x + cs * r,
+      y + sn * r,
+      x + cs * r * 1.2 - sn * r * 0.15,
+      y + sn * r * 1.2 + cs * r * 0.15,
+      x + cs * r * 1.45,
+      y + sn * r * 1.45,
+    );
+  }
+  text(n + '', x, y, r * 1.2, 'center', ZAP[1]);
+};
+
 /**
  * Marks the puck so it stays easy to spot on a big rink: a yellow glow breathing slowly (one cycle
  * every ~2.5 s) and three arcs turning around it (one turn every ~4 s). r is the drawn puck radius.

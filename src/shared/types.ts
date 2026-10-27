@@ -25,6 +25,8 @@ export interface Paddle {
   /** Target the player is pointing at; the paddle moves toward it at PADDLE_MAX_SPEED. */
   tx: number;
   ty: number;
+  /** Ticks it stays paralysed by a genie's spell (STUN at the strike); absent or 0: free. */
+  stun?: number;
 }
 
 /**
@@ -110,6 +112,8 @@ export interface World {
   score: [number, number];
   /** Id of the paddle that touched the puck during the last step, -1 if none. */
   hit: number;
+  /** Id of the paddle that touched the puck last, -1 or absent before any: a genie's spell strikes it. */
+  last?: number;
 }
 
 /** Match rules, set by the host. Defaults in constants.ts (RULES). */
@@ -172,7 +176,8 @@ export interface Snapshot {
   tick: number;
   score: [number, number];
   puck: Puck;
-  paddles: { id: number; x: number; y: number }[];
+  /** stun: Paddle.stun, to the tenth of a second. */
+  paddles: { id: number; x: number; y: number; stun?: number }[];
   /** World.live: the puck reacts to obstacles. */
   live?: boolean;
   /** World.held and World.left: the obstacle holding the puck and for how long still. */

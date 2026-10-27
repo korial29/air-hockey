@@ -50,7 +50,7 @@ export const lerp = (a: Snapshot, b: Snapshot, f: number): Snapshot => {
     puck: { ...b.puck, x: m(a.puck.x, b.puck.x), y: m(a.puck.y, b.puck.y) },
     paddles: b.paddles.map(p => {
       const q = a.paddles.find(o => o.id == p.id) ?? p;
-      return { id: p.id, x: m(q.x, p.x), y: m(q.y, p.y) };
+      return { ...p, x: m(q.x, p.x), y: m(q.y, p.y) };
     }),
   };
 };

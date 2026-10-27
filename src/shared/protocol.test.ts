@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { H, MAX_SIZE, PADDLE_MAX_SPEED, PUCK_MAX_SPEED, PUCK_R, SCALE, W } from './constants';
+import { H, MAX_SIZE, PADDLE_MAX_SPEED, PUCK_MAX_SPEED, PUCK_R, SCALE, STUN, W } from './constants';
 import {
   decodeInput,
   decodeSnapshot,
@@ -115,6 +115,21 @@ describe('snapshot frames', () => {
     });
   });
 
+  it("carry each paddle's stun, to the tenth of a second (rounded up), none when absent", () => {
+    const at = (stun?: number) =>
+      decodeSnapshot(encodeSnapshot({ ...snapshot, paddles: [{ id: 1, x: 5, y: 5, stun }] }))!
+        .paddles[0].stun;
+    expect([at(), at(0), at(1), at(24), at(25), at(STUN), at(1e6)]).toEqual([
+      0,
+      0,
+      24,
+      24,
+      48,
+      STUN,
+      255 * 24,
+    ]);
+  });
+
   it('carry what holds the puck, with the live flag and its time left to the ms', () => {
     const out = decodeSnapshot(encodeSnapshot(snapshot))!;
     expect([out.held, out.left]).toEqual([-1, 0]);
@@ -143,7 +158,7 @@ describe('snapshot frames', () => {
       { hits: 1, since: 17, angle: 6.2 },
     ];
     const buf = encodeSnapshot({ ...snapshot, obs });
-    expect(buf.byteLength).toBe(17 + 3 * 5 + 1 + 7 * 5);
+    expect(buf.byteLength).toBe(17 + 3 * 6 + 1 + 7 * 5);
     const out = decodeSnapshot(buf)!;
     expect(out.paddles.map(p => p.id)).toEqual([1, 7, 255]);
     expect(out.obs!.map(({ hits, since }) => [hits, since])).toEqual(
@@ -201,7 +216,7 @@ describe('snapshot frames', () => {
     expect(out.tick).toBe(5);
     expect(out.score).toEqual([255, 0]);
     expect(out.puck).toEqual({ x: 0, y: MAX, vx: -32768, vy: 32767 });
-    expect(out.paddles).toEqual([{ id: 2, x: 0, y: MAX }]);
+    expect(out.paddles).toEqual([{ id: 2, x: 0, y: MAX, stun: 0 }]);
   });
 
   it('reject malformed buffers', () => {
@@ -223,7 +238,7 @@ describe('snapshot frames', () => {
     expect(decodeSnapshot(withObs.buffer)).not.toBeNull();
     expect(decodeSnapshot(withObs.slice(0, -1).buffer)).toBeNull();
     const wrongObs = withObs.slice();
-    wrongObs[17 + 3 * 5] = 2;
+    wrongObs[17 + 3 * 6] = 2;
     expect(decodeSnapshot(wrongObs.buffer)).toBeNull();
     expect(decodeSnapshot(encodeInput(1, 2))).toBeNull();
   });

@@ -23,7 +23,7 @@ const OTHER = 4;
 
 const snap = (
   puck: Partial<Puck>,
-  paddles = [{ id: ME, x: 300, y: 450 }],
+  paddles: Snapshot['paddles'] = [{ id: ME, x: 300, y: 450 }],
   score: [number, number] = [0, 0],
 ): Snapshot => ({
   tick: 0,
@@ -72,6 +72,21 @@ describe('predict', () => {
       b = draw(p, s, t);
     }
     expect(b.me).toMatchObject({ x: W / 2 - PADDLE_R, y: 450 });
+  });
+
+  it('holds the own paddle still while the host says it is paralysed, then lets it go', () => {
+    const p = classic();
+    const s = (stun: number) => snap({}, [{ id: ME, x: 200, y: 450, stun }]);
+    rebase(p, s(0), ME, 0);
+    draw(p, s(0), DT, [700, 450]);
+    // Struck: it stays where the local course has it, the stun counting down between snapshots.
+    rebase(p, s(240), ME, 2 * DT);
+    const x = p.me!.x;
+    expect(draw(p, s(240), 100 * DT).me!.x).toBe(x);
+    expect(p.me!.stun).toBeLessThan(240);
+    // Free again: on toward the pointer.
+    rebase(p, s(0), ME, 101 * DT);
+    expect(draw(p, s(0), 110 * DT).me!.x).toBeGreaterThan(x);
   });
 
   it('redirects the puck on an own hit at once and ignores snapshots that miss it for a while', () => {

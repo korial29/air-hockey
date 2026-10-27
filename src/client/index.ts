@@ -1,12 +1,22 @@
 import { obstacles } from '../shared/arena';
-import { GHOST, INTERP_DELAY, PADDLE_R, PUCK_R, RESPAWN, W } from '../shared/constants';
+import {
+  GHOST,
+  INTERP_DELAY,
+  PADDLE_R,
+  PUCK_R,
+  RESPAWN,
+  STUN,
+  TICK_HZ,
+  W,
+} from '../shared/constants';
 import { clampPaddle, solid } from '../shared/physics';
 import { decodeSnapshot, encodeInput, parseText } from '../shared/protocol';
 import type { ServerText } from '../shared/protocol';
-import type { PlayerInfo, SocketLike, Team } from '../shared/types';
+import type { Obstacle, PlayerInfo, SocketLike, Team } from '../shared/types';
 import { predict, rebase, reset, view } from './predict';
 import {
   beacon,
+  bolt,
   circle,
   countdown,
   doubloon,
@@ -20,6 +30,7 @@ import {
   splash,
   stadium,
   streak,
+  stunned,
   text,
   veil,
   waves,
@@ -28,6 +39,9 @@ import { CH, MIN_PADDLE_PX, MIN_PUCK_PX, TOP, drawnR, sample, toField } from './
 import type { Stamped } from './util';
 
 export type { Phase, PlayerInfo, Rank, SocketLike, Team } from '../shared/types';
+
+/** How long a genie's bolt flashes, ms. */
+const ZAP = 500;
 
 /** A puck let up by a vortex: its splash lasts RISE ms, the puck pops up in the first 60 %. */
 const RISE = 700;
@@ -105,6 +119,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   let sunk = -1;
   let rose = -1e4;
   let spot = [0, 0];
+  /** Per paddle id: its stun last frame, and when and from where the bolt that froze it struck. */
+  const stuns = new Map<number, number>();
+  const zaps = new Map<number, number[]>();
 
   const ws = opts.socket ?? (new WebSocket(opts.url!) as unknown as SocketLike);
   ws.binaryType = 'arraybuffer';
@@ -248,6 +265,8 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     // Times each one was removed: an iceberg comes back elsewhere, its ghost shows where.
     const ts = s?.obs?.map(o => o.times) ?? [];
     const all = obstacles(arena, tick, size, count, seed, ts);
+    // Where the genie shot out last stood: its spell's bolt starts there.
+    let caster: Obstacle | undefined;
     all.forEach((o, i) => {
       // Absent: intact and in play. Removed: drawn from where it was then (one removal less),
       // ghost where it is now.
@@ -257,13 +276,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         back[i] = now;
       }
       was[i] = since;
-      obstacle(
-        o,
-        i,
-        now - (hits?.[i] ?? -1e9),
-        now,
-        st,
-        now - (back[i] ?? -1e9),
+      const then =
         since >= 0 && since < RESPAWN - GHOST
           ? obstacles(
               arena,
@@ -273,8 +286,11 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
               seed,
               ts.map((t = 0, j) => t - +(j == i)),
             )[i]
-          : o,
-      );
+          : o;
+      if (o.kind == 'genie' && since >= 0 && since < TICK_HZ) {
+        caster = then;
+      }
+      obstacle(o, i, now - (hits?.[i] ?? -1e9), now, st, now - (back[i] ?? -1e9), then);
     });
     if (s) {
       const { x, y, vx, vy } = s.puck;
@@ -337,6 +353,20 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         circle(x, y, dr, info?.color ?? '#888');
         circle(x, y, dr / 2, '#0003');
         c.globalAlpha = 1;
+        // Struck by a genie's spell: a bolt from the genie for ZAP ms, then the paralysis and its
+        // countdown.
+        const st = p.stun ?? 0;
+        if (st > (stuns.get(p.id) ?? 0)) {
+          zaps.set(p.id, [now, caster?.x ?? x, caster?.y ?? y - 8 * dr]);
+        }
+        stuns.set(p.id, st);
+        if (st) {
+          stunned(x, y, dr, st / STUN, Math.ceil(st / TICK_HZ), now);
+        }
+        const [at = -1e9, bx, by] = zaps.get(p.id) ?? [];
+        if (now - at < ZAP) {
+          bolt(bx, by, x, y, (now - at) / ZAP, now);
+        }
         // Above the paddle, or below it against the top wall. At sea, over a dark shadow; dark on
         // the sand.
         const ny = y < dr + g ? y + dr + g / 2 : y - dr - g / 2;

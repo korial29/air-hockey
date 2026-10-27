@@ -6,7 +6,7 @@ import { clampPaddle } from '../shared/physics';
 import type { Obstacle, Rank, SocketLike } from '../shared/types';
 import { airHockey } from './index';
 import type * as Predict from './predict';
-import { CREASE, PADDLE_R, PUCK_R } from '../shared/constants';
+import { CREASE, PADDLE_R, PUCK_R, STUN } from '../shared/constants';
 import { MIN_PADDLE_PX, MIN_PUCK_PX, TOP } from './util';
 
 vi.mock('../shared/physics', async importOriginal => ({
@@ -1271,6 +1271,38 @@ describe('airHockey', () => {
     expect(draw()).not.toContain('★');
     expect(texts.strokes).not.toContain('#fff6dc');
     expect(texts.styles).not.toContain('#a77ce07a');
+
+    // Struck by a genie's spell: a bolt for half a second, a draining ring and the seconds left
+    // on the paddle; no new bolt as they count down.
+    const now = performance.now();
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(now);
+    const zap = () => texts.strokes.filter(v => v == '#ffd84a').length;
+    const stun = (n: number, ms: number) => {
+      socket.onmessage!({
+        data: encodeSnapshot({
+          tick: 42,
+          score: [0, n],
+          puck: { x: 300, y: 600, vx: 0, vy: 0 },
+          paddles: [
+            { id: 3, x: 400, y: 450 },
+            { id: 7, x: 1400, y: 450, stun: n },
+          ],
+        }),
+      });
+      clock.mockReturnValue(now + ms);
+      return draw();
+    };
+    expect(stun(0, 100)).not.toContain('5');
+    expect(zap()).toBe(0);
+    expect(stun(STUN, 200)).toContain('5');
+    expect(zap()).toBe(2);
+    expect(stun(STUN - 24, 800)).toContain('5');
+    expect(zap()).toBe(1);
+    expect(stun(240, 900)).toContain('1');
+    expect(zap()).toBe(1);
+    expect(stun(0, 1000)).not.toContain('1');
+    expect(zap()).toBe(0);
+    clock.mockRestore();
 
     // Back on the ice: painted again, no desert drawing left.
     scene('ice');

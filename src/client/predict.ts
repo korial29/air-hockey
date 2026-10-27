@@ -105,8 +105,9 @@ const advance = (p: Prediction, now: number): void => {
   }
 };
 
-const paddle = ({ id, x, y }: Snapshot['paddles'][number], size: number): Paddle => ({
+const paddle = ({ id, x, y, stun }: Snapshot['paddles'][number], size: number): Paddle => ({
   id,
+  stun,
   team: x > (W * size) / 2 ? 1 : 0,
   x,
   y,
@@ -126,8 +127,11 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
   if (!jump) {
     advance(p, now);
   }
+  // The own paddle keeps its local course, paralysed as the host says.
   w.paddles = s.paddles.map(q =>
-    q.id == you && p.me?.id == you && !p.off ? p.me : paddle(q, w.size),
+    q.id == you && p.me?.id == you && !p.off
+      ? Object.assign(p.me, { stun: q.stun })
+      : paddle(q, w.size),
   );
   p.me = w.paddles.find(q => q.id == you);
   // Unless the host has not seen our hit yet (its puck still runs against ours): then the local

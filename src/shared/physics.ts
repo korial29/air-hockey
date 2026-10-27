@@ -4,9 +4,10 @@
 // the defender nearest the goal does; the puck goes through the others (see solid). Obstacles are
 // kinematic too: they push both, and kick the puck away like pinball bumpers, but for those that
 // grab it: a whirlwind spins it round and flings it out, a vortex sucks it under and lets it up
-// elsewhere, a shark eats it and spits it out in a random direction (see twirl). The host's puck
-// breaks them (see bump): a removed obstacle touches nothing until it comes back, RESPAWN ticks
-// later.
+// elsewhere, a shark eats it and spits it out in a random direction (see twirl). A genie makes it
+// vanish, served again on the centre spot, and its spell paralyses whoever touched it last for
+// STUN ticks: that paddle stays put (see drive). The host's puck breaks them (see bump): a removed
+// obstacle touches nothing until it comes back, RESPAWN ticks later.
 // The rink is W · s × H · s for the world's size s: goals, serve spots and top speeds scale with
 // it, the radii do not.
 import { draw, fixed, obstacles, swirl } from './arena';
@@ -20,6 +21,7 @@ import {
   PUCK_MAX_SPEED,
   PUCK_R,
   RESPAWN,
+  STUN,
   W,
 } from './constants';
 import type { Arena, Obstacle, Paddle, Puck, Team, World } from './types';
@@ -147,6 +149,24 @@ const clear = (w: World, obs: Obstacle[], x: number, y: number): boolean =>
   w.paddles.every(p => Math.hypot(p.x - x, p.y - y) > RR + SERVE_GAP) &&
   obs.every(o => Math.hypot(o.x - x, o.y - y) > o.r + PUCK_R + SERVE_GAP);
 
+/**
+ * Serves the puck at rest at x, on the centre row or the nearest clear spot along it, not in play:
+ * a paddle left on the spot would otherwise shove the puck the moment it appears, into a goal
+ * again and again.
+ */
+const serve = (w: World, obs: Obstacle[], x: number): void => {
+  const k = w.puck;
+  const Y = H * w.size;
+  w.live = false;
+  [k.x, k.y, k.vx, k.vy] = [x, Y / 2, 0, 0];
+  for (const f of [0, -1, 1, -2, 2]) {
+    if (clear(w, obs, x, Y / 2 + f * SERVE_STEP * w.size)) {
+      k.y = Y / 2 + f * SERVE_STEP * w.size;
+      break;
+    }
+  }
+};
+
 /** Whether obstacle i is out of play (removed, ghost included): it touches nothing. */
 const off = (w: World, i: number): boolean => (w.obs[i]?.gone ?? -1) >= 0;
 
@@ -185,17 +205,27 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
       w.held = i;
       w.left = o.kind == 'shark' ? CHEW : HOLD + SWAY * draw(w.seed, w.tick & 0xffff);
     }
-    if (vn < 0) {
-      k.vx -= (1 + E) * vn * nx;
-      k.vy -= (1 + E) * vn * ny;
-    }
-    const s = Math.hypot(k.vx, k.vy);
-    if (s < kick) {
-      // Smallest push along the normal that brings the speed to the kick.
-      const un = k.vx * nx + k.vy * ny;
-      const a = Math.sqrt(un * un - s * s + kick * kick) - un;
-      k.vx += a * nx;
-      k.vy += a * ny;
+    if (o.kind == 'genie') {
+      // The puck vanishes, served again on the centre spot; on the host, the genie's spell strikes
+      // whoever touched it last: paralysed STUN ticks.
+      serve(w, obs, (W * w.size) / 2);
+      const p = was && w.paddles.find(p => p.id == w.last);
+      if (p) {
+        p.stun = STUN;
+      }
+    } else {
+      if (vn < 0) {
+        k.vx -= (1 + E) * vn * nx;
+        k.vy -= (1 + E) * vn * ny;
+      }
+      const s = Math.hypot(k.vx, k.vy);
+      if (s < kick) {
+        // Smallest push along the normal that brings the speed to the kick.
+        const un = k.vx * nx + k.vy * ny;
+        const a = Math.sqrt(un * un - s * s + kick * kick) - un;
+        k.vx += a * nx;
+        k.vy += a * ny;
+      }
     }
     if (!w.bumps.includes(i)) {
       w.bumps.push(i);
@@ -361,6 +391,7 @@ export const step = (w: World, dt: number, host = true): Team | -1 => {
   const n = Math.ceil(w.size);
   const at = (i: number) => obstacles(w.arena, w.tick + i / n, w.size, w.count, w.seed, times(w));
   if (dt > 0) {
+    w.paddles.forEach(p => p.stun && p.stun--);
     at(1).forEach((o, i) => {
       const st = w.obs[i];
       if (st?.gone >= 0 && w.tick + 1 - st.gone >= RESPAWN) {
@@ -388,7 +419,8 @@ const drive = (p: Paddle, w: World, obs: Obstacle[], dt: number): void => {
   const ox = p.x;
   const oy = p.y;
   // Aim at the clamped target so a target across the line still gets the full speed budget.
-  const [tx, ty] = clampPaddle(p.team, p.tx, p.ty, s);
+  // Paralysed: it stays where it is (obstacles still push it).
+  const [tx, ty] = p.stun ? [p.x, p.y] : clampPaddle(p.team, p.tx, p.ty, s);
   let dx = tx - ox;
   let dy = ty - oy;
   const d = Math.hypot(dx, dy);
@@ -500,18 +532,7 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
       if (u < -PUCK_R) {
         goal = i > 0 ? 1 : 0;
         w.score[goal]++;
-        w.live = false;
-        k.x = i > 0 ? X / 4 : (3 * X) / 4;
-        k.vx = k.vy = 0;
-        // Served where nothing stands: a paddle left on the serve spot would otherwise shove the
-        // puck the moment it appears, into a goal again and again.
-        k.y = Y / 2;
-        for (const f of [0, -1, 1, -2, 2]) {
-          if (clear(w, obs, k.x, Y / 2 + f * SERVE_STEP * s)) {
-            k.y = Y / 2 + f * SERVE_STEP * s;
-            break;
-          }
-        }
+        serve(w, obs, i > 0 ? X / 4 : (3 * X) / 4);
       }
     } else {
       // In front of the mouth: only the posts (its corners) bounce, as points.
@@ -536,7 +557,7 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
   // A paddle touch puts a served puck in play: from now on the obstacles bounce it.
   w.live ||= hit != -1;
   if (hit != -1) {
-    w.hit = hit;
+    w.hit = w.last = hit;
   }
   bump(w, obs, was);
 
@@ -549,7 +570,7 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
   for (let n = 0; n < 4; n++) {
     for (const p of solid(w.paddles, s)) {
       if (out(p, k, RR, place, s)) {
-        w.hit = p.id;
+        w.hit = w.last = p.id;
         w.live = true;
         avoid(p, w, obs);
         out(k, p, RR, put, s);

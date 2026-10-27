@@ -300,7 +300,7 @@ describe('Room', () => {
     for (let i = 0; i < SNAP_EVERY; i++) {
       room.tick();
     }
-    expect(decodeSnapshot(binaries(a)[0])!.paddles).toEqual([{ id: 0, x: 800, y: 300 }]);
+    expect(decodeSnapshot(binaries(a)[0])!.paddles).toEqual([{ id: 0, x: 800, y: 300, stun: 0 }]);
 
     room.receive(a, new ArrayBuffer(3));
     expect(clampPaddle).toHaveBeenCalledTimes(1);
