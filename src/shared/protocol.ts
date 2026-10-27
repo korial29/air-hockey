@@ -16,7 +16,7 @@ export type ServerText =
       phase: Phase;
       /** Current round, from 1; 0 in 'wait'. */
       round: number;
-      /** Effective rules: the arena, goals that win a round, rounds in a match (best of). */
+      /** Effective rules: the arena, goals that win a round, rounds in a match (all played). */
       arena: Arena;
       /** Rink geometry of the current round: World.size, World.count and World.seed. */
       size: number;

@@ -159,7 +159,7 @@ Every field is optional; missing ones keep their default.
 | Rule | Default | Description |
 | --- | --- | --- |
 | `arena` | `['ice', 'sea', 'desert']` | Scene, or scenes taking turns from one round to the next: `'ice'`, `'sea'`, `'desert'`, `'classic'` (empty rink). |
-| `rounds` | `3` | Rounds in a match: best of 3. |
+| `rounds` | `3` | Rounds in a match, all of them played, one scene each: the team that wins the most wins the match. |
 | `goals` | `5` | Goals that win a round. |
 | `hit` | `1` | Points for a hit, when the previous toucher was someone else. |
 | `goal` | `20` | Points for the scorer of a goal (own goals credit nobody). |
@@ -193,7 +193,7 @@ serve({ port: 8787, rules: { arena: 'sea', goals: 5, rounds: 1 } });
 
 - [x] Multiplayer over WebSocket, or between tabs of one browser with no server
 - [x] Unique colour per player, name above the paddle, team rosters
-- [x] Teams, best-of-3 matches, individual points ranking, podium screen
+- [x] Teams, 3-round matches (one scene each), individual points ranking, podium screen
 - [x] One goalie per crease: no wall of defenders in front of a goal
 - [x] Three scenes taking turns, each with its own play: ice (icebergs, sliding penguins), sea (vortices that swallow the puck, zig-zagging sharks that spit it out, wooden goals), Arabian Nights desert (whirlwinds that catch and fling the puck, wandering genies, Moorish arches)
 - [x] Breakable obstacles with respawn and ghost

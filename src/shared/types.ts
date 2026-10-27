@@ -119,7 +119,10 @@ export interface Rules {
    * second, then round again). Default ['ice', 'sea', 'desert'].
    */
   arena: Arena | Arena[];
-  /** Rounds in a match; the first team to win a majority of them wins (3 → best of 3). */
+  /**
+   * Rounds in a match, all of them played (one scene each): the team that wins the most wins the
+   * match, the last round's winner on a tie.
+   */
   rounds: number;
   /** Goals that win a round. */
   goals: number;

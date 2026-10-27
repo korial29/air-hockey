@@ -192,17 +192,25 @@ export class Room {
           JSON.stringify({ t: 'goal', team: goal, score: [...w.score] } satisfies ServerText),
         );
         if (phase === 'play' && w.score[goal] >= rules.goals) {
-          // Round won, maybe the match. Upset bonus: a smaller team that wins the match
-          // gets bigger / smaller times the points.
+          // Round won. Every round is played, one scene each: after the last one the match goes
+          // to the team with the most rounds won (on a tie, rounds being even, to the last
+          // round's). Upset bonus: a smaller team that wins the match gets bigger / smaller times
+          // the points.
+          m.wins[goal]++;
+          const end = m.round >= rules.rounds;
+          const [a, b] = m.wins;
+          const win = end && a != b ? (+(b > a) as Team) : goal;
           const n = this.teams();
-          const end = ++m.wins[goal] >= Math.ceil(rules.rounds / 2);
-          const k = Math.round(n[1 - goal] / n[goal]) || 1;
-          this.players().forEach(
-            p =>
-              p.info.team === goal && this.add(p, rules.roundWin + (end ? rules.matchWin * k : 0)),
+          const k = Math.round(n[1 - win] / n[win]) || 1;
+          this.players().forEach(p =>
+            this.add(
+              p,
+              (p.info.team === goal ? rules.roundWin : 0) +
+                (end && p.info.team === win ? rules.matchWin * k : 0),
+            ),
           );
           this.timer = Math.round((end ? rules.endSec : rules.breakSec) * TICK_HZ);
-          this.go(end ? 'end' : 'break', goal);
+          this.go(end ? 'end' : 'break', win);
         } else if (this.fit()) {
           // Served again with more or fewer players than the rink was made for.
           this.go(phase);
