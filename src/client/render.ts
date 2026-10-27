@@ -23,6 +23,19 @@ export const pen = (ctx: CanvasRenderingContext2D, font: number, size = 1) => {
   u = size;
 };
 
+/** Fills the current path with color. */
+const fills = (color: string | CanvasGradient) => {
+  c.fillStyle = color;
+  c.fill();
+};
+
+/** Strokes the current path, w wide. */
+const strokes = (color: string, w: number) => {
+  c.strokeStyle = color;
+  c.lineWidth = w;
+  c.stroke();
+};
+
 const rect = (x: number, y: number, w: number, h: number, color: string) => {
   c.fillStyle = color;
   c.fillRect(x, y, w, h);
@@ -57,14 +70,12 @@ const width = (s: string, size: number) => {
 
 /** Polyline through x, y pairs. */
 const line = (color: string, w: number, ...p: number[]) => {
-  c.strokeStyle = color;
-  c.lineWidth = w;
   c.lineCap = 'round';
   c.beginPath();
   for (let i = 0; i < p.length; i += 2) {
     c.lineTo(p[i], p[i + 1]);
   }
-  c.stroke();
+  strokes(color, w);
 };
 
 /**
@@ -72,11 +83,9 @@ const line = (color: string, w: number, ...p: number[]) => {
  * pairs, so one overlay shades any player colour (light on one side, shadow on the other).
  */
 const fill = (color: string, g: CanvasGradient, ...stops: [number, string][]) => {
-  c.fillStyle = color;
-  c.fill();
+  fills(color);
   stops.forEach(([o, s]) => g.addColorStop(o, s));
-  c.fillStyle = g;
-  c.fill();
+  fills(g);
 };
 
 /** A sphere: lit from the top left. */
@@ -106,16 +115,13 @@ const shadow = (x: number, y: number, rx: number, ry: number, color = '#0008') =
 const ring = (x: number, y: number, r: number, color: string, w: number) => {
   c.beginPath();
   c.arc(x, y, r, 0, 7);
-  c.strokeStyle = color;
-  c.lineWidth = w;
-  c.stroke();
+  strokes(color, w);
 };
 
 const oval = (x: number, y: number, rx: number, ry: number, color: string) => {
   c.beginPath();
   c.ellipse(x, y, rx, ry, 0, 0, 7);
-  c.fillStyle = color;
-  c.fill();
+  fills(color);
 };
 
 const ICE_LINE = '#d8404a66';
@@ -127,6 +133,56 @@ const PLANK = '#a8703c';
 const NAIL = '#2a1a0c';
 const ROPE = '#d9bf86';
 const GOLD = '#a87314';
+/** Zellige tiles: cobalt, turquoise, terracotta, white. */
+const ZELLIGE = ['#1f4fa8', '#1aa3a3', '#c4532d', '#f4ecd8'];
+const STONE = '#c99254';
+/** Top of the goal mouths, base rink units. */
+const M = (H - GOAL) / 2;
+
+/** Boards at inset d, open at the goal mouths. */
+const rail = (color: string, w: number, d = 0) => {
+  line(color, w, d, M, d, d, W - d, d, W - d, M);
+  line(color, w, d, M + GOAL, d, H - d, W - d, H - d, W - d, M + GOAL);
+};
+
+/** Adds an n-pointed star to the path: points at r, notches at r · k, turned by a. */
+const star = (x: number, y: number, r: number, n: number, k: number, a = 0) => {
+  for (let j = 0; j < n * 2; j++) {
+    const d = j & 1 ? r * k : r;
+    const b = a + (j * Math.PI) / n;
+    c[j ? 'lineTo' : 'moveTo'](x + Math.cos(b) * d, y + Math.sin(b) * d);
+  }
+  c.closePath();
+};
+
+/**
+ * A zellige tile at x, y, its look taking turns with n: diamonds of three colours, a small white
+ * star.
+ */
+const tile = (x: number, y: number, n: number) => {
+  const w = n % 4 > 2;
+  c.beginPath();
+  star(x, y, w ? 6 : 8, w ? 8 : 4, w ? 0.5 : 0.71);
+  fills(ZELLIGE[n % 4]);
+};
+
+/**
+ * Diagonal lattice over the goal box from x (50 wide, past its ends), s apart, clipped to the
+ * current path.
+ */
+const lattice = (x: number, s: number, color: string, w: number) => {
+  c.save();
+  c.clip();
+  c.beginPath();
+  for (let i = -100; i < GOAL + 100; i += s) {
+    c.moveTo(x, M + i);
+    c.lineTo(x + 50, M + i + 50);
+    c.moveTo(x, M + i + 50);
+    c.lineTo(x + 50, M + i);
+  }
+  strokes(color, w);
+  c.restore();
+};
 
 /** Clips to the rink, base rink coordinates. */
 const clip = () => {
@@ -143,11 +199,11 @@ const buoy = (x: number, y: number) => {
 };
 
 /**
- * The sea, in base rink coordinates (m: the goal mouth's top): deep water at the boards, turquoise
- * in the middle, caustics, foam along the boards, a rope with buoys for the centre line and circle,
- * a ship's rail for boards and wooden goals with a rope net. The moving waves are drawn per frame.
+ * The sea, in base rink coordinates: deep water at the boards, turquoise in the middle, caustics,
+ * foam along the boards, a rope with buoys for the centre line and circle, a ship's rail for boards
+ * and wooden goals with a rope net. The moving waves are drawn per frame.
  */
-const sea = (m: number) => {
+const sea = () => {
   clip();
   fill(
     '#0b4d6e',
@@ -166,9 +222,7 @@ const sea = (m: number) => {
     c.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
     c.arc(x, y, r, a, a + 1 + rnd(i + 700));
   }
-  c.strokeStyle = '#c4f6ff2a';
-  c.lineWidth = 3;
-  c.stroke();
+  strokes('#c4f6ff2a', 3);
   // Shallows in front of the goals, a rope with buoys across the middle.
   for (const x of [0, W]) {
     circle(x, H / 2, GOAL / 2 + 20, '#9ff3e826');
@@ -199,23 +253,17 @@ const sea = (m: number) => {
     c.moveTo(x + s, y);
     c.arc(x, y, s, 0, 7);
   }
-  c.fillStyle = '#fffc';
-  c.fill();
+  fills('#fffc');
   c.restore();
   // Boards: a ship's rail, planks with seams and nails, open at the goal mouths.
-  for (const [w, s] of [
-    [26, WOOD],
-    [8, PLANK],
-  ] as const) {
-    line(s, w, 0, m, 0, 0, W, 0, W, m);
-    line(s, w, 0, m + GOAL, 0, H, W, H, W, m + GOAL);
-  }
+  rail(WOOD, 26);
+  rail(PLANK, 8);
   for (let v = 60; v < W; v += 125) {
     for (const y of [0, H]) {
       line(NAIL, 3, v, y - 13, v, y + 13);
       rect(v + 6, y - 2, 5, 5, NAIL);
     }
-    if (v < m || (v > m + GOAL && v < H)) {
+    if (v < M || (v > M + GOAL && v < H)) {
       for (const x of [0, W]) {
         line(NAIL, 3, x - 13, v, x + 13, v);
       }
@@ -224,30 +272,18 @@ const sea = (m: number) => {
   // Wooden goals: a plank frame with nails, a rope net over dark water.
   for (const t of [0, 1]) {
     const x = t ? W - 50 : 0;
-    rect(x, m, 50, GOAL, '#03263a66');
-    c.save();
+    rect(x, M, 50, GOAL, '#03263a66');
     c.beginPath();
-    c.rect(x, m, 50, GOAL);
-    c.clip();
-    c.beginPath();
-    for (let i = -50; i < GOAL; i += 25) {
-      c.moveTo(x, m + i);
-      c.lineTo(x + 50, m + i + 50);
-      c.moveTo(x, m + i + 50);
-      c.lineTo(x + 50, m + i);
-    }
-    c.strokeStyle = ROPE;
-    c.lineWidth = 3;
-    c.stroke();
-    c.restore();
+    c.rect(x, M, 50, GOAL);
+    lattice(x, 25, ROPE, 3);
     const [o, b] = t ? [W - 50, W - 7] : [50, 7];
-    line(WOOD, 16, o, m, b, m, b, m + GOAL, o, m + GOAL);
-    line(PLANK, 5, o, m - 3, b - 3, m - 3, b - 3, m + GOAL, o, m + GOAL);
+    line(WOOD, 16, o, M, b, M, b, M + GOAL, o, M + GOAL);
+    line(PLANK, 5, o, M - 3, b - 3, M - 3, b - 3, M + GOAL, o, M + GOAL);
     for (let j = 0; j < 5; j++) {
-      circle(b, m + (j * GOAL) / 4, 4, NAIL);
+      circle(b, M + (j * GOAL) / 4, 4, NAIL);
     }
-    circle(o - 6, m, 4, NAIL);
-    circle(o - 6, m + GOAL, 4, NAIL);
+    circle(o - 6, M, 4, NAIL);
+    circle(o - 6, M + GOAL, 4, NAIL);
   }
 };
 
@@ -265,9 +301,7 @@ export const waves = (now: number) => {
     c.quadraticCurveTo(x - s, y - s * 0.6, x, y);
     c.quadraticCurveTo(x + s, y - s * 0.6, x + s * 2, y);
   }
-  c.strokeStyle = '#ffffff45';
-  c.lineWidth = 4;
-  c.stroke();
+  strokes('#ffffff45', 4);
   c.beginPath();
   for (let i = 0; i < 40; i++) {
     const s = 5 * Math.sin(now / 350 + i * 2.4);
@@ -278,27 +312,114 @@ export const waves = (now: number) => {
       c.arc(x, y, s, 0, 7);
     }
   }
-  c.fillStyle = '#fffd';
-  c.fill();
+  fills('#fffd');
+};
+
+/**
+ * The desert, in base rink coordinates: golden sand, lighter in the middle, ripples along the
+ * wind; a tiled centre line and circle round an eight-pointed star; carved sandstone boards with a
+ * band of zellige; Moorish horseshoe arches for goals, a mashrabiya lattice behind. The blowing
+ * sand is drawn per frame.
+ */
+const desert = () => {
+  clip();
+  fill(
+    '#ddb064',
+    c.createRadialGradient(W / 2, H / 2, H / 4, W / 2, H / 2, W * 0.6),
+    [0, '#f2d08e'],
+    [1, '#f2d08e00'],
+  );
+  // Ripples along the wind: a lit edge over a shaded one.
+  for (const [o, color] of [
+    [0, '#a8702e40'],
+    [-3, '#fff8e055'],
+  ] as const) {
+    c.beginPath();
+    for (let i = 0; i < 150; i++) {
+      const x = rnd(i + 3000) * W;
+      const y = rnd(i + 3200) * H + o;
+      const s = 18 + rnd(i + 3400) * 26;
+      c.moveTo(x, y);
+      c.bezierCurveTo(x + s, y - s * 0.4, x + s * 2, y + s * 0.4, x + s * 3, y);
+    }
+    strokes(color, 3);
+  }
+  // The centre circle's band round an eight-pointed star (its tiles go with the boards').
+  ring(W / 2, H / 2, 160, '#9a642c55', 24);
+  for (let k = 0; k < 2; k++) {
+    c.beginPath();
+    star(W / 2, H / 2, 110 - k * 40, 8, 0.77, k * 0.39);
+    fills(ZELLIGE[k]);
+  }
+  circle(W / 2, H / 2, 30, ZELLIGE[3]);
+  circle(W / 2, H / 2, 14, ZELLIGE[2]);
+  c.restore();
+  // Carved sandstone boards, a dark inner edge; zellige along them, the centre line and circle.
+  rail(STONE, 46);
+  rail('#7d4f24', 4, 23);
+  for (let n = 0, v = 14; v < W; n++, v += 28) {
+    tile(v, 11, n);
+    tile(v, H - 11, n);
+    if (v < M - 10 || (v > M + GOAL + 10 && v < H)) {
+      tile(11, v, n);
+      tile(W - 11, v, n);
+    }
+    if (v > 40 && v < H / 2 - 170) {
+      tile(W / 2, v, n);
+      tile(W / 2, H - v, n);
+    }
+    if (n < 16) {
+      const x = Math.cos(n / 5.1) * 160;
+      const y = Math.sin(n / 5.1) * 160;
+      tile(W / 2 + x, H / 2 + y, n);
+      tile(W / 2 - x, H / 2 - y, n);
+    }
+  }
+  // Goals: a horseshoe arch, sandstone with a tiled outline, over a dark lattice. Drawn on the
+  // left, mirrored on the right.
+  for (const t of [0, 1]) {
+    c.save();
+    c.translate(t * W, 0);
+    c.scale(1 - 2 * t, 1);
+    const arch = () => {
+      c.beginPath();
+      c.moveTo(50, M);
+      c.bezierCurveTo(-20, M - 160, -20, M + GOAL + 160, 50, M + GOAL);
+    };
+    arch();
+    fills('#2a1408aa');
+    lattice(0, 14, '#d9a95c', 2.5);
+    [STONE, ZELLIGE[1], ZELLIGE[0]].forEach((color, k) => {
+      arch();
+      c.setLineDash(k > 1 ? [10, 10] : []);
+      strokes(color, k ? 7 : 20);
+    });
+    c.setLineDash([]);
+    ball(50, M, 15, STONE);
+    ball(50, M + GOAL, 15, STONE);
+    c.restore();
+  }
 };
 
 /**
  * The rink, in base rink coordinates. Ice: pale ice with a sheen and skate marks, faded hockey
- * markings, blue boards, red-framed nets. Sea: see sea. Classic: the dark table.
+ * markings, blue boards, red-framed nets. Sea, desert: see sea, desert. Classic: the dark table.
  * Markings, boards and nets scale with the rink, so the picture is the same at any size, line
  * widths included; only the skate marks are skater-sized: more of them, smaller, as it grows.
  */
 const paint = (arena: string) => {
-  const m = (H - GOAL) / 2;
   if (arena == 'sea') {
-    return sea(m);
+    return sea();
+  }
+  if (arena == 'desert') {
+    return desert();
   }
   if (arena != 'ice') {
     rect(0, 0, W, H, '#0d2233');
     ring(W / 2, H / 2, 150, '#fff4', 6);
     line('#fff4', 6, W / 2, 0, W / 2, H);
-    rect(0, m, 12, GOAL, '#fc3');
-    rect(W - 12, m, 12, GOAL, '#fc3');
+    rect(0, M, 12, GOAL, '#fc3');
+    rect(W - 12, M, 12, GOAL, '#fc3');
     return;
   }
   clip();
@@ -328,9 +449,7 @@ const paint = (arena: string) => {
     c.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
     c.arc(x, y, r, a, a + 0.2 + rnd(i + 200) * 0.5);
   }
-  c.strokeStyle = '#a3c9de';
-  c.lineWidth = 2;
-  c.stroke();
+  strokes('#a3c9de', 2);
   // Hockey markings, faded: red centre line, blue lines, centre and faceoff circles, creases.
   line(ICE_LINE, 12, W / 2, 0, W / 2, H);
   line(ICE_BLUE, 16, W * 0.3, 0, W * 0.3, H);
@@ -349,25 +468,22 @@ const paint = (arena: string) => {
   }
   c.restore();
   // Boards, open at the goal mouths; nets with a red frame open toward the rink.
-  line('#2c6cb0', 24, 0, m, 0, 0, W, 0, W, m);
-  line('#2c6cb0', 24, 0, m + GOAL, 0, H, W, H, W, m + GOAL);
+  rail('#2c6cb0', 24);
   for (const t of [0, 1]) {
     const x = t ? W - 50 : 0;
-    rect(x, m, 50, GOAL, '#0c2a4426');
+    rect(x, M, 50, GOAL, '#0c2a4426');
     c.beginPath();
     for (let i = 0; i < GOAL; i += 19) {
-      c.moveTo(x, m + i);
-      c.lineTo(x + 50, m + i);
+      c.moveTo(x, M + i);
+      c.lineTo(x + 50, M + i);
     }
     for (let i = 12; i < 50; i += 19) {
-      c.moveTo(x + i, m);
-      c.lineTo(x + i, m + GOAL);
+      c.moveTo(x + i, M);
+      c.lineTo(x + i, M + GOAL);
     }
-    c.strokeStyle = '#5d7a90';
-    c.lineWidth = 2;
-    c.stroke();
+    strokes('#5d7a90', 2);
     const [o, b] = t ? [W - 50, W - 5] : [50, 5];
-    line('#d22b2b', 10, o, m, b, m, b, m + GOAL, o, m + GOAL);
+    line('#d22b2b', 10, o, M, b, M, b, M + GOAL, o, M + GOAL);
   }
 };
 
@@ -468,17 +584,14 @@ const berg = (
     c.lineTo(v[j], v[j + 1]);
     c.lineTo(v[k], v[k + 1]);
     const m = Math.atan2(v[j + 1] + v[k + 1] - 2 * y, v[j] + v[k] - 2 * x);
-    c.fillStyle = shade(m, 30 * e - (j == chip || k == chip ? (sea ? 20 : 40) : 0), sea);
-    c.fill();
+    fills(shade(m, 30 * e - (j == chip || k == chip ? (sea ? 20 : 40) : 0), sea));
   }
   c.beginPath();
   for (let j = 0; j < n * 2; j += 2) {
     c.moveTo(px, py);
     c.lineTo(v[j], v[j + 1]);
   }
-  c.strokeStyle = ridge;
-  c.lineWidth = 2 * u;
-  c.stroke();
+  strokes(ridge, 2 * u);
   c.beginPath();
   for (let j = 0; j < n * 2; j += 2) {
     c.lineTo(v[j], v[j + 1]);
@@ -506,8 +619,7 @@ const berg = (
     }
     c.beginPath();
     c.ellipse(x - r * 0.3, y - r * 0.38, r * 0.32, r * 0.09, -0.6, 0, 7);
-    c.fillStyle = '#fff6';
-    c.fill();
+    fills('#fff6');
   }
   if (hits) {
     // A zigzag crack from one corner across the facets to the far side, lit on its top-left lip.
@@ -549,11 +661,8 @@ const berg = (
       c.moveTo(sx, sy - s);
       c.lineTo(sx + s, sy + s);
       c.lineTo(sx - s, sy + s * 0.4);
-      c.fillStyle = chips;
-      c.fill();
-      c.strokeStyle = edge;
-      c.lineWidth = 2 * u;
-      c.stroke();
+      fills(chips);
+      strokes(edge, 2 * u);
     }
     c.globalAlpha = 1;
   }
@@ -572,7 +681,7 @@ const penguin = (
   e: number,
   now: number,
 ) => {
-  heading(x, y, r, vx, vy, e, '#8bd');
+  heading(x, y, r, vx, vy, e, '#8bd', '#0a4a7a55');
   // Seen three-quarter: the back is off-centre, the white belly shows on one flank.
   oval(-r * 0.15, r * 0.06, r * 0.85, r * 0.66, '#f7fbff');
   for (const s of [-1, 1]) {
@@ -594,15 +703,14 @@ const penguin = (
   c.moveTo(r * 0.86, -r * 0.11);
   c.lineTo(r * 1.15, 0);
   c.lineTo(r * 0.86, r * 0.11);
-  c.fillStyle = ORANGE;
-  c.fill();
+  fills(ORANGE);
   c.restore();
   stars(x, y, r, e, now);
 };
 
 /**
- * Starts drawing a mover at x, y, turned to its heading (local +x): shadow, then its wake (color)
- * behind it, then the hit spin (e: 1 → 0). Restore when done.
+ * Starts drawing a mover at x, y, turned to its heading (local +x): its shadow (dark), then its
+ * wake (color, 3 hex digits) behind it, then the hit spin (e: 1 → 0). Restore when done.
  */
 const heading = (
   x: number,
@@ -612,8 +720,9 @@ const heading = (
   vy: number,
   e: number,
   color: string,
+  dark: string,
 ) => {
-  shadow(x + r * 0.2, y + r * 0.25, r * 1.1, r * 0.85, color == '#fff' ? '#02253a44' : '#0a4a7a55');
+  shadow(x + r * 0.2, y + r * 0.25, r * 1.1, r * 0.85, dark);
   c.save();
   c.translate(x, y);
   c.rotate(vx || vy ? Math.atan2(vy, vx) : 1.57);
@@ -632,7 +741,10 @@ const heading = (
   c.rotate(e * e * 12.6);
 };
 
-/** Stars circling a mover's head after a hit (e: 1 → 0); bubbles too at sea. */
+/**
+ * Stars circling a mover's head after a hit (e: 1 → 0); bubbles too at sea (sea 1), puffs of
+ * purple smoke in the desert (sea 2).
+ */
 const stars = (x: number, y: number, r: number, e: number, now: number, sea = 0) => {
   for (let k = 0; k < 3 && e; k++) {
     const b = now / 150 + k * 2.1;
@@ -648,13 +760,13 @@ const stars = (x: number, y: number, r: number, e: number, now: number, sea = 0)
   for (let k = 0; k < 6 && sea && e; k++) {
     const b = k * 1.05 + now / 400;
     const d = r * (1 + (1 - e) * 0.8);
-    ring(
-      x + Math.cos(b) * d,
-      y + Math.sin(b) * d - (1 - e) * r,
-      r * (0.08 + (k % 3) * 0.04),
-      '#e8fdff',
-      2 * u,
-    );
+    const px = x + Math.cos(b) * d;
+    const py = y + Math.sin(b) * d - (1 - e) * r;
+    if (sea > 1) {
+      circle(px, py, r * (0.2 + 0.3 * (1 - e)), '#a77ce07a');
+    } else {
+      ring(px, py, r * (0.08 + (k % 3) * 0.04), '#e8fdff', 2 * u);
+    }
   }
 };
 
@@ -681,15 +793,14 @@ const shark = (
   const w = Math.sin(now / 130 + i);
   // Tail base, swinging side to side.
   const b = w * r * 0.22;
-  heading(x, y, r, vx, vy, e, '#fff');
+  heading(x, y, r, vx, vy, e, '#fff', '#02253a44');
   c.translate(Math.sin(now / 20) * e * r * 0.15, 0);
   for (const s of [-1, 1]) {
     c.beginPath();
     c.moveTo(r * 0.55, s * r * 0.35);
     c.quadraticCurveTo(r * 0.2, s * r * 1.05, -r * 0.3, s * r * (1.1 + 0.08 * w * s));
     c.quadraticCurveTo(0, s * r * 0.55, -r * 0.1, s * r * 0.35);
-    c.fillStyle = FIN;
-    c.fill();
+    fills(FIN);
   }
   // Tail fin: a crescent, the upper lobe longer, beating wider than the body.
   c.save();
@@ -700,8 +811,7 @@ const shark = (
   c.quadraticCurveTo(-r * 0.15, -r * 0.25, -r * 0.5, -r * 0.5);
   c.quadraticCurveTo(-r * 0.28, -r * 0.05, -r * 0.42, r * 0.35);
   c.quadraticCurveTo(-r * 0.12, r * 0.15, r * 0.05, 0);
-  c.fillStyle = FIN;
-  c.fill();
+  fills(FIN);
   c.restore();
   // The belly, then the back over it a little narrower: a pale edge all round.
   for (const k of [1, 0.8]) {
@@ -722,8 +832,7 @@ const shark = (
         [1, '#0003'],
       );
     } else {
-      c.fillStyle = BELLY;
-      c.fill();
+      fills(BELLY);
     }
   }
   // Gills, three slits a side.
@@ -747,8 +856,7 @@ const shark = (
     c.moveTo(r * 0.35 - o, o);
     c.quadraticCurveTo(-r * 0.05 - o, -r * 0.16 + o, -r * 0.5 - o, b * 0.3 - r * 0.04 + o);
     c.quadraticCurveTo(-r * 0.05 - o, r * 0.1 + o, r * 0.35 - o, o);
-    c.fillStyle = color;
-    c.fill();
+    fills(color);
   }
   // A grin under the snout, gaping on a hit, a row of teeth showing.
   const g = r * (0.05 + 0.12 * e);
@@ -759,8 +867,7 @@ const shark = (
     c.lineTo(r * 1.15 + g, k * r * 0.075);
     c.lineTo(r * 1.22 + g, k * r * 0.075 + r * 0.03);
   }
-  c.fillStyle = '#f4f2e8';
-  c.fill();
+  fills('#f4f2e8');
   for (const s of [-1, 1]) {
     circle(r * 1.05, s * r * 0.27, r * 0.065, '#111');
     circle(r * 1.07, s * r * 0.255, r * 0.022, '#fffc');
@@ -769,12 +876,136 @@ const shark = (
   stars(x, y, r, e, now, 1);
 };
 
+const BLUE = '#3f8ee6';
+const SMOKE = ['#d6c2f5', '#9b72dd'];
+const BRASS = '#f2c230';
+
+/**
+ * A dust devil seen from above, in world units: a sand haze, spiral bands turning round a dark
+ * core, grains orbiting. A mirrored pair turns opposite ways (i odd: clockwise). e: hit flash,
+ * 1 → 0: it spins faster in a gust ring. hits: smaller, fainter, its bands broken.
+ */
+const whirl = (
+  x: number,
+  y: number,
+  r: number,
+  i: number,
+  e: number,
+  _age: number,
+  hits = 0,
+  _sea: number,
+  now: number,
+) => {
+  const d = i & 1 ? 1 : -1;
+  const a = d * (now / 220 + e * 4);
+  c.globalAlpha *= 1 - hits * 0.25;
+  r *= 1 - hits * 0.15;
+  shadow(x, y, r * 1.25, r * 1.25, '#c99254f0');
+  c.setLineDash(hits ? [r * 0.5, r * 0.2 * hits] : []);
+  for (let k = 0; k < 6; k++) {
+    const p: number[] = [];
+    for (let j = 0; j < 11; j++) {
+      const b = a + k * 1.047 - d * j * 0.3;
+      const q = r * (0.15 + j * 0.09);
+      p.push(x + Math.cos(b) * q, y + Math.sin(b) * q);
+    }
+    line(k & 1 ? '#fbe6b8' : '#9a642c', r * (k & 1 ? 0.07 : 0.13), ...p);
+  }
+  c.setLineDash([]);
+  circle(x, y, r * 0.24, '#5e3a1c');
+  c.beginPath();
+  for (let j = 0; j < 10; j++) {
+    const b = a * 1.6 + j * 0.628;
+    const q = r * (0.45 + rnd(i + j) * 0.65);
+    c.moveTo(x + Math.cos(b) * q, y + Math.sin(b) * q);
+    c.arc(x + Math.cos(b) * q, y + Math.sin(b) * q, r * 0.05, 0, 7);
+  }
+  fills('#6e4422');
+  if (e) {
+    c.globalAlpha = e;
+    ring(x, y, r * (1.3 + (1 - e) * 0.8), '#fff6dc', 9 * e * u);
+  }
+};
+
+/** Whirlwind i dissipating, q: 0 → 1 over 800 ms: its swirl spreads into a fading sand cloud. */
+const dust = (x: number, y: number, r: number, i: number, q: number, _sea: number, now: number) => {
+  c.save();
+  c.globalAlpha = 1 - q;
+  whirl(x, y, r * (1 + q * 1.5), i, 0, 0, 2, 2, now);
+  c.restore();
+};
+
+/**
+ * A blue genie floating toward its heading, seen from above at three-quarter: a smoky tail
+ * trailing behind, arms crossed with golden bracelets, a bald head with a black topknot and a
+ * gold earring, swaying gently. i offsets the sway. e: hit, 1 → 0: it spins in a puff of purple
+ * smoke, seeing stars.
+ */
+const genie = (
+  x: number,
+  y: number,
+  r: number,
+  vx: number,
+  vy: number,
+  e: number,
+  now: number,
+  i: number,
+) => {
+  const w = Math.sin(now / 300 + i) * r;
+  heading(x, y, r, vx, vy, e, '#a7d', '#4a2a1033');
+  c.translate(0, w * 0.1);
+  c.beginPath();
+  c.moveTo(0, -r * 0.6);
+  c.quadraticCurveTo(-r, -r * 0.5 - w * 0.3, -r * 2, w * 0.3);
+  c.quadraticCurveTo(-r, r * 0.5 - w * 0.3, 0, r * 0.6);
+  fill('#0000', c.createLinearGradient(-r * 2, 0, 0, 0), [0, '#a77ce000'], [1, BLUE]);
+  ball(0, 0, r * 0.72, BLUE);
+  for (const s of [-1, 1]) {
+    line('#2f76c8', r * 0.24, 0, s * r * 0.62, r * 0.55, s * r * 0.5, r * 0.62, -s * r * 0.15);
+    circle(r * 0.57, s * r * 0.28, r * 0.13, BRASS);
+  }
+  ball(0, 0, r * 0.42, '#56a2f2');
+  line(BLACK, r * 0.12, -r * 0.38, 0, -r * 0.6, w * 0.1, -r * 0.75, -w * 0.05);
+  ring(0, r * 0.42, r * 0.08, BRASS, r * 0.04);
+  for (const s of [-1, 1]) {
+    circle(r * 0.3, s * r * 0.14, r * 0.08, '#fff');
+    circle(r * 0.34, s * r * 0.14, r * 0.04, '#111');
+  }
+  c.restore();
+  stars(x, y, r, e, now, 2);
+};
+
+/** Movers per scene: penguin, shark, genie. */
+const MOVERS = [penguin, shark, genie];
+/** Obstacle kinds: scene = index >> 1, odd ones move. */
+const KINDS = ['iceberg', 'penguin', 'rock', 'shark', 'whirlwind', 'genie'];
+
+/**
+ * A genie's ghost, where it will come back: its small golden oil lamp on the sand, spout toward
+ * +x, purple smoke rising from it.
+ */
+const lamp = (x: number, y: number, r: number, now: number) => {
+  c.globalAlpha = 0.95;
+  ring(x - r * 0.45, y, r * 0.15, GOLD, r * 0.07);
+  line(GOLD, r * 0.12, x, y, x + r * 0.75, y - r * 0.15);
+  oval(x, y, r * 0.45, r * 0.27, '#e0a82e');
+  for (let j = 0; j < 4; j++) {
+    const h = (now / 12 + j * r * 0.4) % (r * 1.6);
+    circle(
+      x + r * 0.8 + Math.sin(now / 250 + j) * r * 0.12,
+      y - r * 0.2 - h,
+      r * 0.08 + h * 0.2,
+      '#b9a0ec88',
+    );
+  }
+};
+
 /**
  * Iceberg i shattering, q: 0 → 1 over 800 ms. Its facets slide apart on the ice, slowing down,
  * spinning a little and fading, in a puff of ice dust. A rock at sea crumbles: its stones roll a
  * little, then sink (shrink and darken) in rings of ripples.
  */
-const shatter = (x: number, y: number, r: number, i: number, q: number, sea = 0) => {
+const shatter = (x: number, y: number, r: number, i: number, q: number, sea: number) => {
   const [v, px, py] = corners(x, y, r, i);
   const d = r * (sea ? 0.35 : 1.6) * q * (2 - q);
   const z = 1 - sea * q * 0.9;
@@ -791,8 +1022,7 @@ const shatter = (x: number, y: number, r: number, i: number, q: number, sea = 0)
     c.strokeStyle = '#fff';
     c.lineWidth = 5 * u;
   } else {
-    c.fillStyle = '#f8fdff';
-    c.fill();
+    fills('#f8fdff');
     c.strokeStyle = '#a9d4ea';
     c.lineWidth = 2 * u;
   }
@@ -813,11 +1043,8 @@ const shatter = (x: number, y: number, r: number, i: number, q: number, sea = 0)
     c.lineTo(v[j] - cx, v[j + 1] - cy);
     c.lineTo(v[k] - cx, v[k + 1] - cy);
     c.closePath();
-    c.fillStyle = shade(m, -30 * sea * q, sea);
-    c.fill();
-    c.strokeStyle = ROCKS[sea][2];
-    c.lineWidth = 3 * u;
-    c.stroke();
+    fills(shade(m, -30 * sea * q, sea));
+    strokes(ROCKS[sea][2], 3 * u);
     c.restore();
   }
   c.globalAlpha = 1;
@@ -826,7 +1053,7 @@ const shatter = (x: number, y: number, r: number, i: number, q: number, sea = 0)
 /**
  * A penguin shot out, q: 0 → 1 over 1 s, from where the puck hit it (x, y) along a. It flies off,
  * spinning and shrinking, stars around its head, feathers left behind; gone past the boards. A
- * shark (sea) leaves a splash: a ring of foam and droplets.
+ * shark (sea 1) leaves a splash: a ring of foam and droplets. A genie (sea 2) wisps of smoke.
  */
 const shot = (
   x: number,
@@ -839,7 +1066,7 @@ const shot = (
   i = 0,
 ) => {
   c.globalAlpha = 1 - q;
-  if (sea) {
+  if (sea == 1) {
     ring(x, y, r * (0.6 + q * 1.8), '#fff', 6 * u);
   }
   for (let j = 0; j < 6; j++) {
@@ -847,17 +1074,14 @@ const shot = (
     const d = r * (0.4 + q * (1.2 + rnd(j + 40)));
     c.beginPath();
     c.ellipse(x + Math.cos(b) * d, y + Math.sin(b) * d, r * 0.3, r * 0.1, b + q * j, 0, 7);
-    c.fillStyle = sea ? (j % 2 ? '#fff' : '#bdf3ff') : j % 3 ? '#f7fbff' : BLACK;
-    c.fill();
-    c.strokeStyle = sea ? '#fff' : '#7fb6d6';
-    c.lineWidth = 2 * u;
-    c.stroke();
+    fills([j % 3 ? '#f7fbff' : BLACK, j % 2 ? '#fff' : '#bdf3ff', SMOKE[j % 2]][sea]);
+    strokes(sea ? '#fff' : '#7fb6d6', 2 * u);
   }
   c.globalAlpha = Math.min(1, 4 - 4 * q);
   const d = r * 24 * q;
   const vx = Math.cos(a);
   const vy = Math.sin(a);
-  (sea ? shark : penguin)(x + vx * d, y + vy * d, r * (1 - 0.35 * q), vx, vy, 1 - q, now, i);
+  MOVERS[sea](x + vx * d, y + vy * d, r * (1 - 0.35 * q), vx, vy, 1 - q, now, i);
   c.globalAlpha = 1;
 };
 
@@ -867,9 +1091,10 @@ export type ObstacleView = NonNullable<Snapshot['obs']>[number];
 /**
  * An obstacle, in world units; age: ms since the puck last hit it, back: ms since it came back in
  * play. st: its state, absent while intact and in play. Once removed (st.since ≥ 0), from where it
- * was then: an iceberg shatters, a rock crumbles, a penguin or a shark is shot out. Then nothing
- * until its ghost, at o (its lane goes on): see-through, beating faster and faster, a ring
- * closing on it, bubbles rising at sea. Back in play it pops in.
+ * was then: an iceberg shatters, a rock crumbles, a whirlwind dissipates, a penguin, a shark or a
+ * genie is shot out. Then nothing until its ghost, at o (its lane goes on): see-through, beating
+ * faster and faster, a ring closing on it, bubbles rising at sea; a genie's is its oil lamp. Back
+ * in play it pops in.
  */
 export const obstacle = (
   o: Obstacle,
@@ -882,12 +1107,14 @@ export const obstacle = (
 ) => {
   const ms = st && st.since >= 0 ? (st.since * 1000) / TICK_HZ : -1;
   const { kind, x, y, r, vx, vy } = o;
-  const fixed = kind == 'iceberg' || kind == 'rock';
-  const sea = kind == 'rock' || kind == 'shark' ? 1 : 0;
+  // Scene (0 ice, 1 sea, 2 desert) and whether it is a fixed one.
+  const k = KINDS.indexOf(kind);
+  const fixed = !(k & 1);
+  const sea = k >> 1;
   if (ms >= 0 && ms < SHOW) {
     if (ms < (fixed ? 800 : 1000)) {
       if (fixed) {
-        shatter(from.x, from.y, from.r, i, ms / 800, sea);
+        (sea > 1 ? dust : shatter)(from.x, from.y, from.r, i, ms / 800, sea, now);
       } else {
         shot(from.x, from.y, from.r, st!.angle, ms / 1000, now, sea, i);
       }
@@ -901,8 +1128,8 @@ export const obstacle = (
     const p = (ms - SHOW) / (BACK - SHOW);
     const b = (1 - ((3 * p * (1 + p)) % 1)) ** 3;
     c.globalAlpha = 0.3 + 0.6 * b;
-    ring(x, y, r * (1.2 + 1.5 * (1 - p)), sea ? '#e0fbff' : '#7fe3ff', (3 + 6 * b) * u);
-    for (let j = 0; j < 5 * sea; j++) {
+    ring(x, y, r * (1.2 + 1.5 * (1 - p)), ['#7fe3ff', '#e0fbff', '#fff1c8'][sea], (3 + 6 * b) * u);
+    for (let j = 0; j < 5 * (sea & 1); j++) {
       const h = (now / 8 + j * r * 0.5) % (r * 1.8);
       ring(
         x + (j - 2) * r * 0.35 + Math.sin(now / 300 + j) * r * 0.1,
@@ -921,9 +1148,21 @@ export const obstacle = (
     c.translate(-x, -y);
   }
   if (fixed) {
-    berg(x, y, r, i, Math.max(0, 1 - age / 400), age, ms < 0 ? st?.hits : 0, sea, now);
+    (sea > 1 ? whirl : berg)(
+      x,
+      y,
+      r,
+      i,
+      Math.max(0, 1 - age / 400),
+      age,
+      ms < 0 ? st?.hits : 0,
+      sea,
+      now,
+    );
+  } else if (ms >= 0 && sea > 1) {
+    lamp(x, y, r, now);
   } else {
-    (sea ? shark : penguin)(x, y, r, vx, vy, Math.max(0, 1 - age / 800), now, i);
+    MOVERS[sea](x, y, r, vx, vy, Math.max(0, 1 - age / 800), now, i);
   }
   c.restore();
   if (ms < 0 && q < 1) {
@@ -945,9 +1184,18 @@ export const doubloon = (x: number, y: number, r: number) => {
   line(GOLD, r * 0.16, x, y - r * 0.36, x, y + r * 0.36);
   c.beginPath();
   c.arc(x, y, r * 0.84, 3.6, 4.7);
-  c.strokeStyle = '#fffa';
-  c.lineWidth = r * 0.1;
-  c.stroke();
+  strokes('#fffa', r * 0.1);
+};
+
+/** A ruby, x, y, r: a red gem lit from the top left, an octagonal table and a glint. */
+export const ruby = (x: number, y: number, r: number) => {
+  ball(x, y, r, '#c8102e');
+  c.beginPath();
+  star(x, y, r * 0.5, 4, 1, 0.39);
+  fills('#f0506499');
+  c.beginPath();
+  star(x - r * 0.35, y - r * 0.35, r * 0.4, 4, 0.25);
+  fills('#fff');
 };
 
 /**
@@ -1013,11 +1261,24 @@ export const snow = (now: number) => {
     c.moveTo(x + s, y);
     c.arc(x, y, s, 0, 7);
   }
-  c.fillStyle = '#fffd';
-  c.fill();
-  c.strokeStyle = '#7fb6d655';
-  c.lineWidth = 2;
-  c.stroke();
+  fills('#fffd');
+  strokes('#7fb6d655', 2);
+};
+
+/**
+ * Sand blowing over the desert, per frame, in base rink coordinates: grains and a few long streaks
+ * drifting with the wind. One path, light enough for 60 fps with every paddle.
+ */
+export const sand = (now: number) => {
+  c.beginPath();
+  for (let i = 0; i < 50; i++) {
+    const s = 2 + rnd(i + 6000) ** 3 * 90;
+    const x = ((rnd(i + 6100) * W + now * (0.1 + rnd(i + 6200) * 0.15)) % (W + 300)) - 150;
+    const y = rnd(i + 6300) * H + Math.sin(now / 800 + i) * 25;
+    c.moveTo(x, y);
+    c.lineTo(x - s, y - s * 0.1);
+  }
+  strokes('#fff3d099', 4);
 };
 
 /** Covers the rink (in rink coordinates) with color, label in the middle. */
@@ -1284,17 +1545,14 @@ export const stadium = (ranking: Rank[], winner: Team | undefined, now: number) 
     ball(0, 0, q * 0.25, skin);
     c.beginPath();
     c.arc(0, -q * 0.02, q * 0.26, 3.3, 6.1);
-    c.fillStyle = ['#2b1d14', '#5a3a22', '#c89a4a', '#111'][r.id % 4];
-    c.fill();
+    fills(['#2b1d14', '#5a3a22', '#c89a4a', '#111'][r.id % 4]);
     c.restore();
     for (const e of [-1, 1]) {
       circle(m + e * q * 0.08, hy + q * 0.01, q * 0.03, '#222');
     }
     c.beginPath();
     c.arc(m, hy + q * 0.06, q * 0.09, 0.4, 2.7);
-    c.strokeStyle = '#6a2a1a';
-    c.lineWidth = q * 0.03;
-    c.stroke();
+    strokes('#6a2a1a', q * 0.03);
     line('#c22', q * 0.07, m - q * 0.2, sh + q * 0.02, m, sh + q * 0.52);
     line('#2a5bd7', q * 0.07, m + q * 0.2, sh + q * 0.02, m, sh + q * 0.52);
     ball(m, sh + q * 0.62, q * 0.17, med[i]);
