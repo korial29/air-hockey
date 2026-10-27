@@ -6,8 +6,10 @@
 // there slides out sideways. A straight shot from the centre spot reaches every point of either
 // goal mouth without meeting an iceberg.
 // Each round the icebergs (vortices, whirlwinds) take a new place across the width: same x, a y drawn from the
-// round's seed (see obstacles) within a band per pair, the same for both of a mirrored pair. The
-// bands keep every guarantee above for any draw (size 1):
+// round's seed (see obstacles) within a band per pair, the same for both of a mirrored pair, and
+// half the rounds the whole set upside down (y → H - y): the pairs swap halves. Every guarantee
+// below is symmetric top to bottom, so the flip keeps them. The bands keep every guarantee above
+// for any draw (size 1):
 // - top pair (r 72), y in [217, 355]: ≥ 145 to the top board; its centre ≥ 101 from the line
 //   from the centre spot to the top post (> r + PUCK_R) and ≥ 213 from the serve spot.
 // - bottom pair (r 62), y in [758, 918]: ≥ 145 to the bottom board; its centre ≥ 91 from the
@@ -123,8 +125,9 @@ export const swirl = (o: Obstacle, size = 1): 1 | -1 => (o.x < (W * size) / 2 ? 
  *
  * `seed` (an integer, picked by the host each round) places the icebergs (vortices, whirlwinds)
  * across the width, each pair in its band (see BERGS), and draws the genies' waypoints; 0 keeps
- * the fixed layout of the icebergs. `times[i]` (ObstacleState.times): each time iceberg i comes
- * back, it takes a new place in its band, its own: the pair is in mirror only until one breaks.
+ * the fixed layout of the icebergs, upside down for half the seeds. `times[i]`
+ * (ObstacleState.times): each time iceberg i comes back, it takes a new place in its band, its
+ * own: the pair is in mirror only until one breaks.
  */
 export const obstacles = (
   arena: Arena,
@@ -154,8 +157,14 @@ export const obstacles = (
             return {
               kind: still,
               x,
-              // Draws past those of the hold and the vortex (the u16 tick · 10 + 9 at most).
-              y: seed ? a + (b - a) * draw(seed, n ? 1e6 + 8 * n + 2 * i + j : i) : y,
+              // Draws past those of the hold and the vortex (the u16 tick · 10 + 9 at most). Upside
+              // down on draw 300 (past the genies').
+              y: seed
+                ? Math.abs(
+                    (draw(seed, 300) < 0.5 ? H : 0) -
+                      (a + (b - a) * draw(seed, n ? 1e6 + 8 * n + 2 * i + j : i)),
+                  )
+                : y,
               r,
               vx: 0,
               vy: 0,

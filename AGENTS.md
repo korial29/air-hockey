@@ -80,7 +80,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 | Sharks | Eat the puck, keep it 0.6 s while swimming on, then spit it from their rim in a direction drawn from the seed, never at a player: aimed at the shooter, two players could send it back and forth through the shark. Never shot out. |
 | Whirlwinds | Catch the puck, turn it in their eye out of every paddle's reach for 0.6 to 1.4 s (a random draw), then fling it from the rim in a random direction. Each catch is a hit. |
 | Genies | Float at random in a fixed band: along their lane, up to 30 units off it, between waypoints drawn from the round's seed. |
-| Fixed obstacles | Random height each round within a band that keeps every guarantee; break after 3 hits. |
+| Fixed obstacles | Random height each round within a band that keeps every guarantee, the whole set upside down for half the seeds (every guarantee is symmetric top to bottom); a new height in the band at each respawn (`times`); break after 3 hits. |
 | Movers | Penguins and genies are shot out on the first hit; sharks never. |
 | Respawn | 10 s after removal, intact; a ghost that blocks nothing for the last 3 s. |
 | End screen | Stadium, cup for the winning team, podium of the top three (goals, then points), small points ranking. |

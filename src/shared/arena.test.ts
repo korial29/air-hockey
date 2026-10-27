@@ -759,6 +759,12 @@ describe('icebergs (vortices) across the width', () => {
     [217, 355],
     [758, 918],
   ];
+  /**
+   * y of a fixed obstacle of that layout (size 1), the layout set upright: half the seeds turn
+   * it upside down, the top pair (always obstacle 0) then in the bottom half.
+   */
+  const upright = (obs: Obstacle[], y: number, size: number) =>
+    obs[0].y > (H * size) / 2 ? H - y / size : y / size;
   /** Distance from (x, y) to the segment from (ax, ay) to (bx, by). */
   const seg = (x: number, y: number, ax: number, ay: number, bx: number, by: number): number => {
     const [dx, dy] = [bx - ax, by - ay];
@@ -807,18 +813,23 @@ describe('icebergs (vortices) across the width', () => {
     }
   });
 
-  it('places each pair at the same y, mirrored, anywhere in its band, scaled', () => {
+  it('places each pair at the same y, mirrored, anywhere in its band, scaled, upside down half the time', () => {
     for (const { size, count } of ALL) {
       const ys: number[][] = [[], []];
+      let flips = 0;
       for (const seed of SEEDS) {
         const obs = obstacles('ice', 0, size, count, seed).filter(fixed);
+        flips += +(obs[0].y > (H * size) / 2);
         for (let i = 0; i < obs.length; i += 2) {
           const [a, b] = [obs[i], obs[i + 1]];
           expect(b.x).toBeCloseTo(W * size - a.x, 9);
           expect([b.y, b.r]).toEqual([a.y, a.r]);
-          ys[i / 2].push(a.y / size);
+          ys[i / 2].push(upright(obs, a.y, size));
         }
       }
+      // The same seeds flip at every count and size: about half of them.
+      expect(flips / SEEDS.length).toBeGreaterThan(0.4);
+      expect(flips / SEEDS.length).toBeLessThan(0.6);
       ys.forEach((y, i) => {
         if (y.length) {
           const [lo, hi] = BANDS[i];
@@ -833,7 +844,7 @@ describe('icebergs (vortices) across the width', () => {
     }
     // The pairs draw apart: the bottom one is not the top one shifted.
     const corr = SEEDS.map(seed => obstacles('ice', 0, 1, 7, seed)).filter(
-      ([a, , b]) => (a.y - 217) / 138 < 0.5 != (b.y - 758) / 160 < 0.5,
+      o => (upright(o, o[0].y, 1) - 217) / 138 < 0.5 != (upright(o, o[2].y, 1) - 758) / 160 < 0.5,
     ).length;
     expect(corr / SEEDS.length).toBeGreaterThan(0.4);
     expect(corr / SEEDS.length).toBeLessThan(0.6);
@@ -856,8 +867,8 @@ describe('icebergs (vortices) across the width', () => {
               expect({ ...o, y: +(j == i) || o.y }).toEqual({ ...a[j], y: +(j == i) || a[j].y }),
             );
             const [lo, hi] = BANDS[i >> 1];
-            expect(b[i].y / size).toBeGreaterThanOrEqual(lo - 1e-9);
-            expect(b[i].y / size).toBeLessThanOrEqual(hi + 1e-9);
+            expect(upright(a, b[i].y, size)).toBeGreaterThanOrEqual(lo - 1e-9);
+            expect(upright(a, b[i].y, size)).toBeLessThanOrEqual(hi + 1e-9);
             ys.add(b[i].y);
           }
           // A new place each time.
