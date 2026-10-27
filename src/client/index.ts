@@ -14,6 +14,8 @@ import {
   obstacle,
   pen,
   rink,
+  ruby,
+  sand,
   snow,
   stadium,
   streak,
@@ -213,9 +215,13 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     const arena = match?.arena ?? 'ice';
     const ice = arena == 'ice';
     const sea = arena == 'sea';
+    const desert = arena == 'desert';
     rink(arena, k);
     if (sea) {
       waves(now);
+    }
+    if (desert) {
+      sand(now);
     }
     // The world, W · size × H · size, on the same rink area: puck and paddles look smaller on a
     // bigger rink. Names keep their size on screen: g world units.
@@ -253,7 +259,14 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     if (s) {
       const { x, y, vx, vy } = s.puck;
       // Top speeds scale with the rink: so does the speed that leaves a trail.
-      streak(trail, x, y, Math.hypot(vx, vy) > 1000 * size, ice ? '#2a9df4' : '#fff', pr);
+      streak(
+        trail,
+        x,
+        y,
+        Math.hypot(vx, vy) > 1000 * size,
+        ice ? '#2a9df4' : desert ? '#e8384f' : '#fff',
+        pr,
+      );
       beacon(x, y, pr, now);
       circle(x, y, pr, ice ? '#141a24' : '#fff');
       if (ice) {
@@ -264,18 +277,23 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       }
       // The puck itself blinks toward a light yellow, in step with the beacon's glow.
       circle(x, y, pr, `rgba(255,214,90,${0.15 + 0.6 * (0.5 + 0.5 * Math.sin(now / 400))})`);
+      // In the desert the ruby goes over it: the blink rings it like a gold setting.
+      if (desert) {
+        ruby(x, y, pr * 0.78);
+      }
       for (const p of s.paddles) {
         const info = players.get(p.id);
         const { x, y } = p;
         circle(x, y, dr, info?.color ?? '#888');
         circle(x, y, dr / 2, '#0003');
-        // Above the paddle, or below it against the top wall. At sea, over a dark shadow.
+        // Above the paddle, or below it against the top wall. At sea, over a dark shadow; dark on
+        // the sand.
         const ny = y < dr + g ? y + dr + g / 2 : y - dr - g / 2;
         const name = info?.name ?? '';
         if (sea) {
           text(name, x + g / 14, ny + g / 14, g, 'center', '#000a');
         }
-        text(name, x, ny, g, 'center', ice ? '#163049' : '#fff');
+        text(name, x, ny, g, 'center', ice ? '#163049' : desert ? '#3b2410' : '#fff');
       }
     }
     // Back to base rink coordinates: snow and veils cover the rink area whatever its size.

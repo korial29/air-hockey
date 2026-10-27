@@ -31,20 +31,28 @@
 // the serve spots and the centre-line gap allow together: SR + ZA = 114.
 // The pair zig-zags in mirror, the centre shark across the centre line: half a zig on each
 // side, so it favours neither team over time.
-// A bigger rink scales all of it while paddle and puck keep their size, and fewer obstacles leave
-// wider gaps: every guarantee holds at every size and count.
+// The desert (an Arabian Nights desert) is the ice layout, slot for slot: whirlwinds of sand where
+// the icebergs are (same size, same y per seed), genies in the penguin lanes. A whirlwind catches
+// the puck, spins it round and flings it out in a random direction (see twirl in physics.ts), in a
+// sense of its own: clockwise on screen left of the centre line, counter-clockwise on the right
+// (swirl). A genie floats at random within its band: anywhere along its lane, board to board, and
+// up to GA off it either side, gliding from one waypoint drawn from the round's seed to the next
+// every WANDER ticks. The pair wanders in mirror. GA trades some of the ice's room for a livelier
+// float: whirlwinds to the nearest lane down to 128, lane to lane 140, the pair's lanes to a
+// centre-line paddle 122. The puck alone still fits everywhere (≥ 76) and the spawn columns stay
+// clear: the last one is 6 off the band.
 import { H, MAX_SIZE, TICK_HZ, W } from './constants';
 import type { Arena, Obstacle } from './types';
 
 /**
- * Icebergs (rocks at sea) of the left half, above and below its serve spot: [x, r, band top, band
- * bottom, y for seed 0]. The right half mirrors.
+ * Icebergs (rocks at sea, whirlwinds in the desert) of the left half, above and below its serve
+ * spot: [x, r, band top, band bottom, y for seed 0]. The right half mirrors.
  */
 const BERGS = [
   [450, 72, 217, 355, 270],
   [460, 62, 758, 918, 870],
 ];
-/** Penguin radius. */
+/** Penguin radius, a genie's too. */
 const PR = 40;
 /** Shark radius: big, as wide as the gaps it swings across allow (see top). */
 const SR = 44;
@@ -68,42 +76,59 @@ export const ZA = 70;
 export const ZN = 3;
 /** Sideways speed of a shark, units per second: 4 · ZA per back-and-forth, about 197. */
 const ZV = (8 * ZA * ZN * TICK_HZ) / PERIOD;
+/** How far a genie strays either side of its lane, and ticks from one waypoint to the next. */
+export const GA = 30;
+export const WANDER = 1024;
 /** Obstacles kept for a count of 2 to 7 (see obstacles): bit i keeps index i of the full layout. */
 const MASKS = [0b11, 0b100011, 0b1010011, 0b1110011, 0b1011111, 0b1111111];
 
 /**
- * A share in [0, 1) for pair i of a seed: murmur3's integer finalizer, so host and clients draw
- * the same, with no shared random state.
+ * A share in [0, 1) for draw i of a seed (pair i of icebergs, a genie's waypoint, a whirlwind's
+ * hold): murmur3's integer finalizer, so host and clients draw the same, with no shared random
+ * state.
  */
-const draw = (seed: number, i: number): number => {
+export const draw = (seed: number, i: number): number => {
   let h = seed * 2 + i;
   h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
   h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
   return ((h ^ (h >>> 16)) >>> 0) / 2 ** 32;
 };
 
-/** Icebergs and rocks: they break after ICEBERG_HP hits. Penguins and sharks move, go on one. */
-export const fixed = (o: Obstacle): boolean => o.kind == 'iceberg' || o.kind == 'rock';
+/**
+ * Icebergs, rocks and whirlwinds: they break after ICEBERG_HP hits. Penguins, sharks and genies
+ * move, go on one.
+ */
+export const fixed = (o: Obstacle): boolean => ['iceberg', 'rock', 'whirlwind'].includes(o.kind);
 
 /**
- * The obstacles of an arena at tick t: icebergs (rocks) first, fixed, then penguins (sharks),
- * moving. 'classic' has none. t may be fractional, for drawing between steps. The motion repeats
- * with a period that divides 65536 ticks, so the wrap of the u16 snapshot tick is seamless.
- * vx and vy are the velocity, units per second (a shark's heading). The layout is
+ * Sense a whirlwind spins the puck in, on a rink of that size: 1 clockwise on screen (y down), left
+ * of the centre line, -1 counter-clockwise on the right. Mirrored whirlwinds spin in mirror.
+ */
+export const swirl = (o: Obstacle, size = 1): 1 | -1 => (o.x < (W * size) / 2 ? 1 : -1);
+
+/**
+ * The obstacles of an arena at tick t: icebergs (rocks, whirlwinds) first, fixed, then penguins
+ * (sharks, genies), moving. 'classic' has none. t may be fractional, for drawing between steps.
+ * The motion repeats with a period that divides 65536 ticks, so the wrap of the u16 snapshot tick
+ * is seamless. vx and vy are the velocity, units per second (a shark's heading). The layout is
  * mirror-symmetric across the centre line (the centre shark over time): neither team is favoured.
  *
  * The layout is drawn for the base rink and scaled by `size` (positions, radii, speeds: the
  * crossing time stays the same). `count` picks which obstacles stay, in the order above and
  * mirror-symmetric at every count: top icebergs (2), centre penguin (3), side penguins instead of
  * the centre one (4), all three penguins (5), bottom icebergs too (6), everything (7). Same slots
- * on the sea. Indices follow the returned order and are stable for a given count. Fresh objects
- * every call.
+ * at sea and in the desert. Indices follow the returned order and are stable for a given count.
+ * Fresh objects every call.
  *
- * `seed` (an integer, picked by the host each round) places the icebergs (rocks) across the width,
- * each pair in its band (see BERGS); 0 keeps the fixed layout.
+ * `seed` (an integer, picked by the host each round) places the icebergs (rocks, whirlwinds)
+ * across the width, each pair in its band (see BERGS), and draws the genies' waypoints; 0 keeps
+ * the fixed layout of the icebergs.
  */
 export const obstacles = (arena: Arena, t: number, size = 1, count = 7, seed = 0): Obstacle[] => {
   const sea = arena == 'sea';
+  const [still, mover] = (
+    { sea: ['rock', 'shark'], desert: ['whirlwind', 'genie'] } as Record<string, Obstacle['kind'][]>
+  )[arena] ?? ['iceberg', 'penguin'];
   const r = sea ? SR : PR;
   // Travel of a centre, board to board, and the speed to cover it twice per PERIOD (about 245).
   const span = H - 2 * r;
@@ -113,7 +138,7 @@ export const obstacles = (arena: Arena, t: number, size = 1, count = 7, seed = 0
     : [
         ...BERGS.flatMap(([x, r, a, b, y], i) =>
           [x, W - x].map((x): Obstacle => ({
-            kind: sea ? 'rock' : 'iceberg',
+            kind: still,
             x,
             y: seed ? a + (b - a) * draw(seed, i) : y,
             r,
@@ -122,13 +147,34 @@ export const obstacles = (arena: Arena, t: number, size = 1, count = 7, seed = 0
           })),
         ),
         ...LANES.map(([x, phase, m]): Obstacle => {
+          if (arena == 'desert') {
+            // Waypoint n to n + 1 (64 of them over the u16 tick), eased in and out (smoothstep):
+            // e and its rate.
+            const f = (t / WANDER) % 64;
+            const n = f | 0;
+            const u = f - n;
+            const e = u * u * (3 - 2 * u);
+            const de = (6 * u * (1 - u) * TICK_HZ) / WANDER;
+            // Draws of this lane (the pair shares them) along the axis j (0: x, 1: y), from waypoint n.
+            const at = (j: number, n: number) =>
+              draw(seed, 2 + 128 * +(x == W / 2) + 64 * j + (n % 64));
+            const [dx, dy] = [0, 1].map(j => at(j, n + 1) - at(j, n));
+            return {
+              kind: mover,
+              x: x + m * GA * (2 * (at(0, n) + dx * e) - 1),
+              y: r + span * (at(1, n) + dy * e),
+              r,
+              vx: 2 * m * GA * dx * de,
+              vy: span * dy * de,
+            };
+          }
           // Share of the period, 0 → 1: down in the first half, back up in the second one.
           const u = (t / PERIOD + phase) % 1;
           const up = u >= 0.5;
           // Zig-zag: share of a back-and-forth, a quarter in at the boards (on the lane).
           const z = (2 * ZN * u + 0.25) % 1;
           return {
-            kind: sea ? 'shark' : 'penguin',
+            kind: mover,
             x: sea ? x + m * ZA * (1 - 4 * Math.abs(z - 0.5)) : x,
             y: r + span * (up ? 2 - 2 * u : 2 * u),
             r,

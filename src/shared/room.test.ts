@@ -33,6 +33,8 @@ vi.mock('./physics', () => ({
     tick: physics.tick0,
     bumps: [],
     live: false,
+    held: -1,
+    left: 0,
     obs: Array.from({ length: count }, () => ({ hits: 0, gone: -1, angle: 0 })),
     puck: { x: 800, y: 450, vx: 0, vy: 0 },
     paddles: [],
@@ -974,7 +976,7 @@ describe('Room tournament', () => {
         .slice(n)
         .map(m => `${m.phase} ${m.arena}`);
 
-    it('take turns round after round, ice then sea by default, the first one while waiting', () => {
+    it('take turns round after round, ice, sea then desert by default, the first one while waiting', () => {
       const a = join(room, 'A');
       expect(lastMatch(a)).toMatchObject({ phase: 'wait', arena: 'ice' });
       physics.arenas = [];
@@ -992,12 +994,12 @@ describe('Room tournament', () => {
         'ready sea',
         'play sea',
         'break sea',
-        'ready ice',
-        'play ice',
+        'ready desert',
+        'play desert',
       ]);
       expect(lastMatch(a)).toMatchObject({ round: 3 });
-      // A fresh world for each round, in its scene.
-      expect(physics.arenas).toEqual(['ice', 'sea', 'ice']);
+      // A fresh world for each round, in its scene: a 3-round match plays each one once.
+      expect(physics.arenas).toEqual(['ice', 'sea', 'desert']);
     });
 
     it('keep the round on its scene through a refit on a serve', () => {
@@ -1043,6 +1045,11 @@ describe('Room tournament', () => {
       [
         ['sea', 'classic', 'ice'],
         ['sea', 'classic', 'ice'],
+      ],
+      ['desert', ['desert', 'desert', 'desert']],
+      [
+        ['desert', 'ice'],
+        ['desert', 'ice', 'desert'],
       ],
     ] as [Arena | Arena[], Arena[]][])('%j plays %j', (arena, scenes) => {
       room = new Room({ ...RULES, arena });

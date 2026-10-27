@@ -12,7 +12,7 @@ import {
   TICK_HZ,
   W,
 } from '../shared/constants';
-import { createWorld, step } from '../shared/physics';
+import { HOLD, createWorld, step } from '../shared/physics';
 import type { Puck, Snapshot } from '../shared/types';
 import { predict, rebase, reset, view } from './predict';
 
@@ -488,7 +488,7 @@ describe('predict', () => {
       expect(view(p, late, 50)!.obs![1].since).toBeGreaterThanOrEqual(7);
     });
 
-    it('switches scenes between rounds: hit times and states go, the new obstacles bounce', () => {
+    it('switches scenes between rounds, ice, sea, desert: hit times and states go, the new obstacles bounce', () => {
       // Round 1 on ice: the first iceberg hit, a penguin gone.
       const p = ice();
       rebase(
@@ -527,9 +527,83 @@ describe('predict', () => {
       rebase(p, m, ME, 3000);
       expect(view(p, m, 3000 + 30 * DT)!.puck.vy).toBeGreaterThan(0);
       expect(Object.keys(p.hits)).toEqual(['0', '5']);
-      // Round 3 back on ice: the sea's hit times go too.
+      // Round 3 in the desert, whirlwinds placed by the round's seed: the sea's hit times go too.
+      reset(p, 'break', 'sea');
+      reset(p, 'ready', 'desert', 1, 7, 99);
+      expect(p.w).toMatchObject({ arena: 'desert', size: 1, count: 7, seed: 99, obs: [] });
+      expect(p.hits).toEqual([]);
+      // In play: the first whirlwind catches the local puck as on the host, turns it and flings it.
+      reset(p, 'play', 'desert', 1, 7, 99);
+      const [wind] = obstacles('desert', 0, 1, 7, 99);
+      expect(wind.kind).toBe('whirlwind');
+      const d = {
+        ...snap({ x: wind.x - wind.r - PUCK_R - 20, y: wind.y + 10, vx: 1000, vy: 50 }, []),
+        live: true,
+        tick: 300,
+        obs: Array(7).fill(intact),
+      };
+      rebase(p, d, ME, 4000);
+      const host = createWorld('desert', 1, 7, 99);
+      Object.assign(host, { tick: d.tick, live: true });
+      Object.assign(host.puck, d.puck);
+      let hit = -1;
+      let held = 0;
+      let free = false;
+      for (let i = 1; i <= 400; i++) {
+        const was = host.held;
+        step(host, DT / 1000);
+        free ||= was == 0 && host.held < 0;
+        view(p, d, 4000 + i * DT + 0.5);
+        if (host.bumps.includes(0) && hit < 0) {
+          hit = i;
+          expect(Object.keys(p.hits)).toEqual(['0']);
+        }
+        held += +(host.held == 0);
+        expect([p.w.held, p.w.left]).toEqual([host.held, host.left]);
+        for (const k of ['x', 'y', 'vx', 'vy'] as const) {
+          expect(p.w.puck[k]).toBeCloseTo(host.puck[k], 6);
+        }
+      }
+      // Caught, held for its draw, let go: the same everywhere.
+      expect(hit).toBeGreaterThan(0);
+      expect(held).toBeGreaterThan(HOLD * TICK_HZ - 1);
+      expect(free).toBe(true);
+      expect(host.obs[0].hits).toBeGreaterThanOrEqual(1);
+      expect(p.w.obs[0].hits).toBe(0);
+      // Round 4 back on ice: the desert's hit times go too.
       reset(p, 'ready', 'ice');
       expect(p.hits).toEqual([]);
+    });
+
+    it("takes the whirlwind's hold from each snapshot: turns the puck on, lets it go when told", () => {
+      const p = predict();
+      reset(p, 'play', 'desert');
+      const [wind] = obstacles('desert', 0);
+      // The host has it in the first whirlwind's eye, 0.3 s to go.
+      const s = {
+        ...snap({ x: wind.x, y: wind.y - wind.r + PUCK_R, vx: 600, vy: 0 }, []),
+        live: true,
+        held: 0,
+        left: 0.3,
+        obs: Array(7).fill(intact),
+      };
+      rebase(p, s, ME, 1000);
+      expect([p.w.held, p.w.left]).toEqual([0, 0.3]);
+      // It turns there, out of the way of nothing, until the time runs out.
+      for (let t = 1010; t < 1290; t += 10) {
+        const k = view(p, s, t)!.puck;
+        expect(Math.hypot(k.x - wind.x, k.y - wind.y)).toBeLessThanOrEqual(wind.r + PUCK_R + 1);
+      }
+      view(p, s, 1310);
+      expect(p.w.held).toBe(-1);
+      expect(Math.hypot(p.w.puck.vx, p.w.puck.vy)).toBeGreaterThan(1300);
+      // A snapshot that says it is free frees it at once.
+      rebase(p, { ...s, held: -1, left: 0, tick: 2 }, ME, 1400);
+      expect(p.w.held).toBe(-1);
+      rebase(p, { ...s, tick: 4 }, ME, 1500);
+      expect(p.w.held).toBe(0);
+      rebase(p, { ...s, held: undefined, left: undefined, tick: 6 }, ME, 1600);
+      expect([p.w.held, p.w.left]).toEqual([-1, 0]);
     });
 
     it('forgets the obstacle states on a new count until the next snapshot', () => {

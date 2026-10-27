@@ -14,7 +14,7 @@ vi.mock('../shared/physics', async importOriginal => ({
   clampPaddle: vi.fn((_team: number, x: number, y: number) => [x, y]),
 }));
 
-// The ice and sea layouts and the hit times belong to the physics: a fixed fake of each.
+// The ice, sea and desert layouts and the hit times belong to the physics: a fixed fake of each.
 const fake = vi.hoisted(() => ({
   hits: [] as number[],
   obs: undefined as { hits: number; since: number; angle: number }[] | undefined,
@@ -31,7 +31,12 @@ vi.mock('../shared/arena', () => ({
             { kind: 'rock', x: 700, y: 300, r: 70, vx: 0, vy: 0 },
             { kind: 'shark', x: 1000, y: 500, r: 50, vx: 120, vy: 180 },
           ]
-        : [],
+        : arena == 'desert'
+          ? [
+              { kind: 'whirlwind', x: 700, y: 300, r: 70, vx: 0, vy: 0 },
+              { kind: 'genie', x: 1000, y: 500, r: 50, vx: 0, vy: 180 },
+            ]
+          : [],
   ),
 }));
 vi.mock('./predict', async importOriginal => {
@@ -90,7 +95,7 @@ const fakeContext = () => {
   const moves: [number, number][] = [];
   const arcs: [string, number][] = [];
   let m = [1, 0];
-  const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+  const ctx = new Proxy({ globalAlpha: 1 } as Record<string | symbol, unknown>, {
     get: (t, k) =>
       k in t
         ? t[k]
@@ -1052,6 +1057,206 @@ describe('airHockey', () => {
     clock.mockReturnValue(now + 400);
     expect(draw().strokes).not.toContain('#fff');
     expect(texts.strokes).not.toContain('#e0fbff');
+    fake.obs = undefined;
+    game.destroy();
+  });
+
+  it('draws the desert scene: sand, zellige, arches, whirlwinds, genies, the ruby; the rink repainted per scene', () => {
+    const texts = fakeContext();
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    const draw = () => {
+      texts.length = texts.styles.length = texts.strokes.length = 0;
+      vi.mocked(obstacles).mockClear();
+      frame(0);
+      return texts;
+    };
+    const scene = (arena: string) =>
+      socket.onmessage!({
+        data: JSON.stringify({
+          t: 'match',
+          phase: 'play',
+          arena,
+          round: 1,
+          rounds: 3,
+          goals: 10,
+          wins: [0, 0],
+        }),
+      });
+    socket.onopen!();
+    const players = [{ id: 3, name: 'Ana', color: '#f00', team: 0 }];
+    socket.onmessage!({ data: JSON.stringify({ t: 'roster', you: 3, players }) });
+    const snap = () =>
+      socket.onmessage!({
+        data: encodeSnapshot({
+          tick: 42,
+          score: [0, 0],
+          puck: { x: 300, y: 600, vx: 0, vy: 0 },
+          paddles: [{ id: 3, x: 400, y: 450 }],
+        }),
+      });
+    snap();
+
+    // Round 1 on the ice, painted once.
+    expect(draw().styles).toContain('#e6f2f9');
+
+    // Then the desert: the rink is painted again (sand, ripples, zellige, sandstone, arches over
+    // a lattice), blowing sand on top.
+    scene('desert');
+    snap();
+    expect(() => draw()).not.toThrow();
+    expect(obstacles).toHaveBeenCalledWith('desert', expect.any(Number), 1, 7, 0);
+    expect(texts.styles).toEqual(
+      expect.arrayContaining(['#ddb064', '#1f4fa8', '#1aa3a3', '#c4532d', '#f4ecd8', '#2a1408aa']),
+    );
+    expect(texts.strokes).toEqual(
+      expect.arrayContaining(['#a8702e40', '#c99254', '#d9a95c', '#fff3d099']),
+    );
+    expect(texts.styles).not.toContain('#e6f2f9');
+    // A whirlwind (light and dark spiral bands round a dark core), a genie (blue body and arms,
+    // gold bracelets, black topknot): no iceberg, no penguin.
+    expect(texts.strokes).toEqual(expect.arrayContaining(['#9a642c', '#fbe6b8']));
+    expect(texts.styles).toEqual(expect.arrayContaining(['#5e3a1c', '#6e4422']));
+    expect(texts.styles).toEqual(expect.arrayContaining(['#3f8ee6', '#56a2f2', '#f2c230']));
+    expect(texts.strokes).toEqual(expect.arrayContaining(['#2f76c8', '#1d2430']));
+    expect(texts.styles.filter(v => String(v).startsWith('hsl(196'))).toEqual([]);
+    expect(texts.styles).not.toContain('#f39a1c');
+    // The puck is a ruby, the beacon kept; the name dark on the sand, no shadow.
+    expect(texts.styles).toEqual(expect.arrayContaining(['#c8102e', '#f0506499']));
+    expect(texts.strokes).toContain('#fc3');
+    expect(texts.styles).not.toContain('#141a24');
+    expect(texts.styles).not.toContain('#e9b52c');
+    expect(texts.styles).toContain('#3b2410');
+    expect(texts.styles).not.toContain('#000a');
+    // Painted once: the sand is copied, the blowing sand drawn every frame.
+    expect(draw().styles).not.toContain('#ddb064');
+    expect(texts.strokes).toContain('#fff3d099');
+
+    // Hit: a gust ring round the whirlwind; the genie spins in purple smoke, seeing stars.
+    fake.hits.splice(0, 2, performance.now(), performance.now());
+    expect(draw().filter(t => t == '★')).toHaveLength(3);
+    expect(texts.strokes).toContain('#fff6dc');
+    expect(texts.styles).toContain('#a77ce07a');
+    fake.hits.splice(0, 2, -5000, -5000);
+    expect(draw()).not.toContain('★');
+    expect(texts.strokes).not.toContain('#fff6dc');
+    expect(texts.styles).not.toContain('#a77ce07a');
+
+    // Back on the ice: painted again, no desert drawing left.
+    scene('ice');
+    snap();
+    draw();
+    expect(texts.styles).toContain('#e6f2f9');
+    expect(texts.strokes).not.toContain('#fff3d099');
+    expect(texts.styles).not.toContain('#c8102e');
+    expect(texts.styles).toContain('#141a24');
+    game.destroy();
+  });
+
+  it('draws whirlwind and genie damage, removal, ghosts (the lamp) and returns from the obstacle states', () => {
+    const texts = fakeContext();
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    const draw = () => {
+      texts.length = texts.styles.length = texts.strokes.length = 0;
+      texts.alphas.length = texts.moves.length = texts.arcs.length = 0;
+      frame(0);
+      return texts;
+    };
+    socket.onopen!();
+    socket.onmessage!({
+      data: JSON.stringify({
+        t: 'match',
+        phase: 'play',
+        arena: 'desert',
+        round: 3,
+        rounds: 3,
+        goals: 10,
+        wins: [1, 1],
+      }),
+    });
+    socket.onmessage!({
+      data: encodeSnapshot({
+        tick: 4000,
+        score: [0, 0],
+        puck: { x: 300, y: 600, vx: 0, vy: 0 },
+        paddles: [],
+      }),
+    });
+    const sec = (v: number) => v * 240;
+    const set = (wind: [number, number], gen: [number, number], angle = 0) =>
+      (fake.obs = [
+        { hits: wind[0], since: wind[1], angle: 0 },
+        { hits: gen[0], since: gen[1], angle },
+      ]);
+    // The whirlwind's dark core, its radius (the grains drawn after it are smaller).
+    const core = () => Math.max(0, ...texts.arcs.filter(([s]) => s == '#5e3a1c').map(a => a[1]));
+    const lamp = () => texts.styles.includes('#e0a82e');
+
+    // In play: one hit, smaller and fainter; two, smaller and fainter still.
+    set([0, -1], [0, -1]);
+    draw();
+    const whole = core();
+    expect(whole).toBeGreaterThan(0);
+    expect(texts.alphas.filter(v => v > 0 && v < 1)).toEqual([]);
+    set([1, -1], [0, -1]);
+    draw();
+    expect(core()).toBeCloseTo(whole * 0.85);
+    expect(texts.alphas).toContain(0.75);
+    set([2, -1], [0, -1]);
+    draw();
+    expect(core()).toBeCloseTo(whole * 0.7);
+    expect(texts.alphas).toContain(0.5);
+
+    // Dissipated 0.3 s ago: the swirl spreads out and fades; at 5 s, nothing.
+    set([3, sec(0.3)], [0, -1]);
+    draw();
+    expect(core()).toBeGreaterThan(whole);
+    expect(texts.alphas).toContain(0.625);
+    set([3, sec(5)], [0, -1]);
+    draw();
+    expect(core()).toBe(0);
+    expect(texts.strokes).not.toContain('#9a642c');
+
+    // Genie shot out 0.5 s ago along +x: it flies off in wisps of purple smoke, stars round it.
+    set([0, -1], [1, sec(0.5)], 0);
+    draw();
+    expect(texts.filter(t => t == '★')).toHaveLength(3);
+    expect(texts.moves).toContainEqual([1000 + 50 * 24 * 0.5, 500]);
+    expect(texts.styles).toEqual(expect.arrayContaining(['#d6c2f5', '#9b72dd']));
+    set([0, -1], [1, sec(2)]);
+    expect(draw().styles).not.toContain('#3f8ee6');
+    expect(lamp()).toBe(false);
+
+    // Ghosts at 8 s and 9.5 s: a see-through whirlwind in a sand-coloured ring; the genie's oil
+    // lamp, smoke rising, instead of a see-through genie.
+    for (const t of [8, 9.5]) {
+      set([3, sec(t)], [1, sec(t)]);
+      draw();
+      expect(core()).toBeGreaterThan(0);
+      expect(texts.strokes).toContain('#fff1c8');
+      const a = texts.alphas.filter(v => v < 1);
+      expect(a.some(v => v >= 0.25 && v <= 0.45)).toBe(true);
+      expect(lamp()).toBe(true);
+      expect(texts.styles).toContain('#b9a0ec88');
+      expect(texts.strokes).toContain('#a87314');
+      expect(texts.styles).not.toContain('#3f8ee6');
+    }
+
+    // Back in play: a pop (white ring) for 300 ms, then the plain whirlwind and genie.
+    const now = performance.now();
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(now);
+    set([0, -1], [0, -1]);
+    expect(draw().strokes).toContain('#fff');
+    expect(texts.styles).toContain('#3f8ee6');
+    expect(lamp()).toBe(false);
+    clock.mockReturnValue(now + 400);
+    expect(draw().strokes).not.toContain('#fff');
+    expect(core()).toBeCloseTo(whole);
     fake.obs = undefined;
     game.destroy();
   });

@@ -29,18 +29,22 @@ export interface Paddle {
 
 /**
  * The scene of a round. 'ice': icebergs and sliding penguins. 'sea' (sea and pirates): rocks and
- * sharks swimming in zig-zag, wooden goals. 'classic': an empty rink.
+ * sharks swimming in zig-zag, wooden goals. 'desert' (an Arabian Nights desert): whirlwinds of sand
+ * and floating genies, Moorish arches for goals. 'classic': an empty rink.
  */
-export type Arena = 'ice' | 'sea' | 'classic';
+export type Arena = 'ice' | 'sea' | 'desert' | 'classic';
 
 /** A round obstacle the puck bounces off like a pinball bumper. Paddles cannot cross it. */
 export interface Obstacle {
-  /** Fixed ones (iceberg, rock) break after ICEBERG_HP hits; movers (penguin, shark) on one. */
-  kind: 'iceberg' | 'penguin' | 'rock' | 'shark';
+  /**
+   * Fixed ones (iceberg, rock, whirlwind) break after ICEBERG_HP hits; movers (penguin, shark,
+   * genie) on one.
+   */
+  kind: 'iceberg' | 'penguin' | 'rock' | 'shark' | 'whirlwind' | 'genie';
   x: number;
   y: number;
   r: number;
-  /** Units per second: 0 for icebergs, the slide of a penguin. */
+  /** Units per second: 0 for the fixed ones, the slide of a penguin, a shark's swim, a genie's float. */
   vx: number;
   vy: number;
 }
@@ -67,7 +71,7 @@ export interface World {
   size: number;
   /** How many obstacles of the arena are in play (see obstacles). Set at round start. */
   count: number;
-  /** Places the icebergs (rocks) across the width (see obstacles); 0: the fixed layout. */
+  /** Places the icebergs (rocks, whirlwinds) across the width (see obstacles); 0: the fixed one. */
   seed: number;
   /**
    * Physics steps since the world was created; obstacles(arena, tick, size, count, seed) gives the
@@ -81,6 +85,10 @@ export interface World {
    * so a penguin cannot start a round alone, let alone score.
    */
   live: boolean;
+  /** Index of the whirlwind holding the puck (see twirl in physics.ts), -1 when none does. */
+  held: number;
+  /** Seconds until that whirlwind flings the puck out. */
+  left: number;
   /**
    * State of each obstacle in play, indexed like obstacles(arena, tick, size, count, seed).
    * Reset at round start (every obstacle back, intact).
@@ -97,7 +105,7 @@ export interface World {
 export interface Rules {
   /**
    * The scene, or scenes taking turns from one round to the next (round 1 the first, round 2 the
-   * second, then round again). Default ['ice', 'sea'].
+   * second, then round again). Default ['ice', 'sea', 'desert'].
    */
   arena: Arena | Arena[];
   /** Rounds in a match; the first team to win a majority of them wins (3 → best of 3). */
@@ -153,6 +161,9 @@ export interface Snapshot {
   paddles: { id: number; x: number; y: number }[];
   /** World.live: the puck reacts to obstacles. */
   live?: boolean;
+  /** World.held and World.left: the whirlwind holding the puck and for how long still. */
+  held?: number;
+  left?: number;
   /**
    * World.obs on the wire, with `gone` as ticks since removal (or -1), so it survives the u16 tick
    * wrap: { hits, since, angle } per obstacle in play.

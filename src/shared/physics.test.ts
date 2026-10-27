@@ -12,8 +12,18 @@ import {
   TICK_HZ,
   W,
 } from './constants';
-import { PERIOD, ZA, ZN, fixed, obstacles } from './arena';
-import { clampPaddle, createWorld, skate, spawnPoint, step } from './physics';
+import { PERIOD, ZA, ZN, fixed, obstacles, swirl } from './arena';
+import {
+  FLING,
+  HOLD,
+  SWAY,
+  TURNS,
+  clampPaddle,
+  createWorld,
+  skate,
+  spawnPoint,
+  step,
+} from './physics';
 import type { Arena, Paddle, Team, World } from './types';
 
 const DT = 1 / TICK_HZ;
@@ -84,8 +94,11 @@ const speed = (w: World): number => Math.hypot(w.puck.vx, w.puck.vy);
 /** The obstacles the world stands among. */
 const obs = (w: World) => obstacles(w.arena, w.tick, w.size, w.count);
 
-/** Those in play: removed ones and their ghosts touch nothing. */
-const solid = (w: World) => obs(w).filter((_, i) => w.obs[i].gone < 0);
+/**
+ * Those in play (removed ones and their ghosts touch nothing), but for the whirlwind holding the
+ * puck: the puck turns inside it.
+ */
+const solid = (w: World) => obs(w).filter((_, i) => w.obs[i].gone < 0 && i != w.held);
 
 /**
  * How deep the puck sinks into a paddle or an obstacle in play, or a paddle into an obstacle in
@@ -116,6 +129,8 @@ describe('createWorld', () => {
       tick: 0,
       bumps: [],
       live: false,
+      held: -1,
+      left: 0,
       obs: Array(7).fill({ hits: 0, gone: -1, angle: 0 }),
       puck: { x: W / 2, y: H / 2, vx: 0, vy: 0 },
       paddles: [],
@@ -636,7 +651,7 @@ describe('ice arena', () => {
     expect(Math.abs(w.puck.x - lane.x)).toBeGreaterThan(lane.r);
   });
 
-  it.each(['ice', 'sea'] as Arena[])(
+  it.each(['ice', 'sea', 'desert'] as Arena[])(
     'keeps every invariant through a long scrambled game among the obstacles (%s)',
     arena => {
       let seed = 7;
@@ -702,6 +717,7 @@ describe('ice arena', () => {
       expect(still.still).toBeLessThan(TICK_HZ);
       expect(still.pinned).toBeLessThan(TICK_HZ / 10);
     },
+    20_000,
   );
 
   it('is not there in the classic arena', () => {
@@ -869,7 +885,9 @@ describe('a rink of size 2', () => {
   });
 
   it.each(
-    [3, 5, 7].flatMap(count => ['ice', 'sea'].map(arena => [count, arena] as [number, Arena])),
+    [3, 5, 7].flatMap(count =>
+      ['ice', 'sea', 'desert'].map(arena => [count, arena] as [number, Arena]),
+    ),
   )(
     'keeps every invariant through a long scrambled game among %i obstacles (%s)',
     (count, arena) => {
@@ -921,6 +939,7 @@ describe('a rink of size 2', () => {
       expect(still.still).toBeLessThan(TICK_HZ);
       expect(still.pinned).toBeLessThan(TICK_HZ / 10);
     },
+    20_000,
   );
 });
 
@@ -1257,6 +1276,328 @@ describe('sea arena', () => {
         [900, 100],
         [300, 900],
       ][i];
+      run(w, 480, () => expect(overlap(w)).toBeLessThan(1e-6), false);
+    }
+  });
+});
+
+describe('desert arena', () => {
+  /** Minimum speed of a puck leaving an obstacle (physics.ts). */
+  const KICK = 1000;
+  const desert = (x: number, y: number, vx = 0, vy = 0, paddles: Paddle[] = []): World =>
+    world(x, y, vx, vy, paddles, 'desert');
+  const [wind, mirror] = obstacles('desert', 0);
+  /** The puck 30 units left of the first whirlwind, heading at its centre at 300 units/s. */
+  const aim = (w: World) =>
+    Object.assign(w.puck, { x: wind.x - wind.r - PUCK_R - 30, y: wind.y, vx: 300, vy: 0 });
+  /** The whirlwind that held the puck last in hold. */
+  let by = -1;
+  /** Steps until the puck is caught, then until it is flung; the steps it was held. */
+  const hold = (w: World, host = true, each?: () => void): number => {
+    for (let i = 0; i < 120 && w.held < 0; i++) {
+      step(w, DT, host);
+    }
+    by = w.held;
+    let n = 0;
+    for (; w.held >= 0 && n < 1000; n++) {
+      step(w, DT, host);
+      each?.();
+    }
+    return n;
+  };
+
+  it('catches the puck, turns it in its sense deep in its eye, and flings it out at FLING', () => {
+    for (const [o, i] of [
+      [wind, 0],
+      [mirror, 1],
+    ] as const) {
+      const w = desert(o.x + (i ? 1 : -1) * (o.r + PUCK_R + 30), o.y, i ? -300 : 300);
+      for (let n = 0; n < 60 && w.held < 0; n++) {
+        step(w, DT);
+      }
+      expect(w.held).toBe(i);
+      expect(w.bumps).toEqual([i]);
+      expect(w.obs[i].hits).toBe(1);
+      expect(w.left).toBeGreaterThanOrEqual(HOLD - DT);
+      expect(w.left).toBeLessThanOrEqual(HOLD + SWAY);
+      const left = w.left;
+      let angle = Math.atan2(w.puck.y - o.y, w.puck.x - o.x);
+      let turned = 0;
+      let deep = 0;
+      const n = hold(w, true, () => {
+        const k = w.puck;
+        const r = Math.hypot(k.x - o.x, k.y - o.y);
+        const a = Math.atan2(k.y - o.y, k.x - o.x);
+        // Clockwise on screen (y down: the angle grows) left of the centre line, the other way on
+        // the right, TURNS a second.
+        const da = Math.atan2(Math.sin(a - angle), Math.cos(a - angle));
+        if (w.held >= 0) {
+          expect(da * swirl(o)).toBeCloseTo(TURNS * 2 * Math.PI * DT, 9);
+          expect(w.bumps).toEqual([]);
+        }
+        turned += Math.abs(da);
+        angle = a;
+        deep += +(r <= o.r - PUCK_R + 1e-9);
+        expect(r).toBeLessThanOrEqual(o.r + PUCK_R + 1 + 1e-9);
+      });
+      // Held as long as drawn, mostly deep in its eye.
+      expect(n).toBe(Math.ceil(left * TICK_HZ - 1e-9));
+      expect(deep).toBeGreaterThan(n * 0.7);
+      expect(turned / (2 * Math.PI)).toBeCloseTo(TURNS * (n / TICK_HZ), 1);
+      // Flung from just past its rim, along its circle, at FLING.
+      const k = w.puck;
+      const [nx, ny] = [(k.x - o.x) / (o.r + PUCK_R + 1), (k.y - o.y) / (o.r + PUCK_R + 1)];
+      expect(Math.hypot(k.x - o.x, k.y - o.y)).toBeCloseTo(o.r + PUCK_R + 1, 6);
+      expect(speed(w)).toBeCloseTo(FLING, 6);
+      expect(k.vx * nx + k.vy * ny).toBeCloseTo(0, 6);
+      expect((nx * k.vy - ny * k.vx) * swirl(o)).toBeGreaterThan(0);
+      // Then away from it, not caught again.
+      run(w, 20, () => expect(w.held).toBe(-1));
+      expect(Math.hypot(k.x - o.x, k.y - o.y)).toBeGreaterThan(o.r + PUCK_R + 50);
+    }
+  });
+
+  it('flings the puck in any direction: the hold is drawn from the seed and the tick of the catch', () => {
+    const sectors = new Set<number>();
+    const holds = new Set<number>();
+    for (let n = 0; n < 48; n++) {
+      const w = createWorld('desert', 1, 7, n);
+      w.live = true;
+      w.tick = n * 37;
+      // The whirlwind where this seed puts it.
+      const o = obstacles('desert', 0, 1, 7, n)[0];
+      Object.assign(w.puck, { x: o.x - o.r - PUCK_R - 30, y: o.y, vx: 300, vy: 0 });
+      holds.add(hold(w));
+      const a = Math.atan2(w.puck.vy, w.puck.vx);
+      sectors.add(Math.floor(((a + Math.PI) / (2 * Math.PI)) * 8) % 8);
+      expect(speed(w)).toBeCloseTo(FLING, 6);
+    }
+    expect(sectors.size).toBe(8);
+    expect(holds.size).toBeGreaterThan(30);
+    expect(Math.min(...holds)).toBeGreaterThanOrEqual(HOLD * TICK_HZ - 1);
+    expect(Math.max(...holds)).toBeLessThanOrEqual((HOLD + SWAY) * TICK_HZ + 1);
+  });
+
+  it('turns and flings the puck in mirror in mirrored whirlwinds: neither team is favoured', () => {
+    let seed = 11;
+    const rnd = (): number => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    let caught = 0;
+    for (const size of [1, 2]) {
+      const X = W * size;
+      // No centre genie (count 6): it wanders on its own, its mirror would not.
+      const all = obstacles('desert', 0, size, 6);
+      for (const [a, b] of [
+        [0, 1],
+        [2, 3],
+      ]) {
+        const o = all[a];
+        for (let n = 0; n < 12; n++) {
+          // From anywhere around it, at any speed, toward it more or less.
+          const th = rnd() * 2 * Math.PI;
+          const d = o.r + PUCK_R + 5 + rnd() * 30;
+          const v = 200 + rnd() * 2200;
+          const aimAt = th + Math.PI + (rnd() - 0.5);
+          const left = createWorld('desert', size, 6, 5);
+          const right = createWorld('desert', size, 6, 5);
+          left.live = right.live = true;
+          const k = {
+            x: o.x + d * Math.cos(th),
+            y: o.y + d * Math.sin(th),
+            vx: v * size * Math.cos(aimAt),
+            vy: v * size * Math.sin(aimAt),
+          };
+          Object.assign(left.puck, k);
+          Object.assign(right.puck, { ...k, x: X - k.x, vx: -k.vx });
+          let met = false;
+          for (let i = 0; i < 400; i++) {
+            step(left, DT, false);
+            step(right, DT, false);
+            met ||= left.held == a;
+            // Mirrored indices: the pairs swap.
+            const flip = (j: number) => [1, 0, 3, 2, 5, 4][j];
+            expect(right.bumps).toEqual(left.bumps.map(flip));
+            expect(right.held).toBe(left.held < 0 ? -1 : flip(left.held));
+            expect(right.puck.x).toBeCloseTo(X - left.puck.x, 6);
+            expect(right.puck.y).toBeCloseTo(left.puck.y, 6);
+            expect(right.puck.vx).toBeCloseTo(-left.puck.vx, 6);
+            expect(right.puck.vy).toBeCloseTo(left.puck.vy, 6);
+          }
+          expect(swirl(all[b], size)).toBe(-swirl(o, size));
+          caught += +met;
+        }
+      }
+    }
+    // Most throws meet it.
+    expect(caught).toBeGreaterThan(30);
+    expect(swirl(mirror)).toBe(-1);
+  });
+
+  it('always lets go: from any angle and speed, flung within HOLD + SWAY, at every size', () => {
+    for (const size of [1, Math.SQRT2, 2]) {
+      const all = obstacles('desert', 0, size, 7);
+      for (const i of [0, 1, 2, 3]) {
+        const o = all[i];
+        const D = o.r + PUCK_R;
+        for (let deg = 0; deg < 360; deg += 30) {
+          for (const v of [150, 1000, PUCK_MAX_SPEED]) {
+            for (const b of [-0.9, 0, 0.6]) {
+              const th = (deg * Math.PI) / 180;
+              const [ux, uy] = [-Math.cos(th), -Math.sin(th)];
+              const w = createWorld('desert', size, 7);
+              w.live = true;
+              // Another draw of the hold for every throw.
+              w.tick = deg * 7 + v;
+              Object.assign(w.puck, {
+                x: o.x - ux * (D + 12) - uy * b * D,
+                y: o.y - uy * (D + 12) + ux * b * D,
+                vx: ux * v * size,
+                vy: uy * v * size,
+              });
+              const n = hold(w, false);
+              if (Math.abs(b) < 0.9) {
+                expect(n).toBeGreaterThan(0);
+              }
+              expect(n).toBeLessThanOrEqual((HOLD + SWAY) * TICK_HZ + 1);
+              expect(w.held).toBe(-1);
+              if (n) {
+                // From the whirlwind that caught it: a deflected throw may reach another one.
+                const c = all[by];
+                // Less the drag of a later sub-step, on a bigger rink.
+                expect(speed(w)).toBeGreaterThan(FLING * size * 0.999);
+                expect(speed(w)).toBeLessThanOrEqual(FLING * size + 1e-6);
+                expect(Math.hypot(w.puck.x - c.x, w.puck.y - c.y)).toBeGreaterThan(c.r + PUCK_R);
+              }
+            }
+          }
+        }
+      }
+    }
+  }, 30_000);
+
+  it('keeps paddles off a caught puck: they go round it, never hit it', () => {
+    const p = paddle(0, wind.x - wind.r - 2 * PUCK_R - PADDLE_R - 10, wind.y);
+    [p.tx, p.ty] = [wind.x, wind.y];
+    const w = desert(wind.x - wind.r - PUCK_R - 5, wind.y, 0, 0, [p]);
+    // The paddle pushes the puck into the whirlwind, then chases it round the rim.
+    run(w, 30, () => expect(overlap(w)).toBeLessThan(0.1));
+    expect(w.held).toBe(0);
+    let t = 0;
+    hold(w, true, () => {
+      [p.tx, p.ty] = [w.puck.x, w.puck.y];
+      if (w.held >= 0) {
+        expect(w.hit).toBe(-1);
+        expect(overlap(w)).toBeLessThan(0.1);
+      }
+      t++;
+    });
+    expect(t).toBeGreaterThan(HOLD * TICK_HZ - 31);
+    // Pushed in again and again: it is caught and flung every time, never pinned.
+    const still = stillness();
+    [p.tx, p.ty] = [wind.x, wind.y];
+    run(w, 1200, () => {
+      still.see(w);
+      expect(overlap(w)).toBeLessThan(0.1);
+      expect(speed(w)).toBeLessThanOrEqual(PUCK_MAX_SPEED + 1e-6);
+    });
+    expect(still.pinned).toBeLessThan(TICK_HZ / 10);
+  });
+
+  it('predicts the catch and the fling as the host plays them, step for step', () => {
+    for (const [dx, dy] of [
+      [-1, 0],
+      [0, 1],
+      [1, -1],
+      [-1, 1],
+    ]) {
+      const host = desert(wind.x + dx * 150, wind.y + dy * 150, -dx * 900, -dy * 900);
+      const local = desert(wind.x + dx * 150, wind.y + dy * 150, -dx * 900, -dy * 900);
+      let met = false;
+      for (let i = 0; i < 500; i++) {
+        step(host, DT);
+        step(local, DT, false);
+        met ||= host.held == 0;
+        expect(local.puck).toEqual(host.puck);
+        expect([local.held, local.left]).toEqual([host.held, host.left]);
+      }
+      expect(met).toBe(true);
+      expect(host.obs[0].hits).toBeGreaterThanOrEqual(1);
+      expect(local.obs[0].hits).toBe(0);
+    }
+  });
+
+  it(`breaks a whirlwind like an iceberg, on its ${ICEBERG_HP}th catch: the puck flies off at once`, () => {
+    const w = desert(0, 0);
+    for (let n = 1; n <= ICEBERG_HP; n++) {
+      aim(w);
+      const held = hold(w);
+      expect(w.obs[0].hits).toBe(n);
+      if (n < ICEBERG_HP) {
+        expect(held).toBeGreaterThan(HOLD * TICK_HZ - 1);
+        expect(w.obs[0].gone).toBe(-1);
+      } else {
+        // Gone on the tick the catch lands on: let go on the next step, at FLING.
+        expect(held).toBe(1);
+        expect(w.obs[0].gone).toBe(w.tick - 1);
+        expect(speed(w)).toBeCloseTo(FLING, 6);
+      }
+      expect(w.obs[0].angle).toBeCloseTo(0, 9);
+    }
+    // Gone: the puck slides straight through where it stood.
+    Object.assign(w.puck, { x: wind.x - wind.r - PUCK_R - 30, y: wind.y, vx: 1200, vy: 0 });
+    run(w, 60, () => expect([w.bumps, w.held]).toEqual([[], -1]));
+    expect(w.puck.x).toBeGreaterThan(wind.x + wind.r);
+    expect(w.puck.vy).toBe(0);
+    // Back RESPAWN ticks after its removal, intact: it catches the puck again.
+    w.tick = w.obs[0].gone + RESPAWN - 1;
+    step(w, DT);
+    expect(w.obs[0]).toMatchObject({ hits: 0, gone: -1 });
+    aim(w);
+    expect(hold(w)).toBeGreaterThan(HOLD * TICK_HZ - 1);
+    expect(w.obs[0]).toMatchObject({ hits: 1, gone: -1 });
+  });
+
+  it('shoots a genie out on the first hit, like a penguin: a bounce and the kick, and brings it back', () => {
+    for (const t of [100, 900, 1700, 3000]) {
+      const w = desert(0, 0);
+      w.tick = t;
+      // At the centre genie where it will be in a few steps, from the side with more room.
+      const g = obstacles('desert', t + 8)[5];
+      const s = g.y > H / 2 ? -1 : 1;
+      Object.assign(w.puck, { x: g.x, y: g.y + s * (g.r + PUCK_R + 15), vx: 0, vy: -s * 1500 });
+      run(w, 60, () => {
+        if (w.bumps.length) {
+          expect(w.bumps).toEqual([5]);
+          expect(w.held).toBe(-1);
+          expect(w.puck.vy * s).toBeGreaterThan(0);
+          expect(speed(w)).toBeGreaterThanOrEqual(KICK - 1e-6);
+        }
+      });
+      expect(obs(w)[5].kind).toBe('genie');
+      expect(w.obs[5].hits).toBe(1);
+      const gone = w.obs[5].gone;
+      expect(gone).toBeGreaterThan(t);
+      expect(gone).toBeLessThan(w.tick);
+      // Back in play RESPAWN ticks after, intact (the puck put away, out of its way).
+      Object.assign(w.puck, { x: 100, y: 100, vx: 0, vy: 0 });
+      w.tick = gone + RESPAWN - 1;
+      step(w, DT);
+      expect(w.obs[5]).toMatchObject({ hits: 0, gone: -1 });
+    }
+  });
+
+  it('makes paddles slide around whirlwinds and genies, never into them', () => {
+    const p = paddle(0, 100, H / 2);
+    const w = desert(W / 2, H - 100, 0, 0, [p]);
+    for (const [tx, ty] of [
+      [wind.x, wind.y],
+      [720, H / 2],
+      [900, 100],
+      [300, 900],
+    ]) {
+      [p.tx, p.ty] = [tx, ty];
       run(w, 480, () => expect(overlap(w)).toBeLessThan(1e-6), false);
     }
   });
