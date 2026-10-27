@@ -4,7 +4,7 @@
 // the defender nearest the goal does; the puck goes through the others (see solid). Obstacles are
 // kinematic too: they push both, and kick the puck away like pinball bumpers, but for those that
 // grab it: a whirlwind spins it round and flings it out, a vortex sucks it under and lets it up
-// elsewhere, a shark eats it and spits it at whoever touched it last (see twirl). The host's puck
+// elsewhere, a shark eats it and spits it out in a random direction (see twirl). The host's puck
 // breaks them (see bump): a removed obstacle touches nothing until it comes back, RESPAWN ticks
 // later.
 // The rink is W · s × H · s for the world's size s: goals, serve spots and top speeds scale with
@@ -214,7 +214,8 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
  *   last one): anywhere on the rink but within SHORE of a goal line, in mirror for a vortex right
  *   of the centre line.
  * - a shark keeps it in its belly, at its centre, then spits it at FLING · size from just past
- *   its rim toward the paddle that touched it last (w.last), or ahead if that one left.
+ *   its rim in a direction drawn from the seed and the u16 tick: aimed at a player, it would set
+ *   two of them shooting it back and forth through the shark.
  * Its velocity follows its motion, for drawing between steps.
  */
 const twirl = (w: World, obs: Obstacle[], dt: number): void => {
@@ -251,8 +252,8 @@ const twirl = (w: World, obs: Obstacle[], dt: number): void => {
   w.held = -1;
   k.vx = -Math.sin(a) * d * FLING * s;
   k.vy = Math.cos(a) * d * FLING * s;
+  const t = (w.tick & 0xffff) * 10;
   if (o.kind == 'vortex') {
-    const t = (w.tick & 0xffff) * 10;
     for (let j = 0; j < 10; j += 2) {
       k.x = (SHORE + (W - 2 * SHORE) * draw(w.seed, t + j)) * s;
       k.x = d > 0 ? k.x : W * s - k.x;
@@ -264,12 +265,11 @@ const twirl = (w: World, obs: Obstacle[], dt: number): void => {
     k.vx = k.vy = 0;
   }
   if (o.kind == 'shark') {
-    const p = w.paddles.find(p => p.id == w.last);
-    const [ux, uy] = p ? [p.x - o.x, p.y - o.y] : [o.vx, o.vy];
-    const l = Math.hypot(ux, uy) || 1;
-    put(k, o.x + (ux / l) * (o.r + PUCK_R + 1), o.y + (uy / l) * (o.r + PUCK_R + 1), s);
-    k.vx = (ux / l) * FLING * s;
-    k.vy = (uy / l) * FLING * s;
+    const b = 2 * Math.PI * draw(w.seed, t);
+    const [ux, uy] = [Math.cos(b), Math.sin(b)];
+    put(k, o.x + ux * (o.r + PUCK_R + 1), o.y + uy * (o.r + PUCK_R + 1), s);
+    k.vx = ux * FLING * s;
+    k.vy = uy * FLING * s;
   }
 };
 
@@ -288,7 +288,6 @@ export const createWorld = (arena: Arena = 'ice', size = 1, count = 7, seed = 0)
   live: false,
   held: -1,
   left: 0,
-  last: -1,
   obs: obstacles(arena, 0, size, count, seed).map(() => ({ hits: 0, gone: -1, angle: 0 })),
   puck: { x: (W * size) / 2, y: (H * size) / 2, vx: 0, vy: 0 },
   paddles: [],
@@ -519,7 +518,7 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
   // A paddle touch puts a served puck in play: from now on the obstacles bounce it.
   w.live ||= hit != -1;
   if (hit != -1) {
-    w.hit = w.last = hit;
+    w.hit = hit;
   }
   bump(w, obs, was);
 
@@ -532,7 +531,7 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
   for (let n = 0; n < 4; n++) {
     for (const p of solid(w.paddles, s)) {
       if (out(p, k, RR, place, s)) {
-        w.hit = w.last = p.id;
+        w.hit = p.id;
         w.live = true;
         avoid(p, w, obs);
         out(k, p, RR, put, s);

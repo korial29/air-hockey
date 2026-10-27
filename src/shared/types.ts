@@ -95,8 +95,6 @@ export interface World {
   held: number;
   /** Seconds until it lets go. */
   left: number;
-  /** Id of the paddle that touched the puck last, -1 before any: a shark spits the puck at it. */
-  last: number;
   /**
    * State of each obstacle in play, indexed like obstacles(arena, tick, size, count, seed).
    * Reset at round start (every obstacle back, intact).
@@ -172,8 +170,6 @@ export interface Snapshot {
   /** World.held and World.left: the obstacle holding the puck and for how long still. */
   held?: number;
   left?: number;
-  /** World.last: the paddle a shark spits the puck at. */
-  last?: number;
   /**
    * World.obs on the wire, with `gone` as ticks since removal (or -1), so it survives the u16 tick
    * wrap: { hits, since, angle } per obstacle in play.

@@ -115,12 +115,9 @@ describe('snapshot frames', () => {
     });
   });
 
-  it('carry what holds the puck, with the live flag, its time left to the ms, and the last toucher', () => {
+  it('carry what holds the puck, with the live flag and its time left to the ms', () => {
     const out = decodeSnapshot(encodeSnapshot(snapshot))!;
-    expect([out.held, out.left, out.last]).toEqual([-1, 0, -1]);
-    for (const last of [-1, 0, 15, 254]) {
-      expect(decodeSnapshot(encodeSnapshot({ ...snapshot, last }))!.last).toBe(last);
-    }
+    expect([out.held, out.left]).toEqual([-1, 0]);
     for (const held of [-1, 0, 3, 6]) {
       for (const live of [false, true]) {
         const s = decodeSnapshot(encodeSnapshot({ ...snapshot, live, held, left: 1.2345 }))!;
@@ -131,7 +128,7 @@ describe('snapshot frames', () => {
 
   it('carry an empty paddle list and no obstacles in 19 bytes', () => {
     const buf = encodeSnapshot({ ...snapshot, paddles: [] });
-    expect(buf.byteLength).toBe(19);
+    expect(buf.byteLength).toBe(18);
     expect(decodeSnapshot(buf)).toMatchObject({ paddles: [], obs: [] });
   });
 
@@ -146,7 +143,7 @@ describe('snapshot frames', () => {
       { hits: 1, since: 17, angle: 6.2 },
     ];
     const buf = encodeSnapshot({ ...snapshot, obs });
-    expect(buf.byteLength).toBe(18 + 3 * 5 + 1 + 7 * 4);
+    expect(buf.byteLength).toBe(17 + 3 * 5 + 1 + 7 * 4);
     const out = decodeSnapshot(buf)!;
     expect(out.paddles.map(p => p.id)).toEqual([1, 7, 255]);
     expect(out.obs!.map(({ hits, since }) => [hits, since])).toEqual(
@@ -220,7 +217,7 @@ describe('snapshot frames', () => {
     expect(decodeSnapshot(withObs.buffer)).not.toBeNull();
     expect(decodeSnapshot(withObs.slice(0, -1).buffer)).toBeNull();
     const wrongObs = withObs.slice();
-    wrongObs[18 + 3 * 5] = 2;
+    wrongObs[17 + 3 * 5] = 2;
     expect(decodeSnapshot(wrongObs.buffer)).toBeNull();
     expect(decodeSnapshot(encodeInput(1, 2))).toBeNull();
   });
