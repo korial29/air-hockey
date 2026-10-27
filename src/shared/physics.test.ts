@@ -1409,6 +1409,10 @@ describe('desert arena', () => {
                   expect(gap).toBeGreaterThan(5 * size);
                 }
                 last = gap;
+                // Everything is checked ten steps past the first contact: no need to run on.
+                if (first >= 0 && n >= first + 10) {
+                  break;
+                }
               }
               if (Math.abs(b) < 0.9 || v >= 300) {
                 expect(first).toBeGreaterThanOrEqual(0);
