@@ -1,12 +1,15 @@
 import { airHockey } from '../src/client';
 import type { AirHockey } from '../src/client';
 import { localSocket } from '../src/local';
+import type { Arena } from '../src/shared/types';
 
 const q = new URLSearchParams(location.search);
-// ?goals=2&rounds=1 shortens local matches (the host tab's values win).
-const rules = Object.fromEntries(
-  ['goals', 'rounds'].filter(k => q.has(k)).map(k => [k, Number(q.get(k))]),
-);
+// ?goals=2&rounds=1 shortens local matches, ?arena=desert (or ice,sea,…) picks the scenes (the
+// host tab's values win).
+const rules = {
+  ...Object.fromEntries(['goals', 'rounds'].filter(k => q.has(k)).map(k => [k, Number(q.get(k))])),
+  ...(q.has('arena') ? { arena: q.get('arena')!.split(',') as Arena[] } : {}),
+};
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const form = $<HTMLFormElement>('form');

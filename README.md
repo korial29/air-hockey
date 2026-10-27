@@ -216,7 +216,7 @@ npm run build        # dist/: client, local, server, types
 npm run size         # gzip budgets
 ```
 
-The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=` from its URL, which makes testing several players in several tabs quick.
+The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=`, `?rounds=` and `?arena=` (for example `desert`, or `ice,sea`) from its URL, which makes testing several players in several tabs quick.
 
 Pull requests need one release label (`release:major`, `release:minor`, `release:patch` or `release:skip`); merging one into `master` proposes the matching npm release. See [`.github/CI.md`](.github/CI.md).
 
