@@ -1,9 +1,9 @@
 import { obstacles } from '../shared/arena';
 import { GHOST, INTERP_DELAY, PADDLE_R, PUCK_R, RESPAWN, W } from '../shared/constants';
-import { clampPaddle } from '../shared/physics';
+import { clampPaddle, solid } from '../shared/physics';
 import { decodeSnapshot, encodeInput, parseText } from '../shared/protocol';
 import type { ServerText } from '../shared/protocol';
-import type { PlayerInfo, SocketLike } from '../shared/types';
+import type { PlayerInfo, SocketLike, Team } from '../shared/types';
 import { predict, rebase, reset, view } from './predict';
 import {
   beacon,
@@ -289,11 +289,21 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
           ruby(x, y, pr * 0.78);
         }
       }
+      // The extra defenders in a crease are ghosts the puck goes through: see-through.
+      const firm = solid(
+        s.paddles.map(p => ({
+          ...p,
+          team: (players.get(p.id)?.team ?? +(p.x > (W * size) / 2)) as Team,
+        })),
+        size,
+      ).map(p => p.id);
       for (const p of s.paddles) {
         const info = players.get(p.id);
         const { x, y } = p;
+        c.globalAlpha = firm.includes(p.id) ? 1 : 0.35;
         circle(x, y, dr, info?.color ?? '#888');
         circle(x, y, dr / 2, '#0003');
+        c.globalAlpha = 1;
         // Above the paddle, or below it against the top wall. At sea, over a dark shadow; dark on
         // the sand.
         const ny = y < dr + g ? y + dr + g / 2 : y - dr - g / 2;

@@ -2,7 +2,7 @@
 // end-of-match stadium. The rink grows with the players (World.size): the world (obstacles, puck,
 // paddles) is drawn in world units, W · size × H · size, under a transform scaled by 1 / size,
 // while the rink picture, the snow, the veils and the HUD stay in base units.
-import { GHOST, GOAL, H, PUCK_R, RESPAWN, TICK_HZ, W } from '../shared/constants';
+import { CREASE, GHOST, GOAL, H, PUCK_R, RESPAWN, TICK_HZ, W } from '../shared/constants';
 import type { Obstacle, PlayerInfo, Rank, Snapshot, Team } from '../shared/types';
 import type { MatchState } from './index';
 import { BOT, CH, TOP, byTeam, flow, podium, rnd, shown } from './util';
@@ -463,8 +463,8 @@ const paint = (arena: string) => {
     circle(x, y, 12, ICE_LINE);
   }
   for (const x of [0, W]) {
-    circle(x, H / 2, GOAL / 2 + 20, '#5aa8e833');
-    ring(x, H / 2, GOAL / 2 + 20, ICE_LINE, 6);
+    circle(x, H / 2, CREASE, '#5aa8e833');
+    ring(x, H / 2, CREASE, ICE_LINE, 6);
   }
   c.restore();
   // Boards, open at the goal mouths; nets with a red frame open toward the rink.
@@ -491,7 +491,9 @@ const paint = (arena: string) => {
 const cache = new WeakMap<object, [string, HTMLCanvasElement]>();
 
 /**
- * Draws the rink of an arena (scene), in base rink coordinates, k canvas pixels per unit. Its
+ * Draws the rink of an arena (scene), in base rink coordinates, k canvas pixels per unit, with
+ * the creases in front of the goals (see solid in physics.ts): CREASE world units, as many base
+ * units on any rink size. Its
  * full-size gradients cost more than the rest of the frame: it is painted once per arena, canvas
  * size and rink size, then copied. Scenes taking turns between rounds repaint it.
  */
@@ -506,6 +508,16 @@ export const rink = (arena: string, k: number) => {
     c = img.getContext('2d')!;
     c.scale(k, k);
     paint(arena);
+    if (arena != 'ice') {
+      // The creases (the ice paints its own): a light half-disc, dashed.
+      clip();
+      c.setLineDash([24, 18]);
+      for (const x of [0, W]) {
+        circle(x, H / 2, CREASE, '#ffffff14');
+        ring(x, H / 2, CREASE, '#fff6', 5);
+      }
+      c.restore();
+    }
     c = ctx;
     cache.set(c, [key, img]);
   }

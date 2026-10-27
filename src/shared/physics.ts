@@ -1,14 +1,17 @@
 // Fixed-step physics, shared by the host (authoritative) and the client (paddle prediction).
 // Paddles are kinematic (infinite mass): they push the puck, the puck never pushes them,
-// except when it is pinned against a wall (see the last pass of `step`). Obstacles are kinematic
-// too: they push both, and kick the puck away like pinball bumpers, but for those that grab it: a
-// whirlwind spins it round and flings it out, a vortex sucks it under and lets it up elsewhere, a
-// shark eats it and spits it at whoever touched it last (see twirl). The host's puck breaks them (see bump): a
-// removed obstacle touches nothing until it comes back, RESPAWN ticks later.
+// except when it is pinned against a wall (see the last pass of `step`). In a crowded crease only
+// the defender nearest the goal does; the puck goes through the others (see solid). Obstacles are
+// kinematic too: they push both, and kick the puck away like pinball bumpers, but for those that
+// grab it: a whirlwind spins it round and flings it out, a vortex sucks it under and lets it up
+// elsewhere, a shark eats it and spits it at whoever touched it last (see twirl). The host's puck
+// breaks them (see bump): a removed obstacle touches nothing until it comes back, RESPAWN ticks
+// later.
 // The rink is W · s × H · s for the world's size s: goals, serve spots and top speeds scale with
 // it, the radii do not.
 import { draw, fixed, obstacles, swirl } from './arena';
 import {
+  CREASE,
   GOAL,
   H,
   ICEBERG_HP,
@@ -54,6 +57,29 @@ const RR = PUCK_R + PADDLE_R;
 const cl = (v: number, a: number, b: number): number => (v < a ? a : v > b ? b : v);
 /** Bounces a velocity component off a wall whose inward direction is `n` (+1 or -1). */
 const bounce = (v: number, n: number): number => (v * n < 0 ? -v * E : v);
+
+/**
+ * The paddles the puck meets, on a rink of that size. In the crease of its own goal (CREASE ·
+ * size round the middle of the mouth) only the paddle nearest the goal stops the puck, the lower
+ * id on a tie: the others there are ghosts it goes through, so a wall of defenders cannot shut
+ * the goal. Outside the crease every paddle is solid. From positions alone: host and prediction
+ * agree.
+ */
+export const solid = <T extends Pick<Paddle, 'id' | 'team' | 'x' | 'y'>>(
+  ps: T[],
+  size = 1,
+): T[] => {
+  const d = (p: T) => Math.hypot(p.x - p.team * W * size, p.y - (H * size) / 2);
+  const inside = (p: T) => d(p) <= CREASE * size;
+  return ps.filter(
+    p =>
+      !inside(p) ||
+      !ps.some(
+        q =>
+          q != p && q.team == p.team && inside(q) && (d(q) < d(p) || (d(q) == d(p) && q.id < p.id)),
+      ),
+  );
+};
 
 /** Clamps a paddle centre to its team's half and inside the walls of a rink of that size. */
 export const clampPaddle = (team: Team, x: number, y: number, size = 1): [number, number] => {
@@ -390,13 +416,15 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
   let goal: Team | -1 = -1;
 
   w.paddles.forEach(p => drive(p, w, obs, dt));
+  // Where they stand now: a crowded crease leaves one of them solid.
+  const ps = solid(w.paddles, s);
   // Grabbed, it only goes where its holder takes it, out of reach: paddles go round it. Let go,
   // it plays on from where it was left, this very sub-step.
   if (w.held >= 0) {
     twirl(w, obs, dt);
   }
   if (w.held >= 0) {
-    w.paddles.forEach(p => out(p, k, RR, place, s) && avoid(p, w, obs));
+    ps.forEach(p => out(p, k, RR, place, s) && avoid(p, w, obs));
     return -1;
   }
 
@@ -406,8 +434,9 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
   k.x += k.vx * dt;
   k.y += k.vy * dt;
 
-  // Paddle hits: push the puck out along the normal, bounce on the relative velocity.
-  for (const p of w.paddles) {
+  // Paddle hits: push the puck out along the normal, bounce on the relative velocity. Ghosts in a
+  // crease let it through.
+  for (const p of ps) {
     let nx = k.x - p.x;
     let ny = k.y - p.y;
     let d = Math.hypot(nx, ny);
@@ -500,7 +529,7 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
   // obstacles push the puck out again. Four passes leave < 0.1 units of overlap with 6 paddles,
   // under a unit in a rare 16-paddle scrum against an obstacle.
   for (let n = 0; n < 4; n++) {
-    for (const p of w.paddles) {
+    for (const p of ps) {
       if (out(p, k, RR, place, s)) {
         w.hit = w.last = p.id;
         w.live = true;
