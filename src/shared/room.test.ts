@@ -703,9 +703,9 @@ describe('Room tournament', () => {
     ticks(BREAK);
     expect(lastMatch(a)).toMatchObject({ phase: 'ready', round: 2 });
     expect(snap(a).obs).toEqual([
-      { hits: 0, since: -1, angle: 0 },
-      { hits: 0, since: -1, angle: 0 },
-      { hits: 0, since: -1, angle: 0 },
+      { hits: 0, since: -1, angle: 0, times: 0 },
+      { hits: 0, since: -1, angle: 0, times: 0 },
+      { hits: 0, since: -1, angle: 0, times: 0 },
     ]);
   });
 
@@ -1087,7 +1087,7 @@ describe('Room tournament', () => {
       expect(lastMatch(a)).toMatchObject({ phase: 'ready', round: 1, size: Math.SQRT2, count: 4 });
       expect(rink(c)).toEqual([Math.SQRT2, 4]);
       // As many obstacle states as obstacles on the new rink, all of them intact.
-      expect(snap(a).obs).toEqual(Array(4).fill({ hits: 0, since: -1, angle: 0 }));
+      expect(snap(a).obs).toEqual(Array(4).fill({ hits: 0, since: -1, angle: 0, times: 0 }));
       expect(snap(a).paddles.map(p => [p.x, p.y])).toEqual(
         [
           [400, 100],

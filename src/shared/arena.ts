@@ -123,9 +123,17 @@ export const swirl = (o: Obstacle, size = 1): 1 | -1 => (o.x < (W * size) / 2 ? 
  *
  * `seed` (an integer, picked by the host each round) places the icebergs (vortices, whirlwinds)
  * across the width, each pair in its band (see BERGS), and draws the genies' waypoints; 0 keeps
- * the fixed layout of the icebergs.
+ * the fixed layout of the icebergs. `times[i]` (ObstacleState.times): each time iceberg i comes
+ * back, it takes a new place in its band, its own: the pair is in mirror only until one breaks.
  */
-export const obstacles = (arena: Arena, t: number, size = 1, count = 7, seed = 0): Obstacle[] => {
+export const obstacles = (
+  arena: Arena,
+  t: number,
+  size = 1,
+  count = 7,
+  seed = 0,
+  times: (number | undefined)[] = [],
+): Obstacle[] => {
   const sea = arena == 'sea';
   const [still, mover] = (
     { sea: ['vortex', 'shark'], desert: ['whirlwind', 'genie'] } as Record<
@@ -141,14 +149,18 @@ export const obstacles = (arena: Arena, t: number, size = 1, count = 7, seed = 0
     ? []
     : [
         ...BERGS.flatMap(([x, r, a, b, y], i) =>
-          [x, W - x].map((x): Obstacle => ({
-            kind: still,
-            x,
-            y: seed ? a + (b - a) * draw(seed, i) : y,
-            r,
-            vx: 0,
-            vy: 0,
-          })),
+          [x, W - x].map((x, j): Obstacle => {
+            const n = times[2 * i + j];
+            return {
+              kind: still,
+              x,
+              // Draws past those of the hold and the vortex (the u16 tick · 10 + 9 at most).
+              y: seed ? a + (b - a) * draw(seed, n ? 1e6 + 8 * n + 2 * i + j : i) : y,
+              r,
+              vx: 0,
+              vy: 0,
+            };
+          }),
         ),
         ...LANES.map(([x, phase, m]): Obstacle => {
           if (arena == 'desert') {

@@ -150,6 +150,9 @@ const clear = (w: World, obs: Obstacle[], x: number, y: number): boolean =>
 /** Whether obstacle i is out of play (removed, ghost included): it touches nothing. */
 const off = (w: World, i: number): boolean => (w.obs[i]?.gone ?? -1) >= 0;
 
+/** Times each obstacle was removed this round: where the icebergs stand (see obstacles). */
+const times = (w: World) => w.obs.map(o => o.times);
+
 /**
  * Puck against the obstacles in play: out of them, bounce on the relative velocity (penguins,
  * sharks and genies move), then the kick: it leaves at KICK · size at least, the push added along
@@ -198,6 +201,7 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
         st.angle = Math.atan2(-ny, -nx);
         if (o.kind != 'shark' && ++st.hits >= (fixed(o) ? ICEBERG_HP : 1)) {
           st.gone = w.tick + 1;
+          st.times = ((st.times ?? 0) + 1) & 255;
         }
       }
     }
@@ -341,7 +345,7 @@ export const step = (w: World, dt: number, host = true): Team | -1 => {
   w.bumps = [];
   let goal: Team | -1 = -1;
   const n = Math.ceil(w.size);
-  const at = (i: number) => obstacles(w.arena, w.tick + i / n, w.size, w.count, w.seed);
+  const at = (i: number) => obstacles(w.arena, w.tick + i / n, w.size, w.count, w.seed, times(w));
   if (dt > 0) {
     at(1).forEach((o, i) => {
       const st = w.obs[i];
@@ -391,7 +395,7 @@ const drive = (p: Paddle, w: World, obs: Obstacle[], dt: number): void => {
  */
 export const skate = (w: World, dt: number): void => {
   const n = Math.ceil(w.size);
-  const obs = obstacles(w.arena, w.tick, w.size, w.count, w.seed);
+  const obs = obstacles(w.arena, w.tick, w.size, w.count, w.seed, times(w));
   for (let i = 0; i < n; i++) {
     for (const p of w.paddles) {
       drive(p, w, obs, dt / n);

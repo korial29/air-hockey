@@ -146,11 +146,7 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
     Object.assign(k, n);
   }
   // The host's obstacles, in any case: what it removed lets the local puck through at once.
-  w.obs = (s.obs ?? []).map(({ hits, since, angle }) => ({
-    hits,
-    gone: since < 0 ? -1 : w.tick - since,
-    angle,
-  }));
+  w.obs = (s.obs ?? []).map(({ since, ...o }) => ({ ...o, gone: since < 0 ? -1 : w.tick - since }));
 };
 
 /**
@@ -221,10 +217,6 @@ export const view = (
     puck: { ...k, x, y },
     held: w.held,
     paddles: s.paddles.map(q => (q.id == me?.id ? me : q)),
-    obs: w.obs.map(({ hits, gone, angle }) => ({
-      hits,
-      since: gone < 0 ? -1 : w.tick - gone + f,
-      angle,
-    })),
+    obs: w.obs.map(({ gone, ...o }) => ({ ...o, since: gone < 0 ? -1 : w.tick - gone + f })),
   };
 };

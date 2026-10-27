@@ -96,7 +96,15 @@ const run = (w: World, n: number, each?: () => void, host = true): number => {
 const speed = (w: World): number => Math.hypot(w.puck.vx, w.puck.vy);
 
 /** The obstacles the world stands among. */
-const obs = (w: World) => obstacles(w.arena, w.tick, w.size, w.count, w.seed);
+const obs = (w: World) =>
+  obstacles(
+    w.arena,
+    w.tick,
+    w.size,
+    w.count,
+    w.seed,
+    w.obs.map(o => o.times),
+  );
 
 /**
  * Those in play (removed ones and their ghosts touch nothing), but for the whirlwind holding the
@@ -1054,8 +1062,9 @@ describe('breakable obstacles', () => {
       expect(w.obs[0].hits).toBe(n);
       // Hit head-on from the left: sent right.
       expect(w.obs[0].angle).toBeCloseTo(0, 9);
-      // Removed at the tick of the step that broke it.
+      // Removed at the tick of the step that broke it, counted: it comes back elsewhere.
       expect(w.obs[0].gone).toBe(n < ICEBERG_HP ? -1 : at);
+      expect(w.obs[0].times).toBe(n < ICEBERG_HP ? undefined : 1);
     }
     // Gone: the puck slides straight through where it stood.
     Object.assign(w.puck, { x: berg.x - berg.r - PUCK_R - 30, y: berg.y, vx: 1200, vy: 0 });
@@ -1140,6 +1149,23 @@ describe('breakable obstacles', () => {
     expect(w.obs[0]).toMatchObject({ hits: 0, gone: -1 });
     expect(shoot(w)[0]).toEqual([[0]]);
     expect(w.obs[0]).toMatchObject({ hits: 1, gone: -1 });
+  });
+
+  it('brings a broken iceberg back elsewhere in its band, where its ghost stood, for good', () => {
+    const w = ice(0, 0);
+    w.seed = 7;
+    const [a, b] = obs(w);
+    w.obs[0] = { hits: ICEBERG_HP, gone: 50, angle: 1, times: 1 };
+    w.tick = 60;
+    const ghost = obs(w)[0];
+    expect(ghost.y).not.toBe(a.y);
+    expect([ghost.x, ghost.r]).toEqual([a.x, a.r]);
+    // Its mirror stays: the pair is in mirror only until one breaks.
+    expect(obs(w)[1]).toEqual(b);
+    w.tick = 50 + RESPAWN - 1;
+    step(w, DT);
+    expect(w.obs[0]).toMatchObject({ hits: 0, gone: -1, times: 1 });
+    expect(obs(w)[0]).toEqual(ghost);
   });
 
   it('pushes a puck and a paddle out of an obstacle that comes back on them: no kick, no damage', () => {

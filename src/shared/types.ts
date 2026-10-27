@@ -63,6 +63,11 @@ export interface ObstacleState {
   gone: number;
   /** Direction the puck sent it, radians: a shot-out penguin flies this way. */
   angle: number;
+  /**
+   * Times it was removed this round (absent: 0), up to 255 then 0 again: an iceberg (vortex,
+   * whirlwind) comes back somewhere else in its band each time (see obstacles in arena.ts).
+   */
+  times?: number;
 }
 
 export interface World {
@@ -174,7 +179,7 @@ export interface Snapshot {
    * World.obs on the wire, with `gone` as ticks since removal (or -1), so it survives the u16 tick
    * wrap: { hits, since, angle } per obstacle in play.
    */
-  obs?: { hits: number; since: number; angle: number }[];
+  obs?: { hits: number; since: number; angle: number; times?: number }[];
 }
 
 /**

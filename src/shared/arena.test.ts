@@ -839,6 +839,36 @@ describe('icebergs (vortices) across the width', () => {
     expect(corr / SEEDS.length).toBeLessThan(0.6);
   });
 
+  it('moves an iceberg to a new place of its band each time it comes back, its mirror staying', () => {
+    for (const { size, count } of ALL) {
+      for (const seed of SEEDS.slice(0, 100)) {
+        const a = obstacles('ice', 0, size, count, seed);
+        // Absent or 0: the round's place, the pair in mirror.
+        expect(obstacles('ice', 0, size, count, seed, [0, undefined, 0])).toEqual(a);
+        a.filter(fixed).forEach((_, i) => {
+          const ys = new Set<number>();
+          for (let n = 1; n < 6; n++) {
+            const times = [];
+            times[i] = n;
+            const b = obstacles('ice', 0, size, count, seed, times);
+            // Only that one moves, along y, within its band.
+            b.forEach((o, j) =>
+              expect({ ...o, y: +(j == i) || o.y }).toEqual({ ...a[j], y: +(j == i) || a[j].y }),
+            );
+            const [lo, hi] = BANDS[i >> 1];
+            expect(b[i].y / size).toBeGreaterThanOrEqual(lo - 1e-9);
+            expect(b[i].y / size).toBeLessThanOrEqual(hi + 1e-9);
+            ys.add(b[i].y);
+          }
+          // A new place each time.
+          expect(ys.size).toBe(5);
+        });
+      }
+    }
+    // Seed 0: the fixed layout, whatever the count.
+    expect(obstacles('ice', 0, 1, 7, 0, [3, 1])).toEqual(obstacles('ice', 0));
+  });
+
   it.each(['ice', 'sea', 'desert'] as Arena[])(
     'keeps every guarantee for any seed at every count and size (%s)',
     arena => {

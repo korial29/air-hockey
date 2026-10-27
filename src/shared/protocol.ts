@@ -67,11 +67,11 @@ export const decodeInput = (buf: ArrayBuffer): { x: number; y: number } | null =
 
 // [type u8][tick u16][score0 u8][score1 u8][puckX u16][puckY u16][count u8][flags u8]
 // [puckVx i16][puckVy i16][left u16, ms] then count × [id u8][x u16][y u16]
-// then [obs u8] then obs × [hits u8][since u16][angle u8]: since 0xffff while in play, else capped
-// at 0xfffe; angle in 256ths of a turn, decoded in [0, 2π).
+// then [obs u8] then obs × [hits u8][since u16][angle u8][times u8]: since 0xffff while in play,
+// else capped at 0xfffe; angle in 256ths of a turn, decoded in [0, 2π).
 const SNAP_HEAD = 17;
 const SNAP_PADDLE = 5;
-const SNAP_OB = 4;
+const SNAP_OB = 5;
 const TURN = 2 * Math.PI;
 
 export const encodeSnapshot = (s: Snapshot): ArrayBuffer => {
@@ -98,11 +98,12 @@ export const encodeSnapshot = (s: Snapshot): ArrayBuffer => {
     v.setUint16(o + 3, toWire(p.y));
   });
   v.setUint8(o, obs.length);
-  obs.forEach(({ hits, since, angle }, i) => {
+  obs.forEach(({ hits, since, angle, times = 0 }, i) => {
     const b = o + 1 + i * SNAP_OB;
     v.setUint8(b, Math.min(255, hits));
     v.setUint16(b + 1, since < 0 ? 0xffff : Math.min(0xfffe, since));
     v.setUint8(b + 3, Math.round((angle / TURN) * 256) & 255);
+    v.setUint8(b + 4, times);
   });
   return v.buffer;
 };
@@ -134,6 +135,7 @@ export const decodeSnapshot = (buf: ArrayBuffer): Snapshot | null => {
       hits: v.getUint8(b),
       since: since == 0xffff ? -1 : since,
       angle: (v.getUint8(b + 3) / 256) * TURN,
+      times: v.getUint8(b + 4),
     });
   }
   return {
