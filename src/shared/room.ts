@@ -1,6 +1,6 @@
 import { layout, scene } from './arena';
 import { MAX_NAME, MAX_PLAYERS, RULES, SNAP_EVERY, TICK_HZ } from './constants';
-import { clampPaddle, createWorld, skate, spawnPoint, step } from './physics';
+import { clampPaddle, createWorld, skate, spawnPoint, standing, step } from './physics';
 import { decodeInput, encodeSnapshot, parseText } from './protocol';
 import type { ClientText, ServerText } from './protocol';
 import type {
@@ -292,7 +292,7 @@ export class Room {
     const n = this.teams();
     const team = n[1] < n[0] ? 1 : 0;
     // On the current rink; fit() may then respawn everyone on a new one (waiting, or puck served).
-    const [x, y] = spawnPoint(team, n[team], this.world.size);
+    const [x, y] = spawnPoint(team, n[team], this.world.size, standing(this.world));
     const paddle: Paddle = { id, team, x, y, vx: 0, vy: 0, tx: x, ty: y };
     const info: PlayerInfo = {
       id,
@@ -412,11 +412,13 @@ export class Room {
     const w = this.world;
     const { size, count } = layout(this.size);
     const n = [0, 0];
-    w.paddles.forEach(p => {
-      [p.tx, p.ty] = [p.x, p.y] = spawnPoint(p.team, n[p.team]++, size);
-    });
     const arena = this.scene();
     Object.assign(w, createWorld(arena, size, count, seed), { paddles: w.paddles, score });
+    // Off the spots the icebergs of the round cover.
+    const obs = standing(w);
+    w.paddles.forEach(p => {
+      [p.tx, p.ty] = [p.x, p.y] = spawnPoint(p.team, n[p.team]++, size, obs);
+    });
     Object.assign(this.m, { arena, size, count, seed });
     this.last = undefined;
     return n;

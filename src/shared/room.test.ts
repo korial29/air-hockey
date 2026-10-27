@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_NAME, MAX_PLAYERS, SNAP_EVERY, TICK_HZ } from './constants';
 import { decodeSnapshot, encodeInput } from './protocol';
 import type { ServerText } from './protocol';
+import { spawnPoint } from './physics';
 import { Room } from './room';
 import type { Arena, Conn, PlayerInfo, Team, World } from './types';
 
@@ -45,10 +46,12 @@ vi.mock('./physics', () => ({
     team ? Math.max(800 * size, x) : Math.min(800 * size, x),
     y,
   ]),
-  spawnPoint: (team: Team, n: number, size = 1) => [
+  spawnPoint: vi.fn((team: Team, n: number, size = 1) => [
     (team ? 1200 : 400) * size,
     (100 + 100 * n) * size,
-  ],
+  ]),
+  // Where the world's obstacles stand: spawn points skip what they cover.
+  standing: (w: World) => [{ kind: 'iceberg', x: w.tick, y: w.seed, r: 1, vx: 0, vy: 0 }],
   skate: (w: World) => {
     physics.skates++;
     w.paddles.forEach(p => {
@@ -267,6 +270,10 @@ describe('Room', () => {
     // players (the puck is still waiting at its serve spot, so the rink grew).
     const at = (v: number) => Math.round(v * Math.SQRT2 * 16) / 16;
     expect(snap.paddles.find(p => p.id === me(c).id)).toMatchObject({ x: at(1200), y: at(200) });
+    // Every spot off the obstacles where they stand: on joining, and on the new rink.
+    for (const [, , , obs] of vi.mocked(spawnPoint).mock.calls) {
+      expect(obs).toEqual([expect.objectContaining({ kind: 'iceberg' })]);
+    }
   });
 
   it('sends the roster again on leave, and nothing to the leaver', () => {

@@ -168,9 +168,15 @@ describe('createWorld', () => {
   });
 
   it('places the icebergs by its seed: step and skate go around them there', () => {
-    // Seed 25 draws the bottom pair at y 768, 102 above its seed-0 place: out of a puck's reach
-    // on that row.
-    const [, , berg] = obstacles('ice', 0, 1, 7, 25);
+    // A seed that puts obstacle 2 in the top half, near the goal line: far from its seed-0 place
+    // (bottom half) and from obstacle 0 there, out of a puck's reach on that row.
+    const seed =
+      1 +
+      [...Array(200).keys()].find(s => {
+        const o = obstacles('ice', 0, 1, 7, s + 1)[2];
+        return o.y < H / 2 && o.x <= 300;
+      })!;
+    const [, , berg] = obstacles('ice', 0, 1, 7, seed);
     expect(obstacles('ice', 0)[2].y - berg.y).toBeGreaterThan(berg.r + PUCK_R + 10);
     const shot = (seed: number) => {
       const w = createWorld('ice', 1, 7, seed);
@@ -180,10 +186,10 @@ describe('createWorld', () => {
       run(w, 20, () => bumps.push(...w.bumps));
       return [w.seed, bumps, w.puck.vx < 0];
     };
-    expect(shot(25)).toEqual([25, [2], true]);
+    expect(shot(seed)).toEqual([seed, [2], true]);
     expect(shot(0)).toEqual([0, [], false]);
     // A paddle aiming at its centre stops on its edge.
-    const w = createWorld('ice', 1, 7, 25);
+    const w = createWorld('ice', 1, 7, seed);
     const p = paddle(0, berg.x - 200, berg.y);
     [p.tx, p.ty] = [berg.x, berg.y];
     w.paddles = [p];
@@ -1158,8 +1164,8 @@ describe('breakable obstacles', () => {
     w.obs[0] = { hits: ICEBERG_HP, gone: 50, angle: 1, times: 1 };
     w.tick = 60;
     const ghost = obs(w)[0];
-    expect(ghost.y).not.toBe(a.y);
-    expect([ghost.x, ghost.r]).toEqual([a.x, a.r]);
+    expect([ghost.x, ghost.y]).not.toEqual([a.x, a.y]);
+    expect(ghost.r).toBe(a.r);
     // Its mirror stays: the pair is in mirror only until one breaks.
     expect(obs(w)[1]).toEqual(b);
     w.tick = 50 + RESPAWN - 1;
@@ -1295,10 +1301,12 @@ describe('sea arena', () => {
     const spots: [number, number][] = [];
     for (let n = 0; n < 40; n++) {
       const [a, b] = [0, 1].map(i => {
-        const w = createWorld('sea', 1, 7, n + 1);
+        // Seed 0: the vortices in mirror (a seed draws each one a cell of its own). No centre
+        // shark (count 6): it swings across the line, its spots would not mirror.
+        const w = createWorld('sea', 1, 6);
         w.live = true;
         w.tick = n * 53;
-        const o = obstacles('sea', 0, 1, 7, n + 1)[i];
+        const o = obstacles('sea', 0, 1, 6)[i];
         const s = i ? -1 : 1;
         Object.assign(w.puck, { x: o.x - s * (o.r + PUCK_R + 30), y: o.y, vx: s * 300, vy: 0 });
         hold(w);
@@ -1606,8 +1614,9 @@ describe('desert arena', () => {
           const d = o.r + PUCK_R + 5 + rnd() * 30;
           const v = 200 + rnd() * 2200;
           const aimAt = th + Math.PI + (rnd() - 0.5);
-          const left = createWorld('desert', size, 6, 5);
-          const right = createWorld('desert', size, 6, 5);
+          // Seed 0: the whirlwinds in mirror (a seed draws each one a cell of its own).
+          const left = createWorld('desert', size, 6);
+          const right = createWorld('desert', size, 6);
           left.live = right.live = true;
           const k = {
             x: o.x + d * Math.cos(th),

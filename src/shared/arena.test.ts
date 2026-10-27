@@ -734,11 +734,10 @@ describe('the desert arena', () => {
     for (const { size, count } of ALL) {
       const X = W * size;
       const obs = obstacles('desert', 0, size, count, 77).filter(fixed);
-      expect(obs.length).toBeGreaterThanOrEqual(2);
+      // One on each side at least.
+      expect(new Set(obs.map(o => swirl(o, size))).size).toBe(2);
       for (const o of obs) {
         expect(swirl(o, size)).toBe(o.x < X / 2 ? 1 : -1);
-        const m = obs.find(q => Math.abs(q.x - (X - o.x)) < 1e-9)!;
-        expect(swirl(m, size)).toBe(-swirl(o, size));
       }
     }
     expect(swirl(desert()[0])).toBe(1);
@@ -754,17 +753,23 @@ describe('icebergs (vortices) across the width', () => {
   const SEEDS = [...Array(498).keys()]
     .map(i => 1 + ((i * 2654435761) >>> 0))
     .concat(1, 2 ** 32 - 1);
-  /** The bands of y, size 1: top pair, bottom pair. */
-  const BANDS = [
-    [217, 355],
-    [758, 918],
+  /** The cells a fixed obstacle may stand on, size 1, in front of the left goal, top half. */
+  const CELLS = [
+    [225, 225],
+    [300, 225],
+    [375, 225],
+    [450, 225],
+    [300, 300],
+    [375, 300],
+    [450, 300],
   ];
-  /**
-   * y of a fixed obstacle of that layout (size 1), the layout set upright: half the seeds turn
-   * it upside down, the top pair (always obstacle 0) then in the bottom half.
-   */
-  const upright = (obs: Obstacle[], y: number, size: number) =>
-    obs[0].y > (H * size) / 2 ? H - y / size : y / size;
+  /** Whether a fixed obstacle stands in the bottom half. */
+  const down = (o: Obstacle, size: number) => o.y > (H * size) / 2;
+  /** Its cell: its place on the base rink, brought to the left goal and the top half. */
+  const cell = (o: Obstacle, size: number) =>
+    [o.x < (W * size) / 2 ? o.x : W * size - o.x, down(o, size) ? H * size - o.y : o.y].map(
+      v => Math.round((v / size) * 1e6) / 1e6,
+    );
   /** Distance from (x, y) to the segment from (ax, ay) to (bx, by). */
   const seg = (x: number, y: number, ax: number, ay: number, bx: number, by: number): number => {
     const [dx, dy] = [bx - ax, by - ay];
@@ -790,8 +795,10 @@ describe('icebergs (vortices) across the width', () => {
           if (arena != 'desert') {
             expect(b.slice(4)).toEqual(a.slice(4));
           }
-          // Same x, kind and size: only y moves.
-          b.slice(0, 4).forEach((o, i) => expect({ ...o, y: 0 }).toEqual({ ...a[i], y: 0 }));
+          // Same kind and size: only the place moves.
+          b.slice(0, 4).forEach((o, i) =>
+            expect({ ...o, x: 0, y: 0 }).toEqual({ ...a[i], x: 0, y: 0 }),
+          );
         }
       }
     }
@@ -813,66 +820,53 @@ describe('icebergs (vortices) across the width', () => {
     }
   });
 
-  it('places each pair at the same y, mirrored, anywhere in its band, scaled, upside down half the time', () => {
+  it('puts each iceberg on a cell in front of its goal, a pair and a side split top and bottom', () => {
     for (const { size, count } of ALL) {
-      const ys: number[][] = [[], []];
-      let flips = 0;
+      const seen = new Set<string>();
+      let tops = 0;
+      let same = 0;
       for (const seed of SEEDS) {
         const obs = obstacles('ice', 0, size, count, seed).filter(fixed);
-        flips += +(obs[0].y > (H * size) / 2);
+        for (const o of obs) {
+          expect(CELLS).toContainEqual(cell(o, size));
+          seen.add(cell(o, size).join());
+        }
+        // The two of a pair: one top, one bottom, neither team gets both; the two of a side too.
         for (let i = 0; i < obs.length; i += 2) {
-          const [a, b] = [obs[i], obs[i + 1]];
-          expect(b.x).toBeCloseTo(W * size - a.x, 9);
-          expect([b.y, b.r]).toEqual([a.y, a.r]);
-          ys[i / 2].push(upright(obs, a.y, size));
+          expect(down(obs[i], size)).not.toBe(down(obs[i + 1], size));
         }
+        if (obs.length == 4) {
+          expect(down(obs[0], size)).not.toBe(down(obs[2], size));
+        }
+        tops += +!down(obs[0], size);
+        same += +(cell(obs[0], size).join() == cell(obs[1], size).join());
       }
-      // The same seeds flip at every count and size: about half of them.
-      expect(flips / SEEDS.length).toBeGreaterThan(0.4);
-      expect(flips / SEEDS.length).toBeLessThan(0.6);
-      ys.forEach((y, i) => {
-        if (y.length) {
-          const [lo, hi] = BANDS[i];
-          expect(Math.min(...y)).toBeGreaterThanOrEqual(lo - 1e-9);
-          expect(Math.max(...y)).toBeLessThanOrEqual(hi + 1e-9);
-          // Spread over the band: both ends reached, many distinct places.
-          expect(Math.min(...y)).toBeLessThan(lo + 5);
-          expect(Math.max(...y)).toBeGreaterThan(hi - 5);
-          expect(new Set(y.map(v => Math.round(v))).size).toBeGreaterThan(100);
-        }
-      });
+      // Every cell; each half about half the time; each side a cell of its own.
+      expect(seen.size).toBe(CELLS.length);
+      expect(tops / SEEDS.length).toBeGreaterThan(0.4);
+      expect(tops / SEEDS.length).toBeLessThan(0.6);
+      expect(same / SEEDS.length).toBeLessThan(0.25);
     }
-    // The pairs draw apart: the bottom one is not the top one shifted.
-    const corr = SEEDS.map(seed => obstacles('ice', 0, 1, 7, seed)).filter(
-      o => (upright(o, o[0].y, 1) - 217) / 138 < 0.5 != (upright(o, o[2].y, 1) - 758) / 160 < 0.5,
-    ).length;
-    expect(corr / SEEDS.length).toBeGreaterThan(0.4);
-    expect(corr / SEEDS.length).toBeLessThan(0.6);
   });
 
-  it('moves an iceberg to a new place of its band each time it comes back, its mirror staying', () => {
+  it('moves an iceberg to another cell of its half each time it comes back, alone', () => {
     for (const { size, count } of ALL) {
       for (const seed of SEEDS.slice(0, 100)) {
         const a = obstacles('ice', 0, size, count, seed);
-        // Absent or 0: the round's place, the pair in mirror.
+        // Absent or 0: the round's place.
         expect(obstacles('ice', 0, size, count, seed, [0, undefined, 0])).toEqual(a);
         a.filter(fixed).forEach((_, i) => {
-          const ys = new Set<number>();
+          let last = cell(a[i], size);
           for (let n = 1; n < 6; n++) {
             const times = [];
             times[i] = n;
             const b = obstacles('ice', 0, size, count, seed, times);
-            // Only that one moves, along y, within its band.
-            b.forEach((o, j) =>
-              expect({ ...o, y: +(j == i) || o.y }).toEqual({ ...a[j], y: +(j == i) || a[j].y }),
-            );
-            const [lo, hi] = BANDS[i >> 1];
-            expect(upright(a, b[i].y, size)).toBeGreaterThanOrEqual(lo - 1e-9);
-            expect(upright(a, b[i].y, size)).toBeLessThanOrEqual(hi + 1e-9);
-            ys.add(b[i].y);
+            b.forEach((o, j) => j == i || expect(o).toEqual(a[j]));
+            expect(down(b[i], size)).toBe(down(a[i], size));
+            expect(CELLS).toContainEqual(cell(b[i], size));
+            expect(cell(b[i], size)).not.toEqual(last);
+            last = cell(b[i], size);
           }
-          // A new place each time.
-          expect(ys.size).toBe(5);
         });
       }
     }
@@ -895,11 +889,13 @@ describe('icebergs (vortices) across the width', () => {
       for (const { size, count } of ALL) {
         const [X, Y] = [W * size, H * size];
         const mouth = [...Array(21).keys()].map(k => Y / 2 + (k / 20 - 0.5) * GOAL * size);
-        const spawns = ([0, 1] as Team[]).flatMap(team =>
-          [...Array(MAX_PLAYERS).keys()].map(n => spawnPoint(team, n, size)),
-        );
         for (const seed of SEEDS) {
-          for (const o of obstacles(arena, 0, size, count, seed).filter(fixed)) {
+          // Every spawn point a round start gives, off the obstacles of the round.
+          const all = obstacles(arena, 0, size, count, seed);
+          const spawns = ([0, 1] as Team[]).flatMap(team =>
+            [...Array(MAX_PLAYERS / 2).keys()].map(n => spawnPoint(team, n, size, all)),
+          );
+          for (const o of all.filter(fixed)) {
             // A paddle and a puck between it and the boards.
             see('boards', Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r) - FIT);
             // A straight shot from the centre spot reaches any point of either mouth.
@@ -939,13 +935,11 @@ describe('icebergs (vortices) across the width', () => {
       for (const v of Object.values(worst)) {
         expect(v).toBeGreaterThan(0);
       }
-      // The bands are about as wide as they can be: the tightest guarantees come within a unit.
-      expect(Math.min(worst.boards, worst.shot)).toBeLessThan(1.5);
     },
     20_000,
   );
 
-  it('squeezes a vortex and a shark under a paddle and a puck for 1/9 to 1/4 of the period', () => {
+  it('squeezes a vortex and a shark under a paddle and a puck for 1/4 of the period at most', () => {
     const FULL = [...Array(PERIOD).keys()];
     for (const seed of [0, ...SEEDS.slice(0, 20)]) {
       const [a, , b] = obstacles('sea', 0, 1, 7, seed);
@@ -957,9 +951,8 @@ describe('icebergs (vortices) across the width', () => {
         low = Math.min(low, gap);
         tight += +(gap < FIT);
       }
-      // 84 at the worst draw (128 − vortex radius from x alone); the puck needs 2 · PUCK_R + 20.
+      // 84 at the worst cell (x 450); the puck needs 2 · PUCK_R + 20.
       expect(low).toBeGreaterThan(83.9);
-      expect(tight / FULL.length).toBeGreaterThan(1 / 9);
       expect(tight / FULL.length).toBeLessThan(1 / 4);
     }
   });
