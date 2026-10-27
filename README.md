@@ -22,11 +22,11 @@ A multiplayer air hockey game for the browser, written in TypeScript with no gam
 
 | Entry | What it is | Size (gzip) |
 | --- | --- | --- |
-| `air-hockey` | The game client: rendering, input, prediction | ~15.1 KB |
-| `air-hockey/local` | Same-browser multiplayer, no server | ~6 KB |
+| `air-hockey` | The game client: rendering, input, prediction | ~15.6 KB |
+| `air-hockey/local` | Same-browser multiplayer, no server | ~6.4 KB |
 | `air-hockey/server` | Node WebSocket server (needs `ws`) | Node only |
 
-The budgets (15.5 KB and 6.5 KB) are checked in CI on every pull request.
+The budgets (20 KB and 6.5 KB) are checked in CI on every pull request.
 
 ## Live demo
 

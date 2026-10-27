@@ -37,7 +37,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 
 ## Size comes first
 
-- Budgets, gated in CI by `npm run size`: `dist/index.js` ≤ 15.5 KB gzip, `dist/local.js` ≤ 6.5 KB. Raise one only when the user agrees (last raised for the desert, from 15 and 6 KB).
+- Budgets, gated in CI by `npm run size`: `dist/index.js` ≤ 20 KB gzip, `dist/local.js` ≤ 6.5 KB. Raise one only when the user agrees (client last raised from 15.5 KB for obstacles re-placed at each respawn).
 - No game library, no runtime dependency, no images, fonts or assets: everything is drawn on one canvas.
 - WebAssembly and Workers were ruled out for the game itself: the physics is a few circles.
 - Browser bundles are built separately (client and local) and fully minified.
