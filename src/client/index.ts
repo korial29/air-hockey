@@ -245,9 +245,12 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     // Time of the puck's last contact with each obstacle; absent before prediction tracks it.
     const hits = P.hits;
     const tick = s?.tick ?? 0;
-    const all = obstacles(arena, tick, size, count, seed);
+    // Times each one was removed: an iceberg comes back elsewhere, its ghost shows where.
+    const ts = s?.obs?.map(o => o.times) ?? [];
+    const all = obstacles(arena, tick, size, count, seed, ts);
     all.forEach((o, i) => {
-      // Absent: intact and in play. Removed: drawn from where it was then, ghost where it is now.
+      // Absent: intact and in play. Removed: drawn from where it was then (one removal less),
+      // ghost where it is now.
       const st = s?.obs?.[i];
       const since = st?.since ?? -1;
       if (since < 0 && was[i] >= 0) {
@@ -262,7 +265,14 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         st,
         now - (back[i] ?? -1e9),
         since >= 0 && since < RESPAWN - GHOST
-          ? obstacles(arena, tick - since, size, count, seed)[i]
+          ? obstacles(
+              arena,
+              tick - since,
+              size,
+              count,
+              seed,
+              ts.map((t = 0, j) => t - +(j == i)),
+            )[i]
           : o,
       );
     });

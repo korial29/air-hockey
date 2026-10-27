@@ -132,7 +132,7 @@ describe('snapshot frames', () => {
     expect(decodeSnapshot(buf)).toMatchObject({ paddles: [], obs: [] });
   });
 
-  it('carry the obstacle states after the paddles, 4 bytes each', () => {
+  it('carry the obstacle states after the paddles, 5 bytes each', () => {
     const obs = [
       { hits: 0, since: -1, angle: 0 },
       { hits: 2, since: -1, angle: 1 },
@@ -143,12 +143,18 @@ describe('snapshot frames', () => {
       { hits: 1, since: 17, angle: 6.2 },
     ];
     const buf = encodeSnapshot({ ...snapshot, obs });
-    expect(buf.byteLength).toBe(17 + 3 * 5 + 1 + 7 * 4);
+    expect(buf.byteLength).toBe(17 + 3 * 5 + 1 + 7 * 5);
     const out = decodeSnapshot(buf)!;
     expect(out.paddles.map(p => p.id)).toEqual([1, 7, 255]);
     expect(out.obs!.map(({ hits, since }) => [hits, since])).toEqual(
       obs.map(({ hits, since }) => [hits, since]),
     );
+    // Removals counted to 255, none when absent.
+    expect(out.obs!.map(o => o.times)).toEqual(Array(7).fill(0));
+    for (const times of [0, 1, 17, 255]) {
+      const s = { ...snapshot, obs: [{ hits: 0, since: -1, angle: 0, times }] };
+      expect(decodeSnapshot(encodeSnapshot(s))!.obs![0].times).toBe(times);
+    }
   });
 
   it('keep the obstacle angle within half a 256th of a turn, in [0, 2π)', () => {

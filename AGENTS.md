@@ -37,7 +37,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 
 ## Size comes first
 
-- Budgets, gated in CI by `npm run size`: `dist/index.js` ≤ 15.5 KB gzip, `dist/local.js` ≤ 6.5 KB. Raise one only when the user agrees (last raised for the desert, from 15 and 6 KB).
+- Budgets, gated in CI by `npm run size`: `dist/index.js` ≤ 20 KB gzip, `dist/local.js` ≤ 8 KB. Raise one only when the user agrees (last raised for the obstacle grid: client from 15.5 KB, local from 6.5 KB).
 - No game library, no runtime dependency, no images, fonts or assets: everything is drawn on one canvas.
 - WebAssembly and Workers were ruled out for the game itself: the physics is a few circles.
 - Browser bundles are built separately (client and local) and fully minified.
@@ -69,7 +69,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 | --- | --- |
 | Teams | Players alternate left and right as they join; up to 16. Names are unique (`Bob 2`). |
 | Crease | A half-disc of radius 300 × size in front of each goal. Only the defender in it nearest the goal (lower id on a tie) stops the puck; the others are ghosts, drawn see-through, the puck goes through them. Computed from positions every sub-step (`solid()` in `physics.ts`). |
-| Match | Rounds to 10 goals, best of 3, a "3, 2, 1, PLAY!" countdown (3 s) before each round. |
+| Match | 3 rounds to 5 goals, all played (one scene each; most rounds won takes the match, the last round's winner on a tie), a "3, 2, 1, PLAY!" countdown (3 s) before each round. |
 | Points | Hit +1 (only when the previous toucher was someone else, or after a serve), goal +20 (own goals credit nobody), round won +10 per player, match won +30 per player. |
 | Uneven teams | The smaller team starts each round with 1 goal per missing player; an upset win multiplies its match bonus by bigger / smaller. |
 | Rink size | √(players / 2), from 1 to 2. Puck and paddle radii do not scale; speeds, goals and obstacles do. |
@@ -80,7 +80,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 | Sharks | Eat the puck, keep it 0.6 s while swimming on, then spit it from their rim in a direction drawn from the seed, never at a player: aimed at the shooter, two players could send it back and forth through the shark. Never shot out. |
 | Whirlwinds | Catch the puck, turn it in their eye out of every paddle's reach for 0.6 to 1.4 s (a random draw), then fling it from the rim in a random direction. Each catch is a hit. |
 | Genies | Float at random in a fixed band: along their lane, up to 30 units off it, between waypoints drawn from the round's seed. |
-| Fixed obstacles | Random height each round within a band that keeps every guarantee; break after 3 hits. |
+| Fixed obstacles | Each game and round, each one on a random cell of a 7-cell grid in front of its goal (`CELLS`, every cell keeps every guarantee); the two of a pair in opposite halves, the two of a side too; another cell at each respawn (`times`); break after 3 hits. Spawn points under one are skipped. |
 | Movers | Penguins and genies are shot out on the first hit; sharks never. |
 | Respawn | 10 s after removal, intact; a ghost that blocks nothing for the last 3 s. |
 | End screen | Stadium, cup for the winning team, podium of the top three (goals, then points), small points ranking. |

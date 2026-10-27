@@ -5,15 +5,14 @@
 // nothing gets trapped. Penguins touch the boards at the ends of their lane: what they catch
 // there slides out sideways. A straight shot from the centre spot reaches every point of either
 // goal mouth without meeting an iceberg.
-// Each round the icebergs (vortices, whirlwinds) take a new place across the width: same x, a y drawn from the
-// round's seed (see obstacles) within a band per pair, the same for both of a mirrored pair. The
-// bands keep every guarantee above for any draw (size 1):
-// - top pair (r 72), y in [217, 355]: ≥ 145 to the top board; its centre ≥ 101 from the line
-//   from the centre spot to the top post (> r + PUCK_R) and ≥ 213 from the serve spot.
-// - bottom pair (r 62), y in [758, 918]: ≥ 145 to the bottom board; its centre ≥ 91 from the
-//   line to the bottom post and ≥ 199 from the serve spot.
-// - the pairs stay ≥ 266 apart; spawn columns stand ≥ 130 off their x, clear at any y; the lanes
-//   do not move, so the gaps to them stay as above.
+// Each game and round the icebergs (vortices, whirlwinds) take a new place, drawn from the round's
+// seed (see obstacles): each one on a cell of the grid in front of its goal (CELLS), the two of a
+// pair in opposite halves (one top, one bottom: neither team gets both), the two of a side too.
+// Every cell keeps every guarantee above for the biggest radius (r 72, size 1): ≥ 145 to the
+// boards and the goal line, ≥ 100 from any straight shot from the centre spot into a goal mouth,
+// ≥ 200 from the serve and centre spots, clear of the crease, and x ≤ 450, so the gaps to the
+// lanes stay as above. Halves 525 apart at least. Spawn points under one are skipped (see
+// spawnPoint in physics.ts).
 // The sea arena (sea and pirates) is the same layout, slot for slot: vortices where the icebergs
 // are, same size, and big sharks (SR, wider than a penguin) in the penguin lanes, swimming board
 // to board in the same period and zig-zagging across their lane: a triangle wave of ZA units
@@ -47,11 +46,25 @@ import type { Arena, Obstacle } from './types';
 
 /**
  * Icebergs (vortices at sea, whirlwinds in the desert) of the left half, above and below its serve
- * spot: [x, r, band top, band bottom, y for seed 0]. The right half mirrors.
+ * spot, as seed 0 places them: [x, r, y]. The right half mirrors.
  */
 const BERGS = [
-  [450, 72, 217, 355, 270],
-  [460, 62, 758, 918, 870],
+  [450, 72, 270],
+  [460, 62, 870],
+];
+/**
+ * Where a seed may place one, in front of the left goal, top half: a grid 75 units apart within a
+ * quarter of the rink from the goal line, the cells that keep every guarantee (see the top). The
+ * bottom half and the right side mirror it.
+ */
+const CELLS = [
+  [225, 225],
+  [300, 225],
+  [375, 225],
+  [450, 225],
+  [300, 300],
+  [375, 300],
+  [450, 300],
 ];
 /** Penguin radius, a genie's too. */
 const PR = 40;
@@ -121,11 +134,19 @@ export const swirl = (o: Obstacle, size = 1): 1 | -1 => (o.x < (W * size) / 2 ? 
  * at sea and in the desert. Indices follow the returned order and are stable for a given count.
  * Fresh objects every call.
  *
- * `seed` (an integer, picked by the host each round) places the icebergs (vortices, whirlwinds)
- * across the width, each pair in its band (see BERGS), and draws the genies' waypoints; 0 keeps
- * the fixed layout of the icebergs.
+ * `seed` (an integer, picked by the host each round) places the icebergs (vortices, whirlwinds),
+ * each on a cell of CELLS in its half, and draws the genies' waypoints; 0 keeps the fixed layout
+ * of the icebergs (BERGS). `times[i]` (ObstacleState.times): each time iceberg i comes back, it
+ * takes another cell of its half.
  */
-export const obstacles = (arena: Arena, t: number, size = 1, count = 7, seed = 0): Obstacle[] => {
+export const obstacles = (
+  arena: Arena,
+  t: number,
+  size = 1,
+  count = 7,
+  seed = 0,
+  times: (number | undefined)[] = [],
+): Obstacle[] => {
   const sea = arena == 'sea';
   const [still, mover] = (
     { sea: ['vortex', 'shark'], desert: ['whirlwind', 'genie'] } as Record<
@@ -140,15 +161,28 @@ export const obstacles = (arena: Arena, t: number, size = 1, count = 7, seed = 0
   return arena == 'classic'
     ? []
     : [
-        ...BERGS.flatMap(([x, r, a, b, y], i) =>
-          [x, W - x].map((x): Obstacle => ({
-            kind: still,
-            x,
-            y: seed ? a + (b - a) * draw(seed, i) : y,
-            r,
-            vx: 0,
-            vy: 0,
-          })),
+        ...BERGS.flatMap(([x, r, y], i) =>
+          [0, 1].map((j): Obstacle => {
+            // A cell of its own, another one at each return (draws past those of the hold and the
+            // vortex, the u16 tick · 10 + 9 at most).
+            let c = (draw(seed, 400 + 2 * i + j) * CELLS.length) | 0;
+            for (let n = 1; n <= (times[2 * i + j] ?? 0); n++) {
+              c =
+                (c + 1 + ((draw(seed, 1e6 + 8 * n + 2 * i + j) * (CELLS.length - 1)) | 0)) %
+                CELLS.length;
+            }
+            const [cx, cy] = seed ? CELLS[c] : [x, y];
+            // Top or bottom half: the two of a pair apart, the two of a side too.
+            const down = seed && +(draw(seed, 300) < 0.5) ^ i ^ j;
+            return {
+              kind: still,
+              x: j ? W - cx : cx,
+              y: down ? H - cy : cy,
+              r,
+              vx: 0,
+              vy: 0,
+            };
+          }),
         ),
         ...LANES.map(([x, phase, m]): Obstacle => {
           if (arena == 'desert') {

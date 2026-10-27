@@ -1,6 +1,6 @@
 import { layout, scene } from './arena';
 import { MAX_NAME, MAX_PLAYERS, RULES, SNAP_EVERY, TICK_HZ } from './constants';
-import { clampPaddle, createWorld, skate, spawnPoint, step } from './physics';
+import { clampPaddle, createWorld, skate, spawnPoint, standing, step } from './physics';
 import { decodeInput, encodeSnapshot, parseText } from './protocol';
 import type { ClientText, ServerText } from './protocol';
 import type {
@@ -192,17 +192,25 @@ export class Room {
           JSON.stringify({ t: 'goal', team: goal, score: [...w.score] } satisfies ServerText),
         );
         if (phase === 'play' && w.score[goal] >= rules.goals) {
-          // Round won, maybe the match. Upset bonus: a smaller team that wins the match
-          // gets bigger / smaller times the points.
+          // Round won. Every round is played, one scene each: after the last one the match goes
+          // to the team with the most rounds won (on a tie, rounds being even, to the last
+          // round's). Upset bonus: a smaller team that wins the match gets bigger / smaller times
+          // the points.
+          m.wins[goal]++;
+          const end = m.round >= rules.rounds;
+          const [a, b] = m.wins;
+          const win = end && a != b ? (+(b > a) as Team) : goal;
           const n = this.teams();
-          const end = ++m.wins[goal] >= Math.ceil(rules.rounds / 2);
-          const k = Math.round(n[1 - goal] / n[goal]) || 1;
-          this.players().forEach(
-            p =>
-              p.info.team === goal && this.add(p, rules.roundWin + (end ? rules.matchWin * k : 0)),
+          const k = Math.round(n[1 - win] / n[win]) || 1;
+          this.players().forEach(p =>
+            this.add(
+              p,
+              (p.info.team === goal ? rules.roundWin : 0) +
+                (end && p.info.team === win ? rules.matchWin * k : 0),
+            ),
           );
           this.timer = Math.round((end ? rules.endSec : rules.breakSec) * TICK_HZ);
-          this.go(end ? 'end' : 'break', goal);
+          this.go(end ? 'end' : 'break', win);
         } else if (this.fit()) {
           // Served again with more or fewer players than the rink was made for.
           this.go(phase);
@@ -222,11 +230,7 @@ export class Room {
           live: w.live,
           held: w.held,
           left: w.left,
-          obs: w.obs.map(({ hits, gone, angle }) => ({
-            hits,
-            since: gone < 0 ? -1 : w.tick - gone,
-            angle,
-          })),
+          obs: w.obs.map(({ gone, ...o }) => ({ ...o, since: gone < 0 ? -1 : w.tick - gone })),
         }),
       );
     }
@@ -296,7 +300,7 @@ export class Room {
     const n = this.teams();
     const team = n[1] < n[0] ? 1 : 0;
     // On the current rink; fit() may then respawn everyone on a new one (waiting, or puck served).
-    const [x, y] = spawnPoint(team, n[team], this.world.size);
+    const [x, y] = spawnPoint(team, n[team], this.world.size, standing(this.world));
     const paddle: Paddle = { id, team, x, y, vx: 0, vy: 0, tx: x, ty: y };
     const info: PlayerInfo = {
       id,
@@ -416,11 +420,13 @@ export class Room {
     const w = this.world;
     const { size, count } = layout(this.size);
     const n = [0, 0];
-    w.paddles.forEach(p => {
-      [p.tx, p.ty] = [p.x, p.y] = spawnPoint(p.team, n[p.team]++, size);
-    });
     const arena = this.scene();
     Object.assign(w, createWorld(arena, size, count, seed), { paddles: w.paddles, score });
+    // Off the spots the icebergs of the round cover.
+    const obs = standing(w);
+    w.paddles.forEach(p => {
+      [p.tx, p.ty] = [p.x, p.y] = spawnPoint(p.team, n[p.team]++, size, obs);
+    });
     Object.assign(this.m, { arena, size, count, seed });
     this.last = undefined;
     return n;

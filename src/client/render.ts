@@ -653,8 +653,9 @@ const penguin = (
   const w = Math.sin(now / 150 + i);
   heading(x, y, r, vx, vy, e, '#8bd', '#0a4a7a55');
   c.rotate(w * 0.08);
-  // Seen three-quarter: the back is off-centre, the white belly shows on one flank.
-  oval(-r * 0.15, r * 0.06, r * 0.85, r * 0.66, '#f7fbff');
+  // Seen three-quarter: the white belly shows on one flank only, a crescent past the back (same
+  // size, shifted aside): no white rim round the rest of it.
+  oval(-r * 0.2, r * 0.04, r * 0.72, r * 0.44, '#f7fbff');
   for (const s of [-1, 1]) {
     oval(-r * (0.95 + 0.08 * s * w), s * r * 0.22, r * 0.22, r * 0.12, ORANGE);
     c.save();

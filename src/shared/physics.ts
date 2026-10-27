@@ -150,6 +150,13 @@ const clear = (w: World, obs: Obstacle[], x: number, y: number): boolean =>
 /** Whether obstacle i is out of play (removed, ghost included): it touches nothing. */
 const off = (w: World, i: number): boolean => (w.obs[i]?.gone ?? -1) >= 0;
 
+/** Times each obstacle was removed this round: where the icebergs stand (see obstacles). */
+const times = (w: World) => w.obs.map(o => o.times);
+
+/** The obstacles of the world at its tick, where they stand. */
+export const standing = (w: World): Obstacle[] =>
+  obstacles(w.arena, w.tick, w.size, w.count, w.seed, times(w));
+
 /**
  * Puck against the obstacles in play: out of them, bounce on the relative velocity (penguins,
  * sharks and genies move), then the kick: it leaves at KICK · size at least, the push added along
@@ -198,6 +205,7 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
         st.angle = Math.atan2(-ny, -nx);
         if (o.kind != 'shark' && ++st.hits >= (fixed(o) ? ICEBERG_HP : 1)) {
           st.gone = w.tick + 1;
+          st.times = ((st.times ?? 0) + 1) & 255;
         }
       }
     }
@@ -296,20 +304,30 @@ export const createWorld = (arena: Arena = 'ice', size = 1, count = 7, seed = 0)
 });
 
 /**
- * Spawn point for the n-th paddle of a team, spread over its half of a rink of that size.
+ * Spawn point for the n-th paddle of a team, spread over its half of a rink of that size: the
+ * n-th spot of the grid below that no obstacle of obs covers (10 units clear).
  * Four columns of three, from the goal outward; the column next to the serve spot
- * (W / 4 from the goal) is 100 units away from it, more than PUCK_R + PADDLE_R. The last two
- * columns stand either side of the icebergs (x 450-460, at least 130 off: clear wherever a round
- * places them across the width), the last one clear of the nearest penguin lane (x 720): no
- * obstacle ever covers a spawn point. A shark swinging out of that lane grazes the last column at
- * sea (a tenth of a unit clear); it is clear by the full margin at tick 0, when a round starts.
- * Past 12 paddles the grid repeats, shifted down by 60 units.
+ * (W / 4 from the goal) is 100 units away from it, more than PUCK_R + PADDLE_R. The icebergs
+ * stand on cells of the same area (see CELLS in arena.ts), so a spot under one is skipped; the
+ * last column is clear of the nearest penguin lane (x 720). A shark swinging out of that lane
+ * grazes the last column at sea (a tenth of a unit clear); it is clear by the full margin at
+ * tick 0, when a round starts. Past 12 spots the grid repeats, shifted down by 60 units.
  * All of it is drawn on the base rink and scaled with the obstacles, so every clearance grows.
  */
-export const spawnPoint = (team: Team, n: number, size = 1): [number, number] => {
-  const x = [100, 210, 320, 600][((n / 3) | 0) % 4] * size;
-  const y = (H / 2 + [0, -0.3, 0.3][n % 3] * H + 60 * ((n / 12) | 0)) * size;
-  return clampPaddle(team, team ? W * size - x : x, y, size);
+export const spawnPoint = (
+  team: Team,
+  n: number,
+  size = 1,
+  obs: Obstacle[] = [],
+): [number, number] => {
+  let p: [number, number];
+  let k = 0;
+  do {
+    const x = [100, 210, 320, 600][((k / 3) | 0) % 4] * size;
+    const y = (H / 2 + [0, -0.3, 0.3][k % 3] * H + 60 * ((k++ / 12) | 0)) * size;
+    p = clampPaddle(team, team ? W * size - x : x, y, size);
+  } while (obs.some(o => Math.hypot(p[0] - o.x, p[1] - o.y) <= o.r + PADDLE_R + 10) || n-- > 0);
+  return p;
 };
 
 /**
@@ -341,7 +359,7 @@ export const step = (w: World, dt: number, host = true): Team | -1 => {
   w.bumps = [];
   let goal: Team | -1 = -1;
   const n = Math.ceil(w.size);
-  const at = (i: number) => obstacles(w.arena, w.tick + i / n, w.size, w.count, w.seed);
+  const at = (i: number) => obstacles(w.arena, w.tick + i / n, w.size, w.count, w.seed, times(w));
   if (dt > 0) {
     at(1).forEach((o, i) => {
       const st = w.obs[i];
@@ -391,7 +409,7 @@ const drive = (p: Paddle, w: World, obs: Obstacle[], dt: number): void => {
  */
 export const skate = (w: World, dt: number): void => {
   const n = Math.ceil(w.size);
-  const obs = obstacles(w.arena, w.tick, w.size, w.count, w.seed);
+  const obs = obstacles(w.arena, w.tick, w.size, w.count, w.seed, times(w));
   for (let i = 0; i < n; i++) {
     for (const p of w.paddles) {
       drive(p, w, obs, dt / n);

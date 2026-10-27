@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_NAME, MAX_PLAYERS, SNAP_EVERY, TICK_HZ } from './constants';
 import { decodeSnapshot, encodeInput } from './protocol';
 import type { ServerText } from './protocol';
+import { spawnPoint } from './physics';
 import { Room } from './room';
 import type { Arena, Conn, PlayerInfo, Team, World } from './types';
 
@@ -45,10 +46,12 @@ vi.mock('./physics', () => ({
     team ? Math.max(800 * size, x) : Math.min(800 * size, x),
     y,
   ]),
-  spawnPoint: (team: Team, n: number, size = 1) => [
+  spawnPoint: vi.fn((team: Team, n: number, size = 1) => [
     (team ? 1200 : 400) * size,
     (100 + 100 * n) * size,
-  ],
+  ]),
+  // Where the world's obstacles stand: spawn points skip what they cover.
+  standing: (w: World) => [{ kind: 'iceberg', x: w.tick, y: w.seed, r: 1, vx: 0, vy: 0 }],
   skate: (w: World) => {
     physics.skates++;
     w.paddles.forEach(p => {
@@ -160,7 +163,7 @@ describe('Room', () => {
         size: 1,
         count: 3,
         seed: physics.seeds[0],
-        goals: 10,
+        goals: 5,
         rounds: 3,
       },
     ]);
@@ -267,6 +270,10 @@ describe('Room', () => {
     // players (the puck is still waiting at its serve spot, so the rink grew).
     const at = (v: number) => Math.round(v * Math.SQRT2 * 16) / 16;
     expect(snap.paddles.find(p => p.id === me(c).id)).toMatchObject({ x: at(1200), y: at(200) });
+    // Every spot off the obstacles where they stand: on joining, and on the new rink.
+    for (const [, , , obs] of vi.mocked(spawnPoint).mock.calls) {
+      expect(obs).toEqual([expect.objectContaining({ kind: 'iceberg' })]);
+    }
   });
 
   it('sends the roster again on leave, and nothing to the leaver', () => {
@@ -703,9 +710,9 @@ describe('Room tournament', () => {
     ticks(BREAK);
     expect(lastMatch(a)).toMatchObject({ phase: 'ready', round: 2 });
     expect(snap(a).obs).toEqual([
-      { hits: 0, since: -1, angle: 0 },
-      { hits: 0, since: -1, angle: 0 },
-      { hits: 0, since: -1, angle: 0 },
+      { hits: 0, since: -1, angle: 0, times: 0 },
+      { hits: 0, since: -1, angle: 0, times: 0 },
+      { hits: 0, since: -1, angle: 0, times: 0 },
     ]);
   });
 
@@ -777,7 +784,7 @@ describe('Room tournament', () => {
     });
   });
 
-  it('plays the third round only at 1-1', () => {
+  it('plays the third round at 1-1, the decider', () => {
     const a = join(room, 'A');
     join(room, 'B');
     start();
@@ -789,15 +796,31 @@ describe('Room tournament', () => {
     expect(winRound(a, 0)).toMatchObject({ phase: 'end', round: 3, wins: [2, 1], winner: 0 });
   });
 
-  it('ends a best of 3 at 2 wins, with the round and match bonuses', () => {
+  it('plays every round, even at 2-0: the most rounds won takes the match and its bonus', () => {
     const a = join(room, 'A');
     join(room, 'B');
     start();
     winRound(a, 1);
     nextRound();
-    expect(winRound(a, 1)).toMatchObject({ phase: 'end', round: 2, wins: [0, 2], winner: 1 });
+    expect(winRound(a, 1)).toMatchObject({ phase: 'break', round: 2, wins: [0, 2], winner: 1 });
+    nextRound();
+    expect(lastMatch(a)).toMatchObject({ phase: 'play', round: 3 });
+    // A takes the last round, B the match.
+    expect(winRound(a, 0)).toMatchObject({ phase: 'end', round: 3, wins: [1, 2], winner: 1 });
     expect(line(a, 'B').points).toBe(10 + 10 + 30);
-    expect(line(a, 'A').points).toBe(0);
+    expect(line(a, 'A').points).toBe(10);
+  });
+
+  it("gives a tied match, rounds being even, to the last round's winner", () => {
+    room = new Room({ ...RULES, rounds: 2 });
+    const a = join(room, 'A');
+    join(room, 'B');
+    start();
+    winRound(a, 1);
+    nextRound();
+    expect(winRound(a, 0)).toMatchObject({ phase: 'end', round: 2, wins: [1, 1], winner: 0 });
+    expect(line(a, 'A').points).toBe(10 + 30);
+    expect(line(a, 'B').points).toBe(10);
   });
 
   it.each([
@@ -873,8 +896,10 @@ describe('Room tournament', () => {
     });
     nextRound();
     winRound(a, 0);
+    nextRound();
+    winRound(a, 0);
     expect(lastMatch(a).phase).toBe('end');
-    expect(line(a, 'C')).toEqual({ ...me(c2), points: 1 + 10 + 30, goals: 0, hits: 1 });
+    expect(line(a, 'C')).toEqual({ ...me(c2), points: 1 + 10 + 10 + 30, goals: 0, hits: 1 });
     expect(lastMatch(a).ranking).toHaveLength(3);
   });
 
@@ -1087,7 +1112,7 @@ describe('Room tournament', () => {
       expect(lastMatch(a)).toMatchObject({ phase: 'ready', round: 1, size: Math.SQRT2, count: 4 });
       expect(rink(c)).toEqual([Math.SQRT2, 4]);
       // As many obstacle states as obstacles on the new rink, all of them intact.
-      expect(snap(a).obs).toEqual(Array(4).fill({ hits: 0, since: -1, angle: 0 }));
+      expect(snap(a).obs).toEqual(Array(4).fill({ hits: 0, since: -1, angle: 0, times: 0 }));
       expect(snap(a).paddles.map(p => [p.x, p.y])).toEqual(
         [
           [400, 100],
