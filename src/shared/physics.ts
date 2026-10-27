@@ -527,9 +527,10 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
   // paddle on the serve spot) pushes the paddle back, sliding along the centre line, a wall or an
   // obstacle that stops it. A paddle that still cannot yield moves the puck instead, and the
   // obstacles push the puck out again. Four passes leave < 0.1 units of overlap with 6 paddles,
-  // under a unit in a rare 16-paddle scrum against an obstacle.
+  // under a unit in a rare 16-paddle scrum against an obstacle. A goalie pushed back can hand its
+  // crease to a ghost already on the puck: who is solid is decided again at each pass.
   for (let n = 0; n < 4; n++) {
-    for (const p of ps) {
+    for (const p of solid(w.paddles, s)) {
       if (out(p, k, RR, place, s)) {
         w.hit = w.last = p.id;
         w.live = true;
