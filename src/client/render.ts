@@ -636,8 +636,9 @@ const berg = (x: number, y: number, r: number, i: number, e: number, age: number
 };
 
 /**
- * A penguin sliding on its belly, head first, seen from above: a wake behind it on the ice.
- * e: hit animation, 1 → 0: it spins, flaps its flippers and sees stars.
+ * A penguin sliding on its belly, head first, seen from above: a wake behind it on the ice. It
+ * paddles along: its flippers push back in turn, its feet kick, its body rocks with them; i
+ * offsets the beat. e: hit animation, 1 → 0: it spins, flaps its flippers and sees stars.
  */
 const penguin = (
   x: number,
@@ -647,15 +648,18 @@ const penguin = (
   vy: number,
   e: number,
   now: number,
+  i: number,
 ) => {
+  const w = Math.sin(now / 150 + i);
   heading(x, y, r, vx, vy, e, '#8bd', '#0a4a7a55');
+  c.rotate(w * 0.08);
   // Seen three-quarter: the back is off-centre, the white belly shows on one flank.
   oval(-r * 0.15, r * 0.06, r * 0.85, r * 0.66, '#f7fbff');
   for (const s of [-1, 1]) {
-    oval(-r * 0.95, s * r * 0.22, r * 0.22, r * 0.12, ORANGE);
+    oval(-r * (0.95 + 0.08 * s * w), s * r * 0.22, r * 0.22, r * 0.12, ORANGE);
     c.save();
     c.translate(0, s * r * 0.45);
-    c.rotate(-s * (0.45 + Math.sin(now / 40) * e));
+    c.rotate(-s * (0.45 + 0.35 * s * w + Math.sin(now / 40) * e));
     oval(-r * 0.35, 0, r * 0.42, r * 0.13, BLACK);
     c.restore();
   }

@@ -83,7 +83,7 @@ beforeAll(() => {
  * A 2D context that accepts every call and records the text drawn, the canvas y of each
  * text in field units (through setTransform), the fill styles set, and in `at` each text
  * with its canvas y and font size in canvas pixels. Also the stroke styles, the alphas and
- * the translations, and in `arcs` each arc's fill style and radius in canvas pixels.
+ * the translations, the rotations, and in `arcs` each arc's fill style and radius in canvas pixels.
  */
 const fakeContext = () => {
   const texts: string[] = [];
@@ -94,6 +94,7 @@ const fakeContext = () => {
   const alphas: number[] = [];
   const moves: [number, number][] = [];
   const arcs: [string, number][] = [];
+  const turns: number[] = [];
   let m = [1, 0];
   const ctx = new Proxy({ globalAlpha: 1 } as Record<string | symbol, unknown>, {
     get: (t, k) =>
@@ -109,13 +110,16 @@ const fakeContext = () => {
             ? (a: number, ...r: number[]) => (m = [a, r[4]])
             : k == 'translate'
               ? (x: number, y: number) => moves.push([x, y])
-              : k == 'arc'
-                ? (_x: number, _y: number, r: number) => arcs.push([String(t.fillStyle), r * m[0]])
-                : k == 'measureText'
-                  ? (s: string) => ({ width: s.length * 10 })
-                  : String(k).startsWith('create')
-                    ? () => ({ addColorStop: () => {} })
-                    : () => {},
+              : k == 'rotate'
+                ? (a: number) => turns.push(a)
+                : k == 'arc'
+                  ? (_x: number, _y: number, r: number) =>
+                      arcs.push([String(t.fillStyle), r * m[0]])
+                  : k == 'measureText'
+                    ? (s: string) => ({ width: s.length * 10 })
+                    : String(k).startsWith('create')
+                      ? () => ({ addColorStop: () => {} })
+                      : () => {},
     set: (t, k, v) => {
       if (k == 'fillStyle') {
         styles.push(v);
@@ -131,7 +135,7 @@ const fakeContext = () => {
     },
   });
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as never);
-  return Object.assign(texts, { ys, at, styles, strokes, alphas, moves, arcs });
+  return Object.assign(texts, { ys, at, styles, strokes, alphas, moves, arcs, turns });
 };
 
 const rank = (id: number, team: 0 | 1, goals: number, left?: boolean): Rank => ({
@@ -508,6 +512,17 @@ describe('airHockey', () => {
     // Long ago: back to rest.
     fake.hits.splice(0, 2, -5000, -5000);
     expect(draw()).not.toContain('★');
+    // Paddling along: its flippers and its body turn with the beat.
+    const now = performance.now();
+    const clock = vi.spyOn(performance, 'now');
+    const beat = (ms: number) => {
+      clock.mockReturnValue(now + ms);
+      texts.turns.length = 0;
+      draw();
+      return [...texts.turns];
+    };
+    expect(beat(0)).not.toEqual(beat(300));
+    clock.mockRestore();
 
     // A fast puck leaves a trail over a few frames.
     snap(600, 2000);
