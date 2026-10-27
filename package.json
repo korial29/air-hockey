@@ -1,6 +1,6 @@
 {
   "name": "air-hockey",
-  "description": "A tiny multiplayer air hockey game for the browser: zero runtime dependencies, WebSocket or same-browser multi-tab play, pluggable into any JS app.",
+  "description": "Tiny multiplayer air hockey for the browser: ice and sea scenes, breakable obstacles, teams and tournaments. Zero runtime dependencies, WebSocket or same-browser multi-tab play, pluggable into any JS app.",
   "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
@@ -33,10 +33,17 @@
   "keywords": [
     "air-hockey",
     "game",
-    "multiplayer",
-    "websocket",
+    "browser-game",
+    "html5-game",
     "canvas",
-    "broadcastchannel"
+    "multiplayer",
+    "realtime",
+    "websocket",
+    "broadcastchannel",
+    "typescript",
+    "zero-dependency",
+    "shadow-dom",
+    "js13k"
   ],
   "author": "Ludovic Dupont <ludovic.dupont29@gmail.com>",
   "peerDependencies": {

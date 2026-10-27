@@ -1,8 +1,224 @@
 # air-hockey
 
-Tiny multiplayer air hockey for the browser. Zero runtime dependencies, under 15 KB gzip.
-Plays over WebSocket, or between tabs of the same browser with no server at all.
+[![npm version](https://img.shields.io/npm/v/air-hockey.svg)](https://www.npmjs.com/package/air-hockey)
+[![npm downloads](https://img.shields.io/npm/dm/air-hockey.svg)](https://www.npmjs.com/package/air-hockey)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/air-hockey)](https://bundlephobia.com/package/air-hockey)
+[![CI](https://github.com/korial29/air-hockey/actions/workflows/ci.yml/badge.svg)](https://github.com/korial29/air-hockey/actions/workflows/ci.yml)
+[![zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](package.json)
+[![license](https://img.shields.io/npm/l/air-hockey.svg)](LICENSE)
+[![play the demo](https://img.shields.io/badge/demo-play%20now-ff6b35)](https://korial29.github.io/air-hockey/)
 
-Demo: https://korial29.github.io/air-hockey/
+A multiplayer air hockey game for the browser, written in TypeScript with no game library and no runtime dependency. Players join with a name, get a colour of their own, and play in teams on an ice rink full of icebergs and sliding penguins, then at sea among rocks and sharks.
 
-> Work in progress.
+![Air hockey on the ice: four players, icebergs, penguins, the puck hitting an iceberg](https://raw.githubusercontent.com/korial29/air-hockey/master/docs/screenshot-ice.png)
+
+![Round 2 at sea: rocks, sharks and the gold doubloon puck](https://raw.githubusercontent.com/korial29/air-hockey/master/docs/screenshot-sea.png)
+
+## Framework-agnostic, light to add
+
+`airHockey()` mounts the game into any element, inside its own Shadow DOM: React, Vue, Angular, Svelte or a plain page, nothing leaks in or out. Everything is drawn on one canvas, with no images, fonts or assets to serve.
+
+| Entry | What it is | Size (gzip) |
+| --- | --- | --- |
+| `air-hockey` | The game client: rendering, input, prediction | ~13.6 KB |
+| `air-hockey/local` | Same-browser multiplayer, no server | ~5.7 KB |
+| `air-hockey/server` | Node WebSocket server (needs `ws`) | Node only |
+
+The budgets (15 KB and 6 KB) are checked in CI on every pull request.
+
+## Live demo
+
+https://korial29.github.io/air-hockey/
+
+Open the page in two or more tabs of the same browser, pick a name in each, and play. Add `?goals=2` to the first tab's URL for short rounds.
+
+---
+
+## Installation
+
+```sh
+npm install air-hockey
+```
+
+The server entry also needs [`ws`](https://github.com/websockets/ws), an optional peer dependency:
+
+```sh
+npm install ws
+```
+
+---
+
+## Basic usage
+
+### Tabs of the same browser, no server
+
+```ts
+import { airHockey } from 'air-hockey';
+import { localSocket } from 'air-hockey/local';
+
+const game = airHockey(document.getElementById('game')!, {
+  name: 'Ana',
+  socket: localSocket('my-room'),
+});
+```
+
+Every tab that opens `localSocket('my-room')` joins the same game over a [`BroadcastChannel`](https://developer.mozilla.org/en-US/docs/Web/API/BroadcastChannel). One tab hosts the match, elected with [`navigator.locks`](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API); when it closes, another tab takes over. `navigator.locks` needs a secure context: on `http://` from a LAN address, each tab plays alone.
+
+### Across devices, with a WebSocket server
+
+```ts
+// server.ts (Node)
+import { serve } from 'air-hockey/server';
+
+const stop = serve({ port: 8787 }); // or serve({ server: existingHttpServer })
+```
+
+```ts
+// in the browser
+import { airHockey } from 'air-hockey';
+
+airHockey(document.getElementById('game')!, {
+  name: 'Ana',
+  url: 'wss://your-host.example/my-room',
+});
+```
+
+One room per URL path: `/my-room` and `/other` are two separate games. A ready-made server ships as a command:
+
+```sh
+PORT=8787 npx air-hockey-server
+```
+
+### Sizing
+
+The game fills the width of its container and keeps its aspect ratio (4:3, score band and rosters included). Give the container a width; to fit a screen, cap it by the height too:
+
+```css
+#game {
+  max-width: calc((100dvh - 100px) * 4 / 3);
+  margin: 0 auto;
+}
+```
+
+A full-screen button sits in the top-right corner of the game.
+
+---
+
+## API
+
+### `airHockey(container, options)`
+
+Mounts the game and joins. Returns `{ on, destroy }`.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `name` | `string` | — | Player name shown above the paddle (16 characters max). A taken name gets a suffix (`Bob 2`). |
+| `url` | `string` | — | WebSocket URL, room in the path. Ignored when `socket` is given. |
+| `socket` | `SocketLike` | — | Any WebSocket-like object, e.g. `localSocket('room')`. |
+| `fullscreen` | `boolean` | `true` | Show the full-screen button (hidden anyway where the browser does not allow it). |
+
+### Events
+
+`on(event, callback)` returns a function that removes the listener.
+
+| Event | Payload | When |
+| --- | --- | --- |
+| `open` | — | Connected. |
+| `close` | — | Disconnected. |
+| `roster` | `{ you, players }` | A player joined or left. `players` are `{ id, name, color, team }`. |
+| `score` | `[left, right]` | The score of the round changed. |
+| `goal` | `{ team, score }` | A goal was scored. |
+| `match` | `MatchState` | The phase changed: `wait`, `ready` (countdown), `play`, `break`, `end`. `break` and `end` carry the winner and the full ranking. |
+
+```ts
+game.on('match', m => {
+  if (m.phase === 'end') saveResults(m.ranking);
+});
+```
+
+### `destroy()`
+
+Leaves the game, stops rendering, removes every listener and the game's DOM. Safe to call twice.
+
+### `localSocket(room, rules?)` — `air-hockey/local`
+
+A same-browser socket for `airHockey`. `rules` apply to the match the tab hosts: pass the same ones from every tab.
+
+### `serve({ port | server, rules? })` — `air-hockey/server`
+
+Starts the WebSocket server and returns an async `stop()`. `rules` apply to every room.
+
+---
+
+## Rules
+
+Every field is optional; missing ones keep their default.
+
+| Rule | Default | Description |
+| --- | --- | --- |
+| `arena` | `['ice', 'sea']` | Scene, or scenes taking turns from one round to the next: `'ice'`, `'sea'`, `'classic'` (empty rink). |
+| `rounds` | `3` | Rounds in a match: best of 3. |
+| `goals` | `10` | Goals that win a round. |
+| `hit` | `1` | Points for a hit, when the previous toucher was someone else. |
+| `goal` | `20` | Points for the scorer of a goal (own goals credit nobody). |
+| `roundWin` | `10` | Points for each player of the team that wins a round. |
+| `matchWin` | `30` | Points for each player of the team that wins the match. |
+| `headStart` | `1` | Uneven teams: goals the smaller team starts each round with, per missing player. |
+| `readySec` | `3` | "3, 2, 1, PLAY!" countdown before each round (`0` turns it off). |
+| `breakSec` | `3` | Pause between rounds. |
+| `endSec` | `15` | Time the final podium stays on screen. |
+
+```ts
+serve({ port: 8787, rules: { arena: 'sea', goals: 5, rounds: 1 } });
+```
+
+---
+
+## How a match plays
+
+- **Teams**: players are spread left and right as they join, each with a paddle in their half. Up to 16 players.
+- **The rink grows with the players**, so everybody keeps the same room: ×1 at 2 players, ×1.41 at 4, ×1.73 at 6, ×2 from 8. Obstacles go from 3 to 7 with the player count. The rink adapts while waiting, at round start and at every serve until someone touches the puck.
+- **Obstacles bounce the puck like pinball bumpers.** Icebergs and rocks take a random height every round and shatter after 3 hits. Penguins and sharks slide across the width (sharks in a zig-zag) and are shot out on the first hit. Everything comes back after 10 s, with a ghost for the last 3 s.
+- **Serves**: a served puck ignores obstacles until a player touches it, and is never served under a paddle.
+- **End of match**: a stadium screen with the winning team's cup, a podium of the top scorers and the points ranking.
+
+---
+
+## Features
+
+- [x] Multiplayer over WebSocket, or between tabs of one browser with no server
+- [x] Unique colour per player, name above the paddle, team rosters
+- [x] Teams, best-of-3 matches, individual points ranking, podium screen
+- [x] Two scenes taking turns: ice (icebergs, penguins) and sea (rocks, sharks, wooden goals)
+- [x] Breakable obstacles with respawn and ghost
+- [x] Rink that grows with the number of players
+- [x] Client-side prediction: your paddle and the puck react at once
+- [x] "3, 2, 1, PLAY!" countdown, goal flash, puck beacon and trail
+- [x] Full-screen button, mouse and touch, phone-sized screens
+- [x] Shadow DOM, zero runtime dependencies, size-gated in CI
+
+---
+
+## Development
+
+Node 24 (see `.nvmrc`).
+
+```sh
+npm install
+npm start            # demo with hot reload (Vite)
+npm run dev:server   # WebSocket server on :8787
+npm test             # Vitest
+npm run lint         # Prettier, ESLint, tsc
+npm run build        # dist/: client, local, server, types
+npm run size         # gzip budgets
+```
+
+The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=` from its URL, which makes testing several players in several tabs quick.
+
+Pull requests need one release label (`release:major`, `release:minor`, `release:patch` or `release:skip`); merging one into `master` proposes the matching npm release. See [`.github/CI.md`](.github/CI.md).
+
+---
+
+## License
+
+[Apache-2.0](LICENSE)
