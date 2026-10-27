@@ -6,7 +6,7 @@ import { clampPaddle } from '../shared/physics';
 import type { Obstacle, Rank, SocketLike } from '../shared/types';
 import { airHockey } from './index';
 import type * as Predict from './predict';
-import { PADDLE_R, PUCK_R } from '../shared/constants';
+import { CREASE, PADDLE_R, PUCK_R } from '../shared/constants';
 import { MIN_PADDLE_PX, MIN_PUCK_PX, TOP } from './util';
 
 vi.mock('../shared/physics', async importOriginal => ({
@@ -1068,6 +1068,61 @@ describe('airHockey', () => {
     snap();
     expect(draw().styles).toContain('#e9b52c');
     fake.obs = undefined;
+    game.destroy();
+  });
+
+  it('paints the creases and draws the extra defenders in one as see-through ghosts', () => {
+    const texts = fakeContext();
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    const draw = () => {
+      texts.length = texts.styles.length = texts.strokes.length = texts.alphas.length = 0;
+      frame(0);
+      return texts;
+    };
+    socket.onopen!();
+    // Three teammates, interpolated (the own paddle, 9, is not among them).
+    const players = [1, 2, 3].map(id => ({ id, name: `P${id}`, color: '#f00', team: 0 }));
+    socket.onmessage!({ data: JSON.stringify({ t: 'roster', you: 9, players }) });
+    const t0 = performance.now();
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(t0);
+    socket.onmessage!({
+      data: JSON.stringify({
+        t: 'match',
+        phase: 'play',
+        arena: 'classic',
+        round: 1,
+        rounds: 3,
+        goals: 10,
+        wins: [0, 0],
+      }),
+    });
+    const snap = (x: number) =>
+      socket.onmessage!({
+        data: encodeSnapshot({
+          tick: 0,
+          score: [0, 0],
+          puck: { x: 1000, y: 300, vx: 0, vy: 0 },
+          paddles: [
+            { id: 1, x, y: 562 },
+            { id: 2, x: x + 50, y: 480 },
+            { id: 3, x: x + 50, y: 650 },
+          ],
+        }),
+      });
+    // Three defenders in their crease: the nearest solid, the two others see-through. Right
+    // outside it, all three solid.
+    snap(CREASE + 100);
+    draw();
+    expect(texts.strokes).toContain('#fff6');
+    expect(texts.alphas).not.toContain(0.35);
+    clock.mockReturnValue(t0 + 20);
+    snap(100);
+    clock.mockReturnValue(t0 + 200);
+    draw();
+    expect(texts.alphas.filter(a => a == 0.35)).toHaveLength(2);
     game.destroy();
   });
 

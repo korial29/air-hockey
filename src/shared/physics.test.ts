@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CREASE,
   GHOST,
   GOAL,
   H,
@@ -22,6 +23,7 @@ import {
   clampPaddle,
   createWorld,
   skate,
+  solid as firm,
   spawnPoint,
   step,
 } from './physics';
@@ -115,7 +117,8 @@ const overlap = (w: World): number => {
       worst = Math.max(worst, o.r + PADDLE_R - Math.hypot(p.x - o.x, p.y - o.y));
     }
   }
-  for (const p of w.paddles) {
+  // The puck goes through the ghosts of a crowded crease.
+  for (const p of firm(w.paddles, w.size)) {
     worst = Math.max(worst, RR - Math.hypot(k.x - p.x, k.y - p.y));
   }
   return worst;
@@ -458,11 +461,64 @@ describe('paddle hits', () => {
       expect(k.y).toBeLessThanOrEqual(H - PUCK_R);
       for (const p of paddles) {
         expect(clampPaddle(p.team, p.x, p.y)).toEqual([p.x, p.y]);
-        // Squeezes between several paddles may leave a sliver, far below the 1 / SCALE wire step.
+      }
+      // Squeezes between several paddles may leave a sliver, far below the 1 / SCALE wire step.
+      // Ghosts in a crease let the puck through.
+      for (const p of firm(paddles)) {
         expect(Math.hypot(k.x - p.x, k.y - p.y)).toBeGreaterThan(RR - 0.01);
       }
     }
     expect(w.score[0] + w.score[1]).toBeGreaterThan(0);
+  });
+});
+
+describe('crease', () => {
+  /** Four defenders of a team, a wall x units off their goal line across its mouth. */
+  const wall = (team: Team, x: number, size = 1) =>
+    [-132, -44, 44, 132].map((dy, i) =>
+      paddle(team, team ? W * size - x : x, (H * size) / 2 + dy, i + 1),
+    );
+
+  it('keeps one solid defender in its crease, the nearest to the goal, the lower id on a tie', () => {
+    for (const team of [0, 1] as Team[]) {
+      for (const size of [1, Math.SQRT2, 2]) {
+        const ps = wall(team, 200 * size, size);
+        // The two middle ones are as near: the lower id stands.
+        expect(firm(ps, size).map(p => p.id)).toEqual([2]);
+        // Further out than CREASE · size: all solid.
+        expect(firm(wall(team, (CREASE + 1) * size, size), size)).toHaveLength(4);
+        // Another team's paddles do not count: one goalie per team.
+        const other = paddle((1 - team) as Team, team ? 300 : W * size - 300, (H * size) / 2, 9);
+        expect(firm([...ps, other], size).map(p => p.id)).toEqual([2, 9]);
+      }
+    }
+    // Alone in it: a goalie.
+    expect(firm([paddle(0, 100, H / 2)])).toHaveLength(1);
+  });
+
+  it('lets a shot at a ghost through the wall into the goal; the goalie stops its own', () => {
+    for (const team of [0, 1] as Team[]) {
+      const s = team ? -1 : 1;
+      // At the outer ghost: it goes through, a goal for the other team.
+      const w = world(W / 2, H / 2 + 132, -s * 1500, 0, wall(team, 200));
+      expect(run(w, 240)).toBe(1 - team);
+      expect(w.hit).toBe(-1);
+      // At the goalie: sent back.
+      const g = world(W / 2, H / 2 - 44, -s * 1500, 0, wall(team, 200));
+      let hit = -1;
+      run(g, 240, () => (hit = g.hit >= 0 ? g.hit : hit));
+      expect(hit).toBe(2);
+      expect(g.puck.vx * s).toBeGreaterThan(0);
+      expect(g.score).toEqual([0, 0]);
+    }
+  });
+
+  it('stops every shot at a wall standing out of the crease', () => {
+    for (const dy of [-132, -44, 44, 132]) {
+      const w = world(W / 2, H / 2 + dy, -1500, 0, wall(0, CREASE + 50));
+      expect(run(w, 240)).toBe(-1);
+      expect(w.puck.vx).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -711,8 +767,9 @@ describe('ice arena', () => {
       expect(worst).toBeLessThan(0.1);
       expect(fast).toBeLessThanOrEqual(PUCK_MAX_SPEED + 1e-6);
       expect(outside).toBe(0);
-      // Fewer bumps than with unbreakable obstacles: they spend much of the game removed.
-      expect(bumps).toBeGreaterThan(40);
+      // Fewer bumps than with unbreakable obstacles: they spend much of the game removed. A sanity
+      // floor, not a target: the paths shift with any rule (40 on CI with the crease, more here).
+      expect(bumps).toBeGreaterThan(25);
       expect(goals).toBeGreaterThan(5);
       // Sharks never go: fewer removals at sea.
       expect(removed).toBeGreaterThan(arena == 'sea' ? 3 : 10);
@@ -927,8 +984,10 @@ describe('a rink of size 2', () => {
             worst = Math.max(worst, o.r + PADDLE_R - Math.hypot(p.x - o.x, p.y - o.y));
           }
         }
-        for (const p of paddles) {
+        for (const p of firm(paddles, S)) {
           worst = Math.max(worst, RR - Math.hypot(k.x - p.x, k.y - p.y));
+        }
+        for (const p of paddles) {
           expect(clampPaddle(p.team, p.x, p.y, S)).toEqual([p.x, p.y]);
         }
         expect(speed(w)).toBeLessThanOrEqual(PUCK_MAX_SPEED * S + 1e-6);

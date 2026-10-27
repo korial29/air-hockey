@@ -7,6 +7,11 @@ export const H = 1125;
 export const GOAL = 380;
 
 export const PUCK_R = 28;
+/**
+ * Radius of the crease, the half-disc in front of each goal, centred on its mouth: only one
+ * defender in it stops the puck (see solid in physics.ts).
+ */
+export const CREASE = 300;
 export const PADDLE_R = 44;
 
 /** Units per second. */
