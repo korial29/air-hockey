@@ -160,7 +160,7 @@ Every field is optional; missing ones keep their default.
 | --- | --- | --- |
 | `arena` | `['ice', 'sea', 'desert']` | Scene, or scenes taking turns from one round to the next: `'ice'`, `'sea'`, `'desert'`, `'classic'` (empty rink). |
 | `rounds` | `3` | Rounds in a match: best of 3. |
-| `goals` | `10` | Goals that win a round. |
+| `goals` | `5` | Goals that win a round. |
 | `hit` | `1` | Points for a hit, when the previous toucher was someone else. |
 | `goal` | `20` | Points for the scorer of a goal (own goals credit nobody). |
 | `roundWin` | `10` | Points for each player of the team that wins a round. |

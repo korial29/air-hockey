@@ -163,7 +163,7 @@ describe('Room', () => {
         size: 1,
         count: 3,
         seed: physics.seeds[0],
-        goals: 10,
+        goals: 5,
         rounds: 3,
       },
     ]);

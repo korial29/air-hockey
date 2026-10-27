@@ -69,7 +69,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 | --- | --- |
 | Teams | Players alternate left and right as they join; up to 16. Names are unique (`Bob 2`). |
 | Crease | A half-disc of radius 300 × size in front of each goal. Only the defender in it nearest the goal (lower id on a tie) stops the puck; the others are ghosts, drawn see-through, the puck goes through them. Computed from positions every sub-step (`solid()` in `physics.ts`). |
-| Match | Rounds to 10 goals, best of 3, a "3, 2, 1, PLAY!" countdown (3 s) before each round. |
+| Match | Rounds to 5 goals, best of 3, a "3, 2, 1, PLAY!" countdown (3 s) before each round. |
 | Points | Hit +1 (only when the previous toucher was someone else, or after a serve), goal +20 (own goals credit nobody), round won +10 per player, match won +30 per player. |
 | Uneven teams | The smaller team starts each round with 1 goal per missing player; an upset win multiplies its match bonus by bigger / smaller. |
 | Rink size | √(players / 2), from 1 to 2. Puck and paddle radii do not scale; speeds, goals and obstacles do. |
