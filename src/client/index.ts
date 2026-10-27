@@ -229,14 +229,15 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     const g = f * size;
     // Puck and paddles never drawn under MIN_PUCK_PX and MIN_PADDLE_PX: CSS px per world unit.
     const px = k / devicePixelRatio / size;
-    const pr = drawnR(PUCK_R, MIN_PUCK_PX, px);
+    let pr = drawnR(PUCK_R, MIN_PUCK_PX, px);
     const dr = drawnR(PADDLE_R, MIN_PADDLE_PX, px);
 
     const s = view(P, sample(buf, now - INTERP_DELAY), now, me);
     // Time of the puck's last contact with each obstacle; absent before prediction tracks it.
     const hits = P.hits;
     const tick = s?.tick ?? 0;
-    obstacles(arena, tick, size, count, seed).forEach((o, i) => {
+    const all = obstacles(arena, tick, size, count, seed);
+    all.forEach((o, i) => {
       // Absent: intact and in play. Removed: drawn from where it was then, ghost where it is now.
       const st = s?.obs?.[i];
       const since = st?.since ?? -1;
@@ -258,6 +259,10 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     });
     if (s) {
       const { x, y, vx, vy } = s.puck;
+      // At sea, what holds it takes it under: a vortex down its funnel, a shark into its belly.
+      // Smaller as it nears the centre, out of sight there.
+      const h = sea ? all[s.held ?? -1] : undefined;
+      pr *= h ? Math.min(1, Math.hypot(x - h.x, y - h.y) / h.r) : 1;
       // Top speeds scale with the rink: so does the speed that leaves a trail.
       streak(
         trail,
@@ -267,19 +272,22 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         ice ? '#2a9df4' : desert ? '#e8384f' : '#fff',
         pr,
       );
-      beacon(x, y, pr, now);
-      circle(x, y, pr, ice ? '#141a24' : '#fff');
-      if (ice) {
-        circle(x, y, pr * 0.75, '#2b3646');
-      }
-      if (sea) {
-        doubloon(x, y, pr);
-      }
-      // The puck itself blinks toward a light yellow, in step with the beacon's glow.
-      circle(x, y, pr, `rgba(255,214,90,${0.15 + 0.6 * (0.5 + 0.5 * Math.sin(now / 400))})`);
-      // In the desert the ruby goes over it: the blink rings it like a gold setting.
-      if (desert) {
-        ruby(x, y, pr * 0.78);
+      // Out of sight: no puck, no beacon.
+      if (pr) {
+        beacon(x, y, pr, now);
+        circle(x, y, pr, ice ? '#141a24' : '#fff');
+        if (ice) {
+          circle(x, y, pr * 0.75, '#2b3646');
+        }
+        if (sea) {
+          doubloon(x, y, pr);
+        }
+        // The puck itself blinks toward a light yellow, in step with the beacon's glow.
+        circle(x, y, pr, `rgba(255,214,90,${0.15 + 0.6 * (0.5 + 0.5 * Math.sin(now / 400))})`);
+        // In the desert the ruby goes over it: the blink rings it like a gold setting.
+        if (desert) {
+          ruby(x, y, pr * 0.78);
+        }
       }
       for (const p of s.paddles) {
         const info = players.get(p.id);

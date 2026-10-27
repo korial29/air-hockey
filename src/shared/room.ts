@@ -51,7 +51,7 @@ const unique = (name: string, taken: string[]): string => {
 };
 
 const fresh = (info: PlayerInfo): Rank => ({ ...info, points: 0, goals: 0, hits: 0 });
-/** A new seed for the icebergs (rocks, whirlwinds), never 0 (the fixed layout). */
+/** A new seed for the icebergs (vortices, whirlwinds), never 0 (the fixed layout). */
 const seed = (): number => 1 + ((Math.random() * 0xfffffffe) >>> 0);
 const idle = ({ goals, rounds }: Rules, { arena, size, count, seed }: World): Match => ({
   t: 'match',
@@ -222,6 +222,7 @@ export class Room {
           live: w.live,
           held: w.held,
           left: w.left,
+          last: w.last,
           obs: w.obs.map(({ hits, gone, angle }) => ({
             hits,
             since: gone < 0 ? -1 : w.tick - gone,
@@ -382,7 +383,7 @@ export class Room {
    * first one while waiting), when that is fair: while waiting, during the countdown, or mid-round
    * while the puck waits at its serve spot (after a goal) and nobody has touched it yet. Paddles
    * respawn on it (see shape), the puck keeps its serve spot, scaled; the score stays, so does
-   * the countdown. The icebergs (rocks) take a new place while waiting, keep the round's one
+   * the countdown. The icebergs (vortices) take a new place while waiting, keep the round's one
    * otherwise. The caller tells the clients.
    * Returns whether it did.
    */
@@ -408,7 +409,7 @@ export class Room {
   /**
    * The world on the rink for the joined players (layout), in the scene of the round, at tick 0,
    * where no penguin stands on the centre spot: paddles back to their spawn points, puck served,
-   * every obstacle back and intact (a fresh w.obs, sized to the new count), the icebergs (rocks)
+   * every obstacle back and intact (a fresh w.obs, sized to the new count), the icebergs (vortices)
    * placed by `seed`, score as given.
    * Returns the paddles per team.
    */
@@ -428,7 +429,7 @@ export class Room {
 
   /**
    * Next round, in its scene, on the rink for the players joined right now (set until the next
-   * round), the icebergs (rocks) in a new place: paddles back to their spawn points, puck served,
+   * round), the icebergs (vortices) in a new place: paddles back to their spawn points, puck served,
    * head start for the smaller team, then the readySec countdown (none at 0) before play.
    */
   private next(): void {

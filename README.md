@@ -8,11 +8,11 @@
 [![license](https://img.shields.io/npm/l/air-hockey.svg)](LICENSE)
 [![play the demo](https://img.shields.io/badge/demo-play%20now-ff6b35)](https://korial29.github.io/air-hockey/)
 
-A multiplayer air hockey game for the browser, written in TypeScript with no game library and no runtime dependency. Players join with a name, get a colour of their own, and play in teams through three scenes, one per round: an ice rink with icebergs and sliding penguins, the sea with rocks and sharks, and an Arabian Nights desert with whirlwinds and genies.
+A multiplayer air hockey game for the browser, written in TypeScript with no game library and no runtime dependency. Players join with a name, get a colour of their own, and play in teams through three scenes, one per round: an ice rink with icebergs and sliding penguins, the sea with vortices and sharks, and an Arabian Nights desert with whirlwinds and genies.
 
 ![Air hockey on the ice: four players, icebergs, penguins, the puck hitting an iceberg](https://raw.githubusercontent.com/korial29/air-hockey/master/docs/screenshot-ice.png)
 
-![Round 2 at sea: rocks, sharks and the gold doubloon puck](https://raw.githubusercontent.com/korial29/air-hockey/master/docs/screenshot-sea.png)
+![Round 2 at sea: vortices, sharks and the gold doubloon puck](https://raw.githubusercontent.com/korial29/air-hockey/master/docs/screenshot-sea.png)
 
 ![Round 3 in the desert: whirlwinds, genies, the ruby puck and a zellige star](https://raw.githubusercontent.com/korial29/air-hockey/master/docs/screenshot-desert.png)
 
@@ -181,7 +181,8 @@ serve({ port: 8787, rules: { arena: 'sea', goals: 5, rounds: 1 } });
 - **Teams**: players are spread left and right as they join, each with a paddle in their half. Up to 16 players.
 - **The rink grows with the players**, so everybody keeps the same room: ×1 at 2 players, ×1.41 at 4, ×1.73 at 6, ×2 from 8. Obstacles go from 3 to 7 with the player count. The rink adapts while waiting, at round start and at every serve until someone touches the puck.
 - **Three scenes, one per round**: ice, sea, desert.
-- **Obstacles bounce the puck like pinball bumpers.** Icebergs, rocks and whirlwinds take a random height every round and break after 3 hits. A whirlwind does not bounce the puck: it catches it, spins it round for about a second and flings it out in a random direction. Penguins and sharks cross the width (sharks in a zig-zag), genies float at random along their lane; all of them are shot out on the first hit. Everything comes back after 10 s, with a ghost for the last 3 s (a genie's ghost is its oil lamp).
+- **Obstacles bounce the puck like pinball bumpers**, except those that grab it. Icebergs, vortices and whirlwinds take a random height every round and break after 3 hits. Penguins cross the width, genies float at random along their lane; both are shot out on the first hit. Everything comes back after 10 s, with a ghost for the last 3 s (a genie's ghost is its oil lamp).
+- **Some obstacles grab the puck.** A whirlwind spins it round for about a second and flings it out in a random direction. A vortex sucks it under the water and lets it up, at rest, somewhere else on the rink. A shark, zig-zagging across the width, eats it and spits it back at whoever touched it last; sharks are never shot out.
 - **Serves**: a served puck ignores obstacles until a player touches it, and is never served under a paddle.
 - **End of match**: a stadium screen with the winning team's cup, a podium of the top scorers and the points ranking.
 
@@ -192,7 +193,7 @@ serve({ port: 8787, rules: { arena: 'sea', goals: 5, rounds: 1 } });
 - [x] Multiplayer over WebSocket, or between tabs of one browser with no server
 - [x] Unique colour per player, name above the paddle, team rosters
 - [x] Teams, best-of-3 matches, individual points ranking, podium screen
-- [x] Three scenes taking turns, each with its own play: ice (icebergs, sliding penguins), sea (rocks, zig-zagging sharks, wooden goals), Arabian Nights desert (whirlwinds that catch and fling the puck, wandering genies, Moorish arches)
+- [x] Three scenes taking turns, each with its own play: ice (icebergs, sliding penguins), sea (vortices that swallow the puck, zig-zagging sharks that spit it back, wooden goals), Arabian Nights desert (whirlwinds that catch and fling the puck, wandering genies, Moorish arches)
 - [x] Breakable obstacles with respawn and ghost
 - [x] Rink that grows with the number of players
 - [x] Client-side prediction: your paddle and the puck react at once

@@ -66,10 +66,10 @@ export const decodeInput = (buf: ArrayBuffer): { x: number; y: number } | null =
 };
 
 // [type u8][tick u16][score0 u8][score1 u8][puckX u16][puckY u16][count u8][flags u8]
-// [puckVx i16][puckVy i16][left u16, ms] then count × [id u8][x u16][y u16]
+// [puckVx i16][puckVy i16][left u16, ms][last + 1 u8] then count × [id u8][x u16][y u16]
 // then [obs u8] then obs × [hits u8][since u16][angle u8]: since 0xffff while in play, else capped
 // at 0xfffe; angle in 256ths of a turn, decoded in [0, 2π).
-const SNAP_HEAD = 17;
+const SNAP_HEAD = 18;
 const SNAP_PADDLE = 5;
 const SNAP_OB = 4;
 const TURN = 2 * Math.PI;
@@ -85,12 +85,13 @@ export const encodeSnapshot = (s: Snapshot): ArrayBuffer => {
   v.setUint16(5, toWire(s.puck.x));
   v.setUint16(7, toWire(s.puck.y));
   v.setUint8(9, s.paddles.length);
-  // byte 10: flags, bit 0 = live, bits 1-3 = held + 1 (0: no whirlwind holds the puck)
+  // byte 10: flags, bit 0 = live, bits 1-3 = held + 1 (0: nothing holds the puck)
   v.setUint8(10, +!!s.live | (((s.held ?? -1) + 1) << 1));
   v.setInt16(11, speed(s.puck.vx));
   v.setInt16(13, speed(s.puck.vy));
   // A hold lasts under 1.5 s: the ms fit.
   v.setUint16(15, Math.round((s.left ?? 0) * 1000));
+  v.setUint8(17, (s.last ?? -1) + 1);
   s.paddles.forEach((p, i) => {
     const o = SNAP_HEAD + i * SNAP_PADDLE;
     v.setUint8(o, p.id);
@@ -140,6 +141,7 @@ export const decodeSnapshot = (buf: ArrayBuffer): Snapshot | null => {
     live: (v.getUint8(10) & 1) == 1,
     held: (v.getUint8(10) >> 1) - 1,
     left: v.getUint16(15) / 1000,
+    last: v.getUint8(17) - 1,
     tick: v.getUint16(1),
     score: [v.getUint8(3), v.getUint8(4)],
     puck: {

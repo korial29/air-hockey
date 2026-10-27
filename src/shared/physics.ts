@@ -1,8 +1,9 @@
 // Fixed-step physics, shared by the host (authoritative) and the client (paddle prediction).
 // Paddles are kinematic (infinite mass): they push the puck, the puck never pushes them,
 // except when it is pinned against a wall (see the last pass of `step`). Obstacles are kinematic
-// too: they push both, and kick the puck away like pinball bumpers, but for whirlwinds: they catch
-// the puck, spin it round and fling it out (see twirl). The host's puck breaks them (see bump): a
+// too: they push both, and kick the puck away like pinball bumpers, but for those that grab it: a
+// whirlwind spins it round and flings it out, a vortex sucks it under and lets it up elsewhere, a
+// shark eats it and spits it at whoever touched it last (see twirl). The host's puck breaks them (see bump): a
 // removed obstacle touches nothing until it comes back, RESPAWN ticks later.
 // The rink is W · s × H · s for the world's size s: goals, serve spots and top speeds scale with
 // it, the radii do not.
@@ -36,9 +37,13 @@ export const TURNS = 2.5;
  */
 export const HOLD = 0.6;
 export const SWAY = 0.8;
-/** Speed a whirlwind flings the puck out at (× size). */
+/** Speed a whirlwind flings the puck out at, a shark spits it at (× size). */
 export const FLING = 1400;
-/** Speed a caught puck sinks into the whirlwind's eye and comes back out at, units per second. */
+/** Seconds a shark keeps the puck in its belly. */
+export const CHEW = 0.6;
+/** A puck coming up from a vortex stays this far from the goal lines (× size). */
+const SHORE = 300;
+/** Speed a caught puck sinks into a whirlwind's eye or a vortex and comes back out at, units/s. */
 const SINK = 600;
 /** Clearance a served puck keeps from paddles and obstacles, and the step between serve spots tried. */
 const SERVE_GAP = 40;
@@ -111,20 +116,26 @@ const out = <T extends Puck | Paddle>(
   return true;
 };
 
+/** Whether a puck at x, y stands clear of every paddle and obstacle, by SERVE_GAP. */
+const clear = (w: World, obs: Obstacle[], x: number, y: number): boolean =>
+  w.paddles.every(p => Math.hypot(p.x - x, p.y - y) > RR + SERVE_GAP) &&
+  obs.every(o => Math.hypot(o.x - x, o.y - y) > o.r + PUCK_R + SERVE_GAP);
+
 /** Whether obstacle i is out of play (removed, ghost included): it touches nothing. */
 const off = (w: World, i: number): boolean => (w.obs[i]?.gone ?? -1) >= 0;
 
 /**
  * Puck against the obstacles in play: out of them, bounce on the relative velocity (penguins,
  * sharks and genies move), then the kick: it leaves at KICK · size at least, the push added along
- * the normal. A whirlwind catches the puck instead (w.held, see twirl). Records w.bumps.
- * The hold lasts HOLD + SWAY · a draw of the seed and the u16 tick of the catch: host and
- * prediction draw the same.
+ * the normal. A whirlwind, a vortex or a shark grabs the puck instead (w.held, see twirl).
+ * Records w.bumps. A shark keeps it CHEW seconds; the others HOLD + SWAY · a draw of the seed and
+ * the u16 tick of the catch: host and prediction draw the same.
  * On the host (`was`: the bumps of the previous step) a new contact is a hit: one that did not
  * touch that obstacle in the previous step, nor earlier in this one, so a puck held against it
- * counts once. A fixed obstacle (iceberg, rock, whirlwind) goes at its ICEBERG_HP-th hit, a mover
- * (penguin, shark, genie) at the first one, removed at once at the tick this step lands on. The
- * puck bounces and gets the kick all the same; a whirlwind that goes flings it at once.
+ * counts once. A fixed obstacle (iceberg, vortex, whirlwind) goes at its ICEBERG_HP-th hit, a
+ * penguin or a genie at the first one, removed at once at the tick this step lands on; a shark
+ * never goes. The puck bounces and gets the kick all the same; a whirlwind or a vortex that goes
+ * lets go of it at once.
  */
 const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
   obs.forEach((o, i) => {
@@ -137,9 +148,9 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
     const nx = (k.x - o.x) / d;
     const ny = (k.y - o.y) / d;
     const vn = (k.vx - o.vx) * nx + (k.vy - o.vy) * ny;
-    if (o.kind == 'whirlwind') {
+    if (['whirlwind', 'vortex', 'shark'].includes(o.kind)) {
       w.held = i;
-      w.left = HOLD + SWAY * draw(w.seed, w.tick & 0xffff);
+      w.left = o.kind == 'shark' ? CHEW : HOLD + SWAY * draw(w.seed, w.tick & 0xffff);
     }
     if (vn < 0) {
       k.vx -= (1 + E) * vn * nx;
@@ -159,7 +170,7 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
         const st = (w.obs[i] ??= { hits: 0, gone: -1, angle: 0 });
         // From the puck to the obstacle's centre at impact: where a shot-out penguin flies.
         st.angle = Math.atan2(-ny, -nx);
-        if (++st.hits >= (fixed(o) ? ICEBERG_HP : 1)) {
+        if (o.kind != 'shark' && ++st.hits >= (fixed(o) ? ICEBERG_HP : 1)) {
           st.gone = w.tick + 1;
         }
       }
@@ -167,34 +178,72 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
   });
 
 /**
- * A caught puck for dt, round whirlwind w.held of obs: TURNS a second in its sense (swirl), its
- * centre sinking at SINK to the eye's edge (o.r - PUCK_R: no paddle reaches it there), back out
- * to the rim as w.left runs out. Then, or as soon as the whirlwind goes, it flies off along its
- * circle at FLING · size from just past the rim (o.r + PUCK_R + 1), from where it turned to: a
- * random direction.
- * Its velocity follows the circle, for drawing between steps.
+ * A grabbed puck for dt, by obstacle w.held of obs, until w.left runs out or the obstacle goes:
+ * - a whirlwind turns it TURNS a second in its sense (swirl), sinking at SINK to the eye's edge
+ *   (o.r - PUCK_R: no paddle reaches it there), back out to the rim in time. Then it flies off
+ *   along its circle at FLING · size from just past the rim, from where it turned to: a random
+ *   direction.
+ * - a vortex turns it the same way down to its centre, under the water. Then it comes up at rest
+ *   on the first of five spots drawn from the seed and the u16 tick that stands clear (or the
+ *   last one): anywhere on the rink but within SHORE of a goal line, in mirror for a vortex right
+ *   of the centre line.
+ * - a shark keeps it in its belly, at its centre, then spits it at FLING · size from just past
+ *   its rim toward the paddle that touched it last (w.last), or ahead if that one left.
+ * Its velocity follows its motion, for drawing between steps.
  */
 const twirl = (w: World, obs: Obstacle[], dt: number): void => {
   const k = w.puck;
   const o = obs[w.held];
-  const d = swirl(o, w.size);
+  const s = w.size;
+  const d = swirl(o, s);
   const a = Math.atan2(k.y - o.y, k.x - o.x) + d * TURNS * 2 * Math.PI * dt;
   let r = Math.hypot(k.x - o.x, k.y - o.y);
   w.left -= dt;
-  const gone = w.left <= 0 || off(w, w.held);
-  // Out once the time left only just covers the way out, from the eye's edge to the rim. Flung
-  // from the rim, whatever the last step left.
-  r = gone
-    ? o.r + PUCK_R + 1
-    : r + cl((w.left * SINK < 2 * PUCK_R ? o.r + PUCK_R : o.r - PUCK_R) - r, -SINK * dt, SINK * dt);
+  // Lets go once the time is up, rounding errors of the sum of steps aside.
+  const gone = w.left < 1e-9 || off(w, w.held);
+  // A whirlwind lets it out once the time left only just covers the way from the eye's edge to the
+  // rim. Flung from the rim, whatever the last step left.
+  r =
+    o.kind == 'shark'
+      ? 0
+      : gone
+        ? o.r + PUCK_R + 1
+        : r +
+          cl(
+            (o.kind == 'vortex' ? 0 : w.left * SINK < 2 * PUCK_R ? o.r + PUCK_R : o.r - PUCK_R) - r,
+            -SINK * dt,
+            SINK * dt,
+          );
   const x = o.x + Math.cos(a) * r;
   const y = o.y + Math.sin(a) * r;
-  [k.vx, k.vy] = [(x - k.x) / dt, (y - k.y) / dt];
+  // In a shark's belly it swims along: no jump from its rim to its centre.
+  [k.vx, k.vy] = o.kind == 'shark' ? [o.vx, o.vy] : [(x - k.x) / dt, (y - k.y) / dt];
   [k.x, k.y] = [x, y];
-  if (gone) {
-    w.held = -1;
-    k.vx = -Math.sin(a) * d * FLING * w.size;
-    k.vy = Math.cos(a) * d * FLING * w.size;
+  if (!gone) {
+    return;
+  }
+  w.held = -1;
+  k.vx = -Math.sin(a) * d * FLING * s;
+  k.vy = Math.cos(a) * d * FLING * s;
+  if (o.kind == 'vortex') {
+    const t = (w.tick & 0xffff) * 10;
+    for (let j = 0; j < 10; j += 2) {
+      k.x = (SHORE + (W - 2 * SHORE) * draw(w.seed, t + j)) * s;
+      k.x = d > 0 ? k.x : W * s - k.x;
+      k.y = PUCK_R + (H * s - 2 * PUCK_R) * draw(w.seed, t + j + 1);
+      if (clear(w, obs, k.x, k.y)) {
+        break;
+      }
+    }
+    k.vx = k.vy = 0;
+  }
+  if (o.kind == 'shark') {
+    const p = w.paddles.find(p => p.id == w.last);
+    const [ux, uy] = p ? [p.x - o.x, p.y - o.y] : [o.vx, o.vy];
+    const l = Math.hypot(ux, uy) || 1;
+    put(k, o.x + (ux / l) * (o.r + PUCK_R + 1), o.y + (uy / l) * (o.r + PUCK_R + 1), s);
+    k.vx = (ux / l) * FLING * s;
+    k.vy = (uy / l) * FLING * s;
   }
 };
 
@@ -213,6 +262,7 @@ export const createWorld = (arena: Arena = 'ice', size = 1, count = 7, seed = 0)
   live: false,
   held: -1,
   left: 0,
+  last: -1,
   obs: obstacles(arena, 0, size, count, seed).map(() => ({ hits: 0, gone: -1, angle: 0 })),
   puck: { x: (W * size) / 2, y: (H * size) / 2, vx: 0, vy: 0 },
   paddles: [],
@@ -340,9 +390,12 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
   let goal: Team | -1 = -1;
 
   w.paddles.forEach(p => drive(p, w, obs, dt));
+  // Grabbed, it only goes where its holder takes it, out of reach: paddles go round it. Let go,
+  // it plays on from where it was left, this very sub-step.
   if (w.held >= 0) {
-    // In a whirlwind it only turns, out of reach: paddles go round it.
     twirl(w, obs, dt);
+  }
+  if (w.held >= 0) {
     w.paddles.forEach(p => out(p, k, RR, place, s) && avoid(p, w, obs));
     return -1;
   }
@@ -406,12 +459,9 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
         k.vx = k.vy = 0;
         // Served where nothing stands: a paddle left on the serve spot would otherwise shove the
         // puck the moment it appears, into a goal again and again.
-        const free = (y: number) =>
-          w.paddles.every(p => Math.hypot(p.x - k.x, p.y - y) > RR + SERVE_GAP) &&
-          obs.every(o => Math.hypot(o.x - k.x, o.y - y) > o.r + PUCK_R + SERVE_GAP);
         k.y = Y / 2;
         for (const f of [0, -1, 1, -2, 2]) {
-          if (free(Y / 2 + f * SERVE_STEP * s)) {
+          if (clear(w, obs, k.x, Y / 2 + f * SERVE_STEP * s)) {
             k.y = Y / 2 + f * SERVE_STEP * s;
             break;
           }
@@ -440,7 +490,7 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
   // A paddle touch puts a served puck in play: from now on the obstacles bounce it.
   w.live ||= hit != -1;
   if (hit != -1) {
-    w.hit = hit;
+    w.hit = w.last = hit;
   }
   bump(w, obs, was);
 
@@ -452,7 +502,7 @@ const sub = (w: World, dt: number, obs: Obstacle[], was?: number[]): Team | -1 =
   for (let n = 0; n < 4; n++) {
     for (const p of w.paddles) {
       if (out(p, k, RR, place, s)) {
-        w.hit = p.id;
+        w.hit = w.last = p.id;
         w.live = true;
         avoid(p, w, obs);
         out(k, p, RR, put, s);
