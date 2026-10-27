@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PERIOD, ZA, ZN, fixed, layout, obstacles, scene } from './arena';
+import { PERIOD, ZA, ZN, fixed, layout, obstacles, scene, swirl } from './arena';
 import {
   GOAL,
   H,
@@ -9,6 +9,7 @@ import {
   PADDLE_R,
   PUCK_MAX_SPEED,
   PUCK_R,
+  RULES,
   TICK_HZ,
   W,
 } from './constants';
@@ -24,6 +25,7 @@ const TICKS = [...Array(PERIOD).keys(), 0.5, 1234.25, 2047.9];
 
 const ice = (t = 0): Obstacle[] => obstacles('ice', t);
 const sea = (t = 0): Obstacle[] => obstacles('sea', t);
+const desert = (t = 0): Obstacle[] => obstacles('desert', t);
 const dist = (o: Obstacle, x: number, y: number): number => Math.hypot(o.x - x, o.y - y);
 
 describe('obstacles', () => {
@@ -275,7 +277,7 @@ describe('obstacles on a scaled rink', () => {
     }
   });
 
-  it.each(['ice', 'sea'] as Arena[])(
+  it.each(['ice', 'sea', 'desert'] as Arena[])(
     'keeps clear of the serve spots, the spawn points and the goal mouths at every count and size (%s)',
     arena => {
       // At sea a shark swinging out of its lane grazes the outer spawn column: never over a
@@ -314,30 +316,33 @@ describe('obstacles on a scaled rink', () => {
     20_000,
   );
 
-  it('fits a paddle and a puck side by side in every gap at every count and size', () => {
-    for (const rink of ALL) {
-      const X = W * rink.size;
-      const Y = H * rink.size;
-      for (const t of SOME) {
-        const obs = obstacles('ice', t, rink.size, rink.count);
-        obs.forEach((o, i) => {
-          if (fixed(o)) {
-            expect(Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r)).toBeGreaterThan(
-              FIT,
-            );
-          } else if (Math.abs(X / 2 - o.x) > 100 * rink.size) {
-            // A side lane to a paddle standing on the centre line, where it cannot yield.
-            expect(Math.abs(X / 2 - o.x) - o.r - 2 * PADDLE_R).toBeGreaterThan(FIT);
-          }
-          for (const q of obs.slice(i + 1)) {
-            expect(dist(o, q.x, q.y) - o.r - q.r).toBeGreaterThan(FIT);
-          }
-        });
+  it.each(['ice', 'desert'] as Arena[])(
+    'fits a paddle and a puck side by side in every gap at every count and size (%s)',
+    arena => {
+      for (const rink of ALL) {
+        const X = W * rink.size;
+        const Y = H * rink.size;
+        for (const t of SOME) {
+          const obs = obstacles(arena, t, rink.size, rink.count);
+          obs.forEach((o, i) => {
+            if (fixed(o)) {
+              expect(Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r)).toBeGreaterThan(
+                FIT,
+              );
+            } else if (Math.abs(X / 2 - o.x) > 100 * rink.size) {
+              // A side lane to a paddle standing on the centre line, where it cannot yield.
+              expect(Math.abs(X / 2 - o.x) - o.r - 2 * PADDLE_R).toBeGreaterThan(FIT);
+            }
+            for (const q of obs.slice(i + 1)) {
+              expect(dist(o, q.x, q.y) - o.r - q.r).toBeGreaterThan(FIT);
+            }
+          });
+        }
       }
-    }
-  });
+    },
+  );
 
-  it.each(['ice', 'sea'] as Arena[])(
+  it.each(['ice', 'sea', 'desert'] as Arena[])(
     'cannot be tunnelled at the scaled top speeds, with ceil(size) sub-steps per tick (%s)',
     arena => {
       for (const rink of ALL) {
@@ -593,6 +598,83 @@ describe('the sea arena', () => {
   });
 });
 
+describe('the desert arena', () => {
+  const ALL = [2, 3, 4, 5, 6, 7].flatMap(count =>
+    [1, Math.SQRT2, Math.sqrt(3), MAX_SIZE].map(size => ({ size, count })),
+  );
+  const SEEDS = [0, 1, 77, 123456789, 2 ** 32 - 1];
+  const KIND = { iceberg: 'whirlwind', penguin: 'genie' } as Record<string, Obstacle['kind']>;
+
+  it('is the ice layout slot for slot: whirlwinds for icebergs, genies for penguins', () => {
+    for (const { size, count } of ALL) {
+      for (const seed of SEEDS) {
+        for (const t of [0, 0.5, 100.5, 777, 1500, 2047.9, 65536 + 3]) {
+          const a = obstacles('ice', t, size, count, seed);
+          // Same place, size and velocity: every guarantee of the ice holds as it is.
+          expect(obstacles('desert', t, size, count, seed)).toEqual(
+            a.map(o => ({ ...o, kind: KIND[o.kind] })),
+          );
+        }
+      }
+    }
+  });
+
+  it.each([
+    [2, 'ww'],
+    [3, 'wwg'],
+    [4, 'wwgg'],
+    [5, 'wwggg'],
+    [6, 'wwwwgg'],
+    [7, 'wwwwggg'],
+  ])('keeps %i obstacles, in the slots of the ice', (count, kinds) => {
+    expect(
+      obstacles('desert', 333.5, 1, count)
+        .map(o => o.kind[0])
+        .join(''),
+    ).toBe(kinds);
+  });
+
+  it('floats genies straight down their lane, board to board, reporting vx 0 and the slide as vy', () => {
+    const lanes = ice(0)
+      .slice(4)
+      .map(o => o.x);
+    let top = H;
+    let bottom = 0;
+    for (const t of TICKS) {
+      const now = desert(t).slice(4);
+      const next = desert(t + 0.25).slice(4);
+      now.forEach((o, i) => {
+        expect(o.kind).toBe('genie');
+        expect(o.x).toBe(lanes[i]);
+        expect(o.vx).toBe(0);
+        expect(Math.abs(o.vy)).toBeCloseTo((2 * (H - 2 * o.r) * TICK_HZ) / PERIOD, 9);
+        if (o.vy == next[i].vy) {
+          expect((next[i].y - o.y) * 4 * TICK_HZ).toBeCloseTo(o.vy, 6);
+        }
+        top = Math.min(top, o.y - o.r);
+        bottom = Math.max(bottom, o.y + o.r);
+      });
+    }
+    expect(top).toBeCloseTo(0, 6);
+    expect(bottom).toBeCloseTo(H, 6);
+  });
+
+  it('spins each whirlwind clockwise left of the centre line, its mirror counter-clockwise', () => {
+    for (const { size, count } of ALL) {
+      const X = W * size;
+      const obs = obstacles('desert', 0, size, count, 77).filter(fixed);
+      expect(obs.length).toBeGreaterThanOrEqual(2);
+      for (const o of obs) {
+        expect(swirl(o, size)).toBe(o.x < X / 2 ? 1 : -1);
+        const m = obs.find(q => Math.abs(q.x - (X - o.x)) < 1e-9)!;
+        expect(swirl(m, size)).toBe(-swirl(o, size));
+      }
+    }
+    expect(swirl(desert()[0])).toBe(1);
+    expect(swirl(desert()[1])).toBe(-1);
+  });
+});
+
 describe('icebergs (rocks) across the width', () => {
   const ALL = [2, 3, 4, 5, 6, 7].flatMap(count =>
     [1, Math.SQRT2, Math.sqrt(3), MAX_SIZE].map(size => ({ size, count })),
@@ -614,7 +696,7 @@ describe('icebergs (rocks) across the width', () => {
   };
 
   it('keeps the fixed layout for seed 0, and the movers whatever the seed', () => {
-    for (const arena of ['ice', 'sea'] as Arena[]) {
+    for (const arena of ['ice', 'sea', 'desert'] as Arena[]) {
       for (const { size, count } of ALL) {
         expect(obstacles(arena, 0, size, count, 0)).toEqual(obstacles(arena, 0, size, count));
       }
@@ -640,12 +722,14 @@ describe('icebergs (rocks) across the width', () => {
       const a = obstacles('ice', 0, Math.SQRT2, 7, seed);
       expect(obstacles('ice', 0, Math.SQRT2, 7, seed)).toEqual(a);
       expect(obstacles('ice', 1777.5, Math.SQRT2, 7, seed).slice(0, 4)).toEqual(a.slice(0, 4));
-      // The sea puts its rocks where the ice puts its icebergs.
-      expect(
-        obstacles('sea', 0, Math.SQRT2, 7, seed)
-          .slice(0, 4)
-          .map(o => o.y),
-      ).toEqual(a.slice(0, 4).map(o => o.y));
+      // The sea puts its rocks where the ice puts its icebergs, the desert its whirlwinds.
+      for (const arena of ['sea', 'desert'] as Arena[]) {
+        expect(
+          obstacles(arena, 0, Math.SQRT2, 7, seed)
+            .slice(0, 4)
+            .map(o => o.y),
+        ).toEqual(a.slice(0, 4).map(o => o.y));
+      }
     }
   });
 
@@ -681,7 +765,7 @@ describe('icebergs (rocks) across the width', () => {
     expect(corr / SEEDS.length).toBeLessThan(0.6);
   });
 
-  it.each(['ice', 'sea'] as Arena[])(
+  it.each(['ice', 'sea', 'desert'] as Arena[])(
     'keeps every guarantee for any seed at every count and size (%s)',
     arena => {
       const sea = arena == 'sea';
@@ -764,12 +848,14 @@ describe('icebergs (rocks) across the width', () => {
 });
 
 describe('fixed', () => {
-  it('is true for icebergs and rocks, false for penguins and sharks', () => {
-    expect([...ice(), ...sea()].map(o => [o.kind, fixed(o)])).toEqual([
+  it('is true for icebergs, rocks and whirlwinds, false for penguins, sharks and genies', () => {
+    expect([...ice(), ...sea(), ...desert()].map(o => [o.kind, fixed(o)])).toEqual([
       ...Array(4).fill(['iceberg', true]),
       ...Array(3).fill(['penguin', false]),
       ...Array(4).fill(['rock', true]),
       ...Array(3).fill(['shark', false]),
+      ...Array(4).fill(['whirlwind', true]),
+      ...Array(3).fill(['genie', false]),
     ]);
   });
 });
@@ -791,6 +877,21 @@ describe('scene', () => {
       'classic',
       'ice',
       'sea',
+    ]);
+  });
+
+  it('plays the three scenes of the default rules once each in a 3-round match, then again', () => {
+    expect(RULES.arena).toEqual(['ice', 'sea', 'desert']);
+    expect(RULES.rounds).toBe(3);
+    expect([0, 1, 2, 3, 4, 5, 6, 7].map(n => scene(RULES.arena, n))).toEqual([
+      'ice',
+      'ice',
+      'sea',
+      'desert',
+      'ice',
+      'sea',
+      'desert',
+      'ice',
     ]);
   });
 

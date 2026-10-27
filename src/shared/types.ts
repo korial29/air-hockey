@@ -44,7 +44,7 @@ export interface Obstacle {
   x: number;
   y: number;
   r: number;
-  /** Units per second: 0 for icebergs, the slide of a penguin. */
+  /** Units per second: 0 for the fixed ones, the slide of a penguin or a genie, a shark's swim. */
   vx: number;
   vy: number;
 }
@@ -71,7 +71,7 @@ export interface World {
   size: number;
   /** How many obstacles of the arena are in play (see obstacles). Set at round start. */
   count: number;
-  /** Places the icebergs (rocks) across the width (see obstacles); 0: the fixed layout. */
+  /** Places the icebergs (rocks, whirlwinds) across the width (see obstacles); 0: the fixed one. */
   seed: number;
   /**
    * Physics steps since the world was created; obstacles(arena, tick, size, count, seed) gives the

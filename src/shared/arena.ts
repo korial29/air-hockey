@@ -31,20 +31,25 @@
 // the serve spots and the centre-line gap allow together: SR + ZA = 114.
 // The pair zig-zags in mirror, the centre shark across the centre line: half a zig on each
 // side, so it favours neither team over time.
+// The desert (an Arabian Nights desert) is the ice layout, slot for slot and with every ice
+// guarantee: whirlwinds of sand where the icebergs are (same size, same y per seed), genies in
+// the penguin lanes, floating board to board like penguins, straight down their lane (any sway is
+// the renderer's). A whirlwind also spins the puck (see SPIN in physics.ts), in a sense of its
+// own: clockwise on screen left of the centre line, counter-clockwise on the right (swirl).
 // A bigger rink scales all of it while paddle and puck keep their size, and fewer obstacles leave
 // wider gaps: every guarantee holds at every size and count.
 import { H, MAX_SIZE, TICK_HZ, W } from './constants';
 import type { Arena, Obstacle } from './types';
 
 /**
- * Icebergs (rocks at sea) of the left half, above and below its serve spot: [x, r, band top, band
- * bottom, y for seed 0]. The right half mirrors.
+ * Icebergs (rocks at sea, whirlwinds in the desert) of the left half, above and below its serve
+ * spot: [x, r, band top, band bottom, y for seed 0]. The right half mirrors.
  */
 const BERGS = [
   [450, 72, 217, 355, 270],
   [460, 62, 758, 918, 870],
 ];
-/** Penguin radius. */
+/** Penguin radius, a genie's too. */
 const PR = 40;
 /** Shark radius: big, as wide as the gaps it swings across allow (see top). */
 const SR = 44;
@@ -82,28 +87,40 @@ const draw = (seed: number, i: number): number => {
   return ((h ^ (h >>> 16)) >>> 0) / 2 ** 32;
 };
 
-/** Icebergs and rocks: they break after ICEBERG_HP hits. Penguins and sharks move, go on one. */
-export const fixed = (o: Obstacle): boolean => o.kind == 'iceberg' || o.kind == 'rock';
+/**
+ * Icebergs, rocks and whirlwinds: they break after ICEBERG_HP hits. Penguins, sharks and genies
+ * move, go on one.
+ */
+export const fixed = (o: Obstacle): boolean => ['iceberg', 'rock', 'whirlwind'].includes(o.kind);
 
 /**
- * The obstacles of an arena at tick t: icebergs (rocks) first, fixed, then penguins (sharks),
- * moving. 'classic' has none. t may be fractional, for drawing between steps. The motion repeats
- * with a period that divides 65536 ticks, so the wrap of the u16 snapshot tick is seamless.
- * vx and vy are the velocity, units per second (a shark's heading). The layout is
+ * Sense a whirlwind spins the puck in, on a rink of that size: 1 clockwise on screen (y down), left
+ * of the centre line, -1 counter-clockwise on the right. Mirrored whirlwinds spin in mirror.
+ */
+export const swirl = (o: Obstacle, size = 1): 1 | -1 => (o.x < (W * size) / 2 ? 1 : -1);
+
+/**
+ * The obstacles of an arena at tick t: icebergs (rocks, whirlwinds) first, fixed, then penguins
+ * (sharks, genies), moving. 'classic' has none. t may be fractional, for drawing between steps.
+ * The motion repeats with a period that divides 65536 ticks, so the wrap of the u16 snapshot tick
+ * is seamless. vx and vy are the velocity, units per second (a shark's heading). The layout is
  * mirror-symmetric across the centre line (the centre shark over time): neither team is favoured.
  *
  * The layout is drawn for the base rink and scaled by `size` (positions, radii, speeds: the
  * crossing time stays the same). `count` picks which obstacles stay, in the order above and
  * mirror-symmetric at every count: top icebergs (2), centre penguin (3), side penguins instead of
  * the centre one (4), all three penguins (5), bottom icebergs too (6), everything (7). Same slots
- * on the sea. Indices follow the returned order and are stable for a given count. Fresh objects
- * every call.
+ * at sea and in the desert. Indices follow the returned order and are stable for a given count.
+ * Fresh objects every call.
  *
- * `seed` (an integer, picked by the host each round) places the icebergs (rocks) across the width,
- * each pair in its band (see BERGS); 0 keeps the fixed layout.
+ * `seed` (an integer, picked by the host each round) places the icebergs (rocks, whirlwinds)
+ * across the width, each pair in its band (see BERGS); 0 keeps the fixed layout.
  */
 export const obstacles = (arena: Arena, t: number, size = 1, count = 7, seed = 0): Obstacle[] => {
   const sea = arena == 'sea';
+  const [still, mover] = (
+    { sea: ['rock', 'shark'], desert: ['whirlwind', 'genie'] } as Record<string, Obstacle['kind'][]>
+  )[arena] ?? ['iceberg', 'penguin'];
   const r = sea ? SR : PR;
   // Travel of a centre, board to board, and the speed to cover it twice per PERIOD (about 245).
   const span = H - 2 * r;
@@ -113,7 +130,7 @@ export const obstacles = (arena: Arena, t: number, size = 1, count = 7, seed = 0
     : [
         ...BERGS.flatMap(([x, r, a, b, y], i) =>
           [x, W - x].map((x): Obstacle => ({
-            kind: sea ? 'rock' : 'iceberg',
+            kind: still,
             x,
             y: seed ? a + (b - a) * draw(seed, i) : y,
             r,
@@ -128,7 +145,7 @@ export const obstacles = (arena: Arena, t: number, size = 1, count = 7, seed = 0
           // Zig-zag: share of a back-and-forth, a quarter in at the boards (on the lane).
           const z = (2 * ZN * u + 0.25) % 1;
           return {
-            kind: sea ? 'shark' : 'penguin',
+            kind: mover,
             x: sea ? x + m * ZA * (1 - 4 * Math.abs(z - 0.5)) : x,
             y: r + span * (up ? 2 - 2 * u : 2 * u),
             r,

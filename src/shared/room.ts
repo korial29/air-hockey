@@ -51,7 +51,7 @@ const unique = (name: string, taken: string[]): string => {
 };
 
 const fresh = (info: PlayerInfo): Rank => ({ ...info, points: 0, goals: 0, hits: 0 });
-/** A new seed for the icebergs (rocks), never 0 (the fixed layout). */
+/** A new seed for the icebergs (rocks, whirlwinds), never 0 (the fixed layout). */
 const seed = (): number => 1 + ((Math.random() * 0xfffffffe) >>> 0);
 const idle = ({ goals, rounds }: Rules, { arena, size, count, seed }: World): Match => ({
   t: 'match',

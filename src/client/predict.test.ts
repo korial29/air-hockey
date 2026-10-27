@@ -12,7 +12,7 @@ import {
   TICK_HZ,
   W,
 } from '../shared/constants';
-import { createWorld, step } from '../shared/physics';
+import { SPIN, createWorld, step } from '../shared/physics';
 import type { Puck, Snapshot } from '../shared/types';
 import { predict, rebase, reset, view } from './predict';
 
@@ -488,7 +488,7 @@ describe('predict', () => {
       expect(view(p, late, 50)!.obs![1].since).toBeGreaterThanOrEqual(7);
     });
 
-    it('switches scenes between rounds: hit times and states go, the new obstacles bounce', () => {
+    it('switches scenes between rounds, ice, sea, desert: hit times and states go, the new obstacles bounce', () => {
       // Round 1 on ice: the first iceberg hit, a penguin gone.
       const p = ice();
       rebase(
@@ -527,7 +527,44 @@ describe('predict', () => {
       rebase(p, m, ME, 3000);
       expect(view(p, m, 3000 + 30 * DT)!.puck.vy).toBeGreaterThan(0);
       expect(Object.keys(p.hits)).toEqual(['0', '5']);
-      // Round 3 back on ice: the sea's hit times go too.
+      // Round 3 in the desert, whirlwinds placed by the round's seed: the sea's hit times go too.
+      reset(p, 'break', 'sea');
+      reset(p, 'ready', 'desert', 1, 7, 99);
+      expect(p.w).toMatchObject({ arena: 'desert', size: 1, count: 7, seed: 99, obs: [] });
+      expect(p.hits).toEqual([]);
+      // In play: the local puck bounces off the first whirlwind and spins as on the host.
+      reset(p, 'play', 'desert', 1, 7, 99);
+      const [wind] = obstacles('desert', 0, 1, 7, 99);
+      expect(wind.kind).toBe('whirlwind');
+      const d = {
+        ...snap({ x: wind.x - wind.r - PUCK_R - 20, y: wind.y + 10, vx: 1000, vy: 50 }, []),
+        live: true,
+        tick: 300,
+        obs: Array(7).fill(intact),
+      };
+      rebase(p, d, ME, 4000);
+      const host = createWorld('desert', 1, 7, 99);
+      Object.assign(host, { tick: d.tick, live: true });
+      Object.assign(host.puck, d.puck);
+      let hit = -1;
+      for (let i = 1; i <= 30; i++) {
+        step(host, DT / 1000);
+        view(p, d, 4000 + i * DT + 0.5);
+        if (host.bumps.includes(0) && hit < 0) {
+          hit = i;
+          expect(Object.keys(p.hits)).toEqual(['0']);
+        }
+        for (const k of ['x', 'y', 'vx', 'vy'] as const) {
+          expect(p.w.puck[k]).toBeCloseTo(host.puck[k], 6);
+        }
+      }
+      // It hit the whirlwind on its left side: sent back left, and up (clockwise on screen).
+      expect(hit).toBeGreaterThan(0);
+      expect(host.puck.vx).toBeLessThan(0);
+      expect(host.puck.vy).toBeLessThan(-SPIN / 2);
+      expect(host.obs[0].hits).toBe(1);
+      expect(p.w.obs[0].hits).toBe(0);
+      // Round 4 back on ice: the desert's hit times go too.
       reset(p, 'ready', 'ice');
       expect(p.hits).toEqual([]);
     });

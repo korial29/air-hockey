@@ -4,9 +4,10 @@
 // drawn where it is and an own hit redirects it at once. Other paddles stand at their latest
 // snapshot position for collisions; they are drawn interpolated, INTERP_DELAY in the past.
 // Obstacles follow the world tick, rebased on the snapshot tick: the arena is a pure function of
-// it, so the local puck bounces off the same penguins as the host's. The scene, rink size,
-// obstacle count and seed come from the match message, through reset: the own paddle gets the
-// host's clamp and speeds, the local puck the round's obstacles, icebergs where the host put them.
+// it, so the local puck bounces off the same penguins as the host's, and spins off the same
+// whirlwinds (the spin is part of the physics, see bump). The scene, rink size, obstacle count
+// and seed come from the match message, through reset: the own paddle gets the host's clamp and
+// speeds, the local puck the round's obstacles, icebergs where the host put them.
 // Which obstacles are in play is the host's call: w.obs is rebuilt from every snapshot, so the
 // local puck goes through what the host removed. Local steps never damage an obstacle; they only
 // bring one back when its RESPAWN is up, as the host does on the same tick.

@@ -5,7 +5,7 @@
 // (see bump): a removed obstacle touches nothing until it comes back, RESPAWN ticks later.
 // The rink is W · s × H · s for the world's size s: goals, serve spots and top speeds scale with
 // it, the radii do not.
-import { fixed, obstacles } from './arena';
+import { fixed, obstacles, swirl } from './arena';
 import {
   GOAL,
   H,
@@ -27,6 +27,12 @@ const DRAG = 0.7;
 const SLOT_SPEED = 300;
 /** Minimum speed of a puck leaving an obstacle: the pinball kick (× size). */
 const KICK = 1000;
+/**
+ * Speed a whirlwind adds across the normal, in its sense (swirl), after the bounce and before the
+ * kick (× size): a slow head-on hit leaves at the kick, 37° off the normal. Once per step and
+ * whirlwind (see bump).
+ */
+export const SPIN = 600;
 /** Clearance a served puck keeps from paddles and obstacles, and the step between serve spots tried. */
 const SERVE_GAP = 40;
 const SERVE_STEP = 160;
@@ -102,14 +108,19 @@ const out = <T extends Puck | Paddle>(
 const off = (w: World, i: number): boolean => (w.obs[i]?.gone ?? -1) >= 0;
 
 /**
- * Puck against the obstacles in play: out of them, bounce on the relative velocity (penguins
- * and sharks move), then the kick: it leaves at KICK · size at least, the push added along the
- * normal. Records w.bumps.
+ * Puck against the obstacles in play: out of them, bounce on the relative velocity (penguins,
+ * sharks and genies move), a whirlwind's spin, then the kick: it leaves at KICK · size at least,
+ * the push added along the normal. Records w.bumps.
+ * The spin: SPIN · size across the normal, in the whirlwind's sense (swirl), on the first contact
+ * of a step with it, host and prediction alike. It leaves the normal speed as it is and comes
+ * before the kick, so the puck still leaves, at the kick at least, and the later passes of the
+ * step change nothing (bounce, spin and kick are each done once). The cap at the end of the
+ * step bounds the sum.
  * On the host (`was`: the bumps of the previous step) a new contact is a hit: one that did not
  * touch that obstacle in the previous step, nor earlier in this one, so a puck held against it
- * counts once. A fixed obstacle (iceberg, rock) goes at its ICEBERG_HP-th hit, a mover (penguin,
- * shark) at the first one, removed at once at the tick this step lands on. The puck bounces and
- * gets the kick all the same.
+ * counts once. A fixed obstacle (iceberg, rock, whirlwind) goes at its ICEBERG_HP-th hit, a mover
+ * (penguin, shark, genie) at the first one, removed at once at the tick this step lands on. The
+ * puck bounces and gets the kick all the same.
  */
 const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
   obs.forEach((o, i) => {
@@ -126,6 +137,12 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
       k.vx -= (1 + E) * vn * nx;
       k.vy -= (1 + E) * vn * ny;
     }
+    const fresh = !w.bumps.includes(i);
+    if (fresh && o.kind == 'whirlwind') {
+      const t = SPIN * w.size * swirl(o, w.size);
+      k.vx -= t * ny;
+      k.vy += t * nx;
+    }
     const s = Math.hypot(k.vx, k.vy);
     if (s < kick) {
       // Smallest push along the normal that brings the speed to the kick.
@@ -134,7 +151,7 @@ const bump = (w: World, obs: Obstacle[], was?: number[]): void =>
       k.vx += a * nx;
       k.vy += a * ny;
     }
-    if (!w.bumps.includes(i)) {
+    if (fresh) {
       w.bumps.push(i);
       if (was && !was.includes(i)) {
         const st = (w.obs[i] ??= { hits: 0, gone: -1, angle: 0 });
@@ -201,8 +218,9 @@ export const spawnPoint = (team: Team, n: number, size = 1): [number, number] =>
  * No tunnelling at 240 Hz: the puck moves at most 2400 / 240 = 10 units per step (< PUCK_R = 28
  * against walls and posts), a paddle 7200 / 240 = 30, so the closing distance per step is at
  * most 40 < PUCK_R + PADDLE_R = 72: an overlap is always caught before the centres cross.
- * Penguins and sharks (zig-zag included) move under 1.4 units per step: puck to obstacle closes
- * at most 11.4 < 40 + 28 (the smallest obstacle, a penguin), paddle to obstacle 31.4 < 40 + 44.
+ * Penguins, genies and sharks (zig-zag included) move under 1.4 units per step: puck to obstacle
+ * closes at most 11.4 < 40 + 28 (the smallest obstacle, a penguin or a genie), paddle to obstacle
+ * 31.4 < 40 + 44.
  * On a bigger rink top speeds grow with the size, so the step runs in ceil(size) sub-steps, the
  * obstacles taken at fractional ticks: the distances per sub-step stay those above.
  */
