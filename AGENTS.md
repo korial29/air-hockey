@@ -76,7 +76,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 | Obstacles | players / 2 + 2, from 3 to 7, in mirrored pairs plus a centre mover when odd. |
 | When the rink changes | While waiting, at round start, and at every serve until someone touches the puck. Never while the puck is in play. |
 | Scenes | One per round, in turn, each with its own play: ice (icebergs, sliding penguins), sea (vortices, zig-zag sharks), desert (whirlwinds, wandering genies). `classic` is an empty rink. |
-| Vortices | Suck the puck under for 0.6 to 1.4 s (a random draw), then let it up at rest on a random spot clear of paddles and obstacles, at least 300 units from the goal lines, mirrored for a vortex right of the centre line. |
+| Vortices | Suck the puck under for 0.6 to 1.4 s (a random draw), then let it up at rest on a random spot clear of paddles and obstacles, at least 300 units from the goal lines, mirrored for a vortex right of the centre line. The client draws a splash there and pops the puck back to its size (`RISE`, 700 ms). |
 | Sharks | Eat the puck, keep it 0.6 s while swimming on, then spit it from their rim in a direction drawn from the seed, never at a player: aimed at the shooter, two players could send it back and forth through the shark. Never shot out. |
 | Whirlwinds | Catch the puck, turn it in their eye out of every paddle's reach for 0.6 to 1.4 s (a random draw), then fling it from the rim in a random direction. Each catch is a hit. |
 | Genies | Float at random in a fixed band: along their lane, up to 30 units off it, between waypoints drawn from the round's seed. |

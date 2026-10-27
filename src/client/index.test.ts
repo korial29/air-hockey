@@ -1065,8 +1065,29 @@ describe('airHockey', () => {
     expect(draw().styles).not.toContain('#e9b52c');
     snap({ x: 1000, y: 500 }, 1);
     expect(draw().styles).not.toContain('#e9b52c');
+    // Spat out by the shark: no splash.
     snap();
     expect(draw().styles).toContain('#e9b52c');
+    expect(texts.strokes).not.toContain('#d2f2ff');
+
+    // Let up by the vortex: a splash where it surfaces, the doubloon popping up past its size,
+    // then the plain doubloon.
+    snap({ x: 700, y: 300 }, 0);
+    draw();
+    clock.mockReturnValue(now + 1000);
+    snap({ x: 1200, y: 500 });
+    texts.arcs.length = 0;
+    draw();
+    expect(texts.styles).not.toContain('#e9b52c');
+    expect(texts.arcs.every(([, r]) => r >= 0)).toBe(true);
+    expect(texts.strokes).toContain('#d2f2ff');
+    const at = (ms: number) => (clock.mockReturnValue(now + 1000 + ms), gold());
+    expect(at(60)).toBeGreaterThan(0);
+    expect(at(60)).toBeLessThan(free);
+    expect(at(300)).toBeGreaterThan(free * 1.05);
+    expect(texts.strokes).toContain('#d2f2ff');
+    expect(at(800)).toBeCloseTo(free);
+    expect(texts.strokes).not.toContain('#d2f2ff');
     fake.obs = undefined;
     game.destroy();
   });
