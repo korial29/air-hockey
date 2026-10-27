@@ -48,7 +48,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 - **The host is authoritative**: the Node server or the local host tab. Clients send only their pointer target.
 - **The client predicts** its own paddle and the puck with the shared physics, rebased on each snapshot and eased on corrections. Other paddles are interpolated 35 ms behind.
 - **`src/shared` never touches the DOM or Node APIs.**
-- **Obstacles are a pure function of the tick** (and the round's seed): every screen computes them with no extra traffic. Their motion period divides 65536 ticks so the u16 snapshot tick wraps seamlessly. Only their state (hits, removal, flight angle) travels, plus which obstacle holds the puck, for how long still, and the last toucher (a shark spits at it). Randomness comes from `draw(seed, i)`, never `Math.random`, so host and prediction draw the same.
+- **Obstacles are a pure function of the tick** (and the round's seed): every screen computes them with no extra traffic. Their motion period divides 65536 ticks so the u16 snapshot tick wraps seamlessly. Only their state (hits, removal, flight angle) travels, plus which obstacle holds the puck and for how long still. Randomness comes from `draw(seed, i)`, never `Math.random`, so host and prediction draw the same.
 - **Wire format**: coordinates in fixed point (`SCALE` 16, up to 4095 units), snapshots at 60 Hz, a `match` message on every phase change carrying the round's scene, rink size, obstacle count and seed.
 - **Local mode**: one tab hosts (elected with `navigator.locks`), its Room ticks from a Worker so a hidden tab keeps 240 Hz.
 - `erasableSyntaxOnly` is on: no enums, no parameter properties, no namespaces.
@@ -76,8 +76,8 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 | Obstacles | players / 2 + 2, from 3 to 7, in mirrored pairs plus a centre mover when odd. |
 | When the rink changes | While waiting, at round start, and at every serve until someone touches the puck. Never while the puck is in play. |
 | Scenes | One per round, in turn, each with its own play: ice (icebergs, sliding penguins), sea (vortices, zig-zag sharks), desert (whirlwinds, wandering genies). `classic` is an empty rink. |
-| Vortices | Suck the puck under for 0.6 to 1.4 s (a random draw), then let it up at rest on a random spot clear of paddles and obstacles, at least 300 units from the goal lines, mirrored for a vortex right of the centre line. |
-| Sharks | Eat the puck, keep it 0.6 s while swimming on, then spit it from their rim at the paddle that touched it last (ahead if that player left). Never shot out. |
+| Vortices | Suck the puck under for 0.6 to 1.4 s (a random draw), then let it up at rest on a random spot clear of paddles and obstacles, at least 300 units from the goal lines, mirrored for a vortex right of the centre line. The client draws a splash there and pops the puck back to its size (`RISE`, 700 ms). |
+| Sharks | Eat the puck, keep it 0.6 s while swimming on, then spit it from their rim in a direction drawn from the seed, never at a player: aimed at the shooter, two players could send it back and forth through the shark. Never shot out. |
 | Whirlwinds | Catch the puck, turn it in their eye out of every paddle's reach for 0.6 to 1.4 s (a random draw), then fling it from the rim in a random direction. Each catch is a hit. |
 | Genies | Float at random in a fixed band: along their lane, up to 30 units off it, between waypoints drawn from the round's seed. |
 | Fixed obstacles | Random height each round within a band that keeps every guarantee; break after 3 hits. |

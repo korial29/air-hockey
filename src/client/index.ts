@@ -17,6 +17,7 @@ import {
   ruby,
   sand,
   snow,
+  splash,
   stadium,
   streak,
   text,
@@ -27,6 +28,9 @@ import { CH, MIN_PADDLE_PX, MIN_PUCK_PX, TOP, drawnR, sample, toField } from './
 import type { Stamped } from './util';
 
 export type { Phase, PlayerInfo, Rank, SocketLike, Team } from '../shared/types';
+
+/** A puck let up by a vortex: its splash lasts RISE ms, the puck pops up in the first 60 %. */
+const RISE = 700;
 
 /** Payload of the 'match' event: the host's match message, without its type tag. */
 export type MatchState = Omit<Extract<ServerText, { t: 'match' }>, 't'>;
@@ -97,6 +101,10 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   /** Per obstacle: Snapshot.obs since drawn last frame, and when it came back in play (ms). */
   const was: number[] = [];
   const back: number[] = [];
+  /** The vortex holding the puck last frame (-1: none), and when and where it let it up (ms). */
+  let sunk = -1;
+  let rose = -1e4;
+  let spot = [0, 0];
 
   const ws = opts.socket ?? (new WebSocket(opts.url!) as unknown as SocketLike);
   ws.binaryType = 'arraybuffer';
@@ -229,7 +237,8 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     const g = f * size;
     // Puck and paddles never drawn under MIN_PUCK_PX and MIN_PADDLE_PX: CSS px per world unit.
     const px = k / devicePixelRatio / size;
-    let pr = drawnR(PUCK_R, MIN_PUCK_PX, px);
+    const pd = drawnR(PUCK_R, MIN_PUCK_PX, px);
+    let pr = pd;
     const dr = drawnR(PADDLE_R, MIN_PADDLE_PX, px);
 
     const s = view(P, sample(buf, now - INTERP_DELAY), now, me);
@@ -263,6 +272,17 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       // Smaller as it nears the centre, out of sight there.
       const h = sea ? all[s.held ?? -1] : undefined;
       pr *= h ? Math.min(1, Math.hypot(x - h.x, y - h.y) / h.r) : 1;
+      // Let up by a vortex: a splash where it surfaces, the puck popping up a little past its size.
+      if (sunk >= 0 && !h) {
+        rose = now;
+        spot = [x, y];
+      }
+      sunk = h?.kind == 'vortex' ? s.held! : -1;
+      const q = (now - rose) / RISE;
+      if (q < 1) {
+        const t = Math.min(1, q * 1.6) - 1;
+        pr *= Math.max(0, 1 + 2.7 * t ** 3 + 1.7 * t ** 2);
+      }
       // Top speeds scale with the rink: so does the speed that leaves a trail.
       streak(
         trail,
@@ -272,6 +292,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         ice ? '#2a9df4' : desert ? '#e8384f' : '#fff',
         pr,
       );
+      if (q < 1) {
+        splash(spot[0], spot[1], pd, q);
+      }
       // Out of sight: no puck, no beacon.
       if (pr) {
         beacon(x, y, pr, now);

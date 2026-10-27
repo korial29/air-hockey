@@ -31,7 +31,7 @@
 // The pair zig-zags in mirror, the centre shark across the centre line: half a zig on each
 // side, so it favours neither team over time.
 // At sea a vortex sucks the puck under, and the puck comes up somewhere else on the rink; a shark
-// eats it and spits it at whoever touched it last (see twirl in physics.ts).
+// eats it and spits it out in a random direction (see twirl in physics.ts).
 // The desert (an Arabian Nights desert) is the ice layout, slot for slot: whirlwinds of sand where
 // the icebergs are (same size, same y per seed), genies in the penguin lanes. A whirlwind catches
 // the puck, spins it round and flings it out in a random direction (see twirl in physics.ts), in a

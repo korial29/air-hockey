@@ -27,7 +27,7 @@ import {
   spawnPoint,
   step,
 } from './physics';
-import type { Arena, Paddle, Team, World } from './types';
+import type { Arena, Obstacle, Paddle, Team, World } from './types';
 
 const DT = 1 / TICK_HZ;
 const RR = PUCK_R + PADDLE_R;
@@ -106,14 +106,23 @@ const solid = (w: World) => obs(w).filter((_, i) => w.obs[i].gone < 0 && i != w.
 
 /**
  * How deep the puck sinks into a paddle or an obstacle in play, or a paddle into an obstacle in
- * play; ≤ 0 if not.
+ * play; ≤ 0 if not. A paddle squeezed into a gap narrower than itself, between that obstacle and
+ * another one it touches, is left out: nothing can resolve that. Only the scrambled games' 7
+ * obstacles on a 2-player rink leave such a gap (85 units between a shark and a vortex); real
+ * layouts leave 120 at least.
  */
 const overlap = (w: World): number => {
   const k = w.puck;
   let worst = -Infinity;
+  const all = obs(w).filter((_, i) => w.obs[i].gone < 0);
+  const gap = (a: Obstacle, b: Obstacle) => Math.hypot(a.x - b.x, a.y - b.y) - a.r - b.r;
+  const near = (p: Paddle, o: Obstacle) => Math.hypot(p.x - o.x, p.y - o.y) < o.r + PADDLE_R + 1;
   for (const o of solid(w)) {
     worst = Math.max(worst, o.r + PUCK_R - Math.hypot(k.x - o.x, k.y - o.y));
     for (const p of w.paddles) {
+      if (all.some(q => q != o && gap(o, q) < 2 * PADDLE_R && near(p, q))) {
+        continue;
+      }
       worst = Math.max(worst, o.r + PADDLE_R - Math.hypot(p.x - o.x, p.y - o.y));
     }
   }
@@ -136,7 +145,6 @@ describe('createWorld', () => {
       live: false,
       held: -1,
       left: 0,
-      last: -1,
       obs: Array(7).fill({ hits: 0, gone: -1, angle: 0 }),
       puck: { x: W / 2, y: H / 2, vx: 0, vy: 0 },
       paddles: [],
@@ -1327,16 +1335,12 @@ describe('sea arena', () => {
     expect(w.puck.x).toBeGreaterThan(vortex.x + vortex.r);
   });
 
-  it('lets a shark eat the puck and spit it at whoever touched it last, at FLING', () => {
-    for (const [px, py] of [
-      [300, 200],
-      [400, H - 150],
-      [W - 300, H / 2],
-    ]) {
-      const p = paddle(px < W / 2 ? 0 : 1, px, py, 3);
-      const w = sea(W / 2, H / 2 + 150, 0, -1200, [p]);
+  it('lets a shark eat the puck and spit it at FLING in a direction drawn from the seed', () => {
+    const ways: number[] = [];
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const w = sea(W / 2, H / 2 + 150, 0, -1200);
       w.tick = MID - 30;
-      w.last = 3;
+      w.seed = seed;
       for (let n = 0; n < 60 && w.held < 0; n++) {
         step(w, DT);
       }
@@ -1351,25 +1355,23 @@ describe('sea arena', () => {
       });
       expect(n).toBe(Math.ceil(CHEW * TICK_HZ - 1e-9));
       expect(w.obs[5]).toMatchObject({ hits: 0, gone: -1 });
-      // Spat from just past its rim, straight at the paddle.
+      // Spat from just past its rim, straight out from its centre.
       const m = obs(w)[5];
       const k = w.puck;
-      expect(Math.hypot(k.x - m.x, k.y - m.y)).toBeGreaterThan(m.r + PUCK_R);
-      const d = Math.hypot(p.x - m.x, p.y - m.y);
-      expect((k.vx * (p.x - m.x) + k.vy * (p.y - m.y)) / d / speed(w)).toBeGreaterThan(0.999);
+      const d = Math.hypot(k.x - m.x, k.y - m.y);
+      expect(d).toBeGreaterThan(m.r + PUCK_R);
+      expect((k.vx * (k.x - m.x) + k.vy * (k.y - m.y)) / d / speed(w)).toBeGreaterThan(0.999);
       expect(speed(w)).toBeGreaterThan(FLING * 0.998);
+      ways.push(Math.atan2(k.vy, k.vx));
     }
+    // Anywhere: never at a player, whoever shot it. Six seeds, six directions spread round.
+    expect(Math.max(...ways) - Math.min(...ways)).toBeGreaterThan(Math.PI);
   });
 
-  it('spits the puck ahead when its last toucher left, and eats it again and again', () => {
+  it('eats the puck again and again, never shot out', () => {
     const w = sea(W / 2, H / 2 + 150, 0, -1200);
     w.tick = MID - 30;
-    w.last = 9;
     hold(w);
-    const m = obs(w)[5];
-    const v = speed(w) * Math.hypot(m.vx, m.vy);
-    expect((w.puck.vx * m.vx + w.puck.vy * m.vy) / v).toBeGreaterThan(0.99);
-    // Fed again: it eats again, never shot out.
     for (let n = 0; n < 3; n++) {
       const s = obs(w)[5];
       Object.assign(w.puck, { x: s.x, y: s.y + s.r + PUCK_R + 20, vx: 0, vy: -1500 });
@@ -1397,14 +1399,13 @@ describe('sea arena', () => {
       const host = sea(x, y, vx, vy, [p]);
       const local = sea(x, y, vx, vy, [{ ...p }]);
       host.tick = local.tick = t;
-      host.last = local.last = 3;
       let grabbed = false;
       for (let i = 0; i < 500; i++) {
         step(host, DT);
         step(local, DT, false);
         grabbed ||= host.held >= 0;
         expect(local.puck).toEqual(host.puck);
-        expect([local.held, local.left, local.last]).toEqual([host.held, host.left, host.last]);
+        expect([local.held, local.left]).toEqual([host.held, host.left]);
       }
       expect(grabbed).toBe(true);
     }

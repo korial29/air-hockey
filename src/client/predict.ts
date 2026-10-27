@@ -5,10 +5,10 @@
 // snapshot position for collisions; they are drawn interpolated, INTERP_DELAY in the past.
 // Obstacles follow the world tick, rebased on the snapshot tick: the arena is a pure function of
 // it, so the local puck bounces off the same penguins as the host's, and goes where the same
-// whirlwinds, vortices and sharks take it: each snapshot says which one holds it, for how long
-// still, and who a shark spits it at (see twirl). The scene, rink size, obstacle count
-// and seed come from the match message, through reset: the own paddle gets the host's clamp and
-// speeds, the local puck the round's obstacles, icebergs where the host put them.
+// whirlwinds, vortices and sharks take it: each snapshot says which one holds it and for how long
+// still (see twirl). The scene, rink size, obstacle count and seed come from the match message,
+// through reset: the own paddle gets the host's clamp and speeds, the local puck the round's
+// obstacles, icebergs where the host put them.
 // Which obstacles are in play is the host's call: w.obs is rebuilt from every snapshot, so the
 // local puck goes through what the host removed. Local steps never damage an obstacle; they only
 // bring one back when its RESPAWN is up, as the host does on the same tick.
@@ -143,7 +143,6 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
     w.live = !!s.live;
     w.held = s.held ?? -1;
     w.left = s.left ?? 0;
-    w.last = s.last ?? -1;
     Object.assign(k, n);
   }
   // The host's obstacles, in any case: what it removed lets the local puck through at once.

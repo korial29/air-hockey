@@ -542,6 +542,7 @@ const corners = (x: number, y: number, r: number, i: number) => {
 
 /** Iceberg outline. */
 const EDGE = '#4f9cc4';
+const FOAM = '#d2f2ff';
 
 /** Facet colour: bright toward the top left (m: its direction from the centre), l: extra light. */
 const shade = (m: number, l: number) => `hsl(196 70% ${76 + 18 * Math.cos(m + 2.36) + l}%)`;
@@ -1189,6 +1190,28 @@ export const streak = (
   for (let i = 2; i < p.length; i += 2) {
     c.globalAlpha = (i / p.length) * 0.5;
     line(color, (r * 2 * i) / p.length, p[i - 2], p[i - 1], p[i], p[i + 1]);
+  }
+  c.globalAlpha = 1;
+};
+
+/**
+ * The puck coming back up from a vortex, q 0 → 1: a ring of foam spreading out and a second one
+ * after it, droplets thrown up and out, falling back; all fading. r is the drawn puck radius.
+ */
+export const splash = (x: number, y: number, r: number, q: number) => {
+  c.globalAlpha = 1 - q;
+  ring(x, y, r * (1 + 3 * q), FOAM, r * 0.4 * (1 - q) + 2);
+  ring(x, y, r * (1 + 1.6 * q), '#fff', r * 0.25);
+  for (let i = 0; i < 9; i++) {
+    const a = i * 0.7 + Math.sin(i * 5);
+    const d = r * (1.1 + (2.4 + (i % 3) * 0.5) * q);
+    // Up and down again: seen from above at three-quarter, a lift on y.
+    circle(
+      x + Math.cos(a) * d,
+      y + Math.sin(a) * d * 0.8 - r * 1.6 * Math.sin(Math.PI * q),
+      r * (0.22 - 0.1 * q),
+      '#fff',
+    );
   }
   c.globalAlpha = 1;
 };
