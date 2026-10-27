@@ -6,7 +6,7 @@ import { clampPaddle } from '../shared/physics';
 import type { Obstacle, Rank, SocketLike } from '../shared/types';
 import { airHockey } from './index';
 import type * as Predict from './predict';
-import { CREASE, PADDLE_R, PUCK_R } from '../shared/constants';
+import { CREASE, PADDLE_R, PUCK_R, STUN } from '../shared/constants';
 import { MIN_PADDLE_PX, MIN_PUCK_PX, TOP } from './util';
 
 vi.mock('../shared/physics', async importOriginal => ({
@@ -17,7 +17,16 @@ vi.mock('../shared/physics', async importOriginal => ({
 // The ice, sea and desert layouts and the hit times belong to the physics: a fixed fake of each.
 const fake = vi.hoisted(() => ({
   hits: [] as number[],
-  obs: undefined as { hits: number; since: number; angle: number; times?: number }[] | undefined,
+  obs: undefined as
+    | {
+        hits: number;
+        since: number;
+        angle: number;
+        times?: number;
+        cast?: number;
+        victim?: number;
+      }[]
+    | undefined,
 }));
 vi.mock('../shared/arena', () => ({
   obstacles: vi.fn((arena: string): Obstacle[] =>
@@ -495,7 +504,15 @@ describe('airHockey', () => {
 
     // Before any match message: the ice arena, at the snapshot tick.
     draw();
-    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7, 0, expect.any(Array));
+    expect(obstacles).toHaveBeenCalledWith(
+      'ice',
+      expect.any(Number),
+      1,
+      7,
+      0,
+      expect.any(Array),
+      expect.any(Array),
+    );
     expect(vi.mocked(obstacles).mock.calls[0][1]).toBeGreaterThanOrEqual(42);
     // Pale ice, nets, a penguin (orange beak and feet) and a faceted iceberg; no hit yet.
     expect(texts.styles).toEqual(expect.arrayContaining(['#e6f2f9', '#f39a1c']));
@@ -541,6 +558,7 @@ describe('airHockey', () => {
       1,
       7,
       0,
+      expect.any(Array),
       expect.any(Array),
     );
     expect(texts.styles).toContain('#0d2233');
@@ -601,7 +619,15 @@ describe('airHockey', () => {
 
     // Size 1: what was drawn before the rink could grow, names in field units above the rink.
     draw();
-    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7, 0, expect.any(Array));
+    expect(obstacles).toHaveBeenCalledWith(
+      'ice',
+      expect.any(Number),
+      1,
+      7,
+      0,
+      expect.any(Array),
+      expect.any(Array),
+    );
     expect(texts.styles).toContain('#e6f2f9');
     const [above, name] = label();
     // 1200 px canvas: 0.6 px per unit, the paddle at (TOP + 450) · 0.6 px, the name above it
@@ -615,7 +641,15 @@ describe('airHockey', () => {
     send(2, 5, 99);
     snap(2);
     draw();
-    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 2, 5, 99, expect.any(Array));
+    expect(obstacles).toHaveBeenCalledWith(
+      'ice',
+      expect.any(Number),
+      2,
+      5,
+      99,
+      expect.any(Array),
+      expect.any(Array),
+    );
     expect(texts.styles).toContain('#e6f2f9');
     // The name keeps its size on screen, the paddle (radius 44) shrinks to half.
     expect(label()[1]).toBeCloseTo(name);
@@ -635,7 +669,15 @@ describe('airHockey', () => {
     send();
     snap(1);
     draw();
-    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7, 0, expect.any(Array));
+    expect(obstacles).toHaveBeenCalledWith(
+      'ice',
+      expect.any(Number),
+      1,
+      7,
+      0,
+      expect.any(Array),
+      expect.any(Array),
+    );
     expect(texts.styles).toContain('#e6f2f9');
     expect(label()).toEqual([above, name]);
     move();
@@ -845,7 +887,7 @@ describe('airHockey', () => {
     // ghost and its return go where the second one does.
     fake.obs = [{ hits: 3, since: sec(0.3), angle: 0, times: 2 }];
     draw();
-    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7, 0, [2]);
+    expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7, 0, [2], [0]);
     expect(obstacles).toHaveBeenCalledWith('ice', expect.any(Number), 1, 7, 0, [1]);
 
     // Penguin shot out 0.5 s ago along +x: it flies from where it was at removal, stars around it.
@@ -936,7 +978,15 @@ describe('airHockey', () => {
     scene('sea');
     snap();
     expect(() => draw()).not.toThrow();
-    expect(obstacles).toHaveBeenCalledWith('sea', expect.any(Number), 1, 7, 0, expect.any(Array));
+    expect(obstacles).toHaveBeenCalledWith(
+      'sea',
+      expect.any(Number),
+      1,
+      7,
+      0,
+      expect.any(Array),
+      expect.any(Array),
+    );
     expect(texts.styles).toContain('#0b4d6e');
     expect(texts.strokes).toEqual(expect.arrayContaining(['#a8703c', '#d9bf86', '#ffffff45']));
     expect(texts.styles).not.toContain('#e6f2f9');
@@ -1235,6 +1285,7 @@ describe('airHockey', () => {
       7,
       0,
       expect.any(Array),
+      expect.any(Array),
     );
     expect(texts.styles).toEqual(
       expect.arrayContaining(['#ddb064', '#1f4fa8', '#1aa3a3', '#c4532d', '#f4ecd8', '#2a1408aa']),
@@ -1272,6 +1323,39 @@ describe('airHockey', () => {
     expect(texts.strokes).not.toContain('#fff6dc');
     expect(texts.styles).not.toContain('#a77ce07a');
 
+    // A genie's spell (the genie is obstacle 1), struck t ticks ago: its victim paralysed, the
+    // seconds left on it, a bolt from the genie all along; nothing without a spell.
+    const now = performance.now();
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(now);
+    socket.onmessage!({
+      data: encodeSnapshot({
+        tick: 42,
+        score: [0, 0],
+        puck: { x: 300, y: 600, vx: 0, vy: 0 },
+        paddles: [
+          { id: 3, x: 400, y: 450 },
+          { id: 7, x: 1400, y: 450 },
+        ],
+      }),
+    });
+    clock.mockReturnValue(now + 100);
+    const zap = () => texts.strokes.filter(v => v == '#ffd84a').length;
+    const spell = (cast: number) => {
+      fake.obs = [
+        { hits: 0, since: -1, angle: 0 },
+        { hits: 0, since: -1, angle: 0, cast, victim: 7 },
+      ];
+      return draw();
+    };
+    expect(spell(-1)).not.toContain('5');
+    expect(zap()).toBe(0);
+    expect(spell(0)).toContain('5');
+    expect(zap()).toBe(2);
+    expect(spell(STUN - 200)).toContain('1');
+    expect(zap()).toBe(2);
+    fake.obs = undefined;
+    clock.mockRestore();
+
     // Back on the ice: painted again, no desert drawing left.
     scene('ice');
     snap();
@@ -1283,7 +1367,7 @@ describe('airHockey', () => {
     game.destroy();
   });
 
-  it('draws whirlwind and genie damage, removal, ghosts (the lamp) and returns from the obstacle states', () => {
+  it('draws whirlwind damage, removal, ghosts and returns from the obstacle states, the genie all along', () => {
     const texts = fakeContext();
     let frame: FrameRequestCallback = () => {};
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
@@ -1323,7 +1407,6 @@ describe('airHockey', () => {
       ]);
     // The whirlwind's dark core, its radius (the grains drawn after it are smaller).
     const core = () => Math.max(0, ...texts.arcs.filter(([s]) => s == '#5e3a1c').map(a => a[1]));
-    const lamp = () => texts.styles.includes('#e0a82e');
 
     // In play: one hit, smaller and fainter; two, smaller and fainter still.
     set([0, -1], [0, -1]);
@@ -1350,38 +1433,24 @@ describe('airHockey', () => {
     expect(core()).toBe(0);
     expect(texts.strokes).not.toContain('#9a642c');
 
-    // Genie shot out 0.5 s ago along +x: it flies off in wisps of purple smoke, stars round it.
-    set([0, -1], [1, sec(0.5)], 0);
-    draw();
-    expect(texts.filter(t => t == '★')).toHaveLength(3);
-    expect(texts.moves).toContainEqual([1000 + 50 * 24 * 0.5, 500]);
-    expect(texts.styles).toEqual(expect.arrayContaining(['#d6c2f5', '#9b72dd']));
-    set([0, -1], [1, sec(2)]);
-    expect(draw().styles).not.toContain('#3f8ee6');
-    expect(lamp()).toBe(false);
-
-    // Ghosts at 8 s and 9.5 s: a see-through whirlwind in a sand-coloured ring; the genie's oil
-    // lamp, smoke rising, instead of a see-through genie.
+    // Ghosts at 8 s and 9.5 s: a see-through whirlwind in a sand-coloured ring. The genie is
+    // never shot out: there all along.
     for (const t of [8, 9.5]) {
-      set([3, sec(t)], [1, sec(t)]);
+      set([3, sec(t)], [0, -1]);
       draw();
       expect(core()).toBeGreaterThan(0);
       expect(texts.strokes).toContain('#fff1c8');
       const a = texts.alphas.filter(v => v < 1);
       expect(a.some(v => v >= 0.25 && v <= 0.45)).toBe(true);
-      expect(lamp()).toBe(true);
-      expect(texts.styles).toContain('#b9a0ec88');
-      expect(texts.strokes).toContain('#a87314');
-      expect(texts.styles).not.toContain('#3f8ee6');
+      expect(texts.styles).toContain('#3f8ee6');
     }
 
-    // Back in play: a pop (white ring) for 300 ms, then the plain whirlwind and genie.
+    // Back in play: a pop (white ring) for 300 ms, then the plain whirlwind.
     const now = performance.now();
     const clock = vi.spyOn(performance, 'now').mockReturnValue(now);
     set([0, -1], [0, -1]);
     expect(draw().strokes).toContain('#fff');
     expect(texts.styles).toContain('#3f8ee6');
-    expect(lamp()).toBe(false);
     clock.mockReturnValue(now + 400);
     expect(draw().strokes).not.toContain('#fff');
     expect(core()).toBeCloseTo(whole);

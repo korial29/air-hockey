@@ -74,6 +74,32 @@ describe('predict', () => {
     expect(b.me).toMatchObject({ x: W / 2 - PADDLE_R, y: 450 });
   });
 
+  it("holds the own paddle still while a genie's spell holds it on the host, then lets it go", () => {
+    const p = classic();
+    const s = (cast: number) => ({
+      ...snap({}, [{ id: ME, x: 200, y: 450 }]),
+      obs: [{ hits: 0, since: -1, angle: 0, cast, victim: ME }],
+    });
+    rebase(p, s(-1), ME, 0);
+    draw(p, s(-1), DT, [700, 450]);
+    // Struck: it stays where the local course has it.
+    rebase(p, s(0), ME, 2 * DT);
+    const x = p.me!.x;
+    expect(draw(p, s(0), 100 * DT).me!.x).toBe(x);
+    // Free again: on toward the pointer.
+    rebase(p, s(-1), ME, 101 * DT);
+    expect(draw(p, s(-1), 110 * DT).me!.x).toBeGreaterThan(x);
+  });
+
+  it('jumps the puck to a serve off a genie, the score unchanged: no glide across the rink', () => {
+    const p = classic();
+    rebase(p, { ...snap({ x: 800, y: 450, vx: 600 }), live: true }, ME, 0);
+    draw(p, snap({}), 10 * DT);
+    const s = { ...snap({ x: 1500, y: 562 }), live: false };
+    rebase(p, s, ME, 12 * DT);
+    expect(draw(p, s, 12 * DT).puck).toMatchObject({ x: 1500, y: 562 });
+  });
+
   it('redirects the puck on an own hit at once and ignores snapshots that miss it for a while', () => {
     const p = classic();
     rebase(p, snap({ x: 420, vx: -2000 }), ME, 0);

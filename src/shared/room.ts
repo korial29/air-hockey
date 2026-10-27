@@ -230,7 +230,11 @@ export class Room {
           live: w.live,
           held: w.held,
           left: w.left,
-          obs: w.obs.map(({ gone, ...o }) => ({ ...o, since: gone < 0 ? -1 : w.tick - gone })),
+          obs: w.obs.map(({ gone, cast = -1, ...o }) => ({
+            ...o,
+            since: gone < 0 ? -1 : w.tick - gone,
+            cast: cast < 0 ? -1 : w.tick - cast,
+          })),
         }),
       );
     }

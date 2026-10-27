@@ -79,9 +79,9 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 | Vortices | Suck the puck under for 0.6 to 1.4 s (a random draw), then let it up at rest on a random spot clear of paddles and obstacles, at least 300 units from the goal lines, mirrored for a vortex right of the centre line. The client draws a splash there and pops the puck back to its size (`RISE`, 700 ms). |
 | Sharks | Eat the puck, keep it 0.6 s while swimming on, then spit it from their rim in a direction drawn from the seed, never at a player: aimed at the shooter, two players could send it back and forth through the shark. Never shot out. |
 | Whirlwinds | Catch the puck, turn it in their eye out of every paddle's reach for 0.6 to 1.4 s (a random draw), then fling it from the rim in a random direction. Each catch is a hit. |
-| Genies | Float at random in a fixed band: along their lane, up to 30 units off it, between waypoints drawn from the round's seed. |
+| Genies | Float at random in a fixed band: along their lane, up to 30 units off it, between waypoints drawn from the round's seed. Never shot out. A hit makes the puck vanish, served again on the serve spot of the shooter's opponents, and the host's spell freezes the genie and its victim, the last toucher, for 5 s (`STUN`; `ObstacleState.cast`, `victim`, `lag` on the wire): the victim stays put but solid, a bolt joins them all along, a draining ring and a countdown on the victim; then the genie floats on from where it stood (its route `lag` ticks behind). One victim at a time: a casting genie is a plain bumper. The centre spot would not do: the centre genie floats over it. |
 | Fixed obstacles | Each game and round, each one on a random cell of a 7-cell grid in front of its goal (`CELLS`, every cell keeps every guarantee); the two of a pair in opposite halves, the two of a side too; another cell at each respawn (`times`); break after 3 hits. Spawn points under one are skipped. |
-| Movers | Penguins and genies are shot out on the first hit; sharks never. |
+| Movers | Penguins are shot out on the first hit; sharks and genies never. |
 | Respawn | 10 s after removal, intact; a ghost that blocks nothing for the last 3 s. |
 | End screen | Stadium, cup for the winning team, podium of the top three (goals, then points), small points ranking. |
 

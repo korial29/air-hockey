@@ -10,6 +10,7 @@ import {
   PUCK_MAX_SPEED,
   PUCK_R,
   RESPAWN,
+  STUN,
   TICK_HZ,
   W,
 } from './constants';
@@ -25,6 +26,7 @@ import {
   skate,
   solid as firm,
   spawnPoint,
+  standing,
   step,
 } from './physics';
 import type { Arena, Obstacle, Paddle, Team, World } from './types';
@@ -96,15 +98,7 @@ const run = (w: World, n: number, each?: () => void, host = true): number => {
 const speed = (w: World): number => Math.hypot(w.puck.vx, w.puck.vy);
 
 /** The obstacles the world stands among. */
-const obs = (w: World) =>
-  obstacles(
-    w.arena,
-    w.tick,
-    w.size,
-    w.count,
-    w.seed,
-    w.obs.map(o => o.times),
-  );
+const obs = (w: World) => standing(w);
 
 /**
  * Those in play (removed ones and their ghosts touch nothing), but for the whirlwind holding the
@@ -1490,8 +1484,6 @@ describe('sea arena', () => {
 });
 
 describe('desert arena', () => {
-  /** Minimum speed of a puck leaving an obstacle (physics.ts). */
-  const KICK = 1000;
   const desert = (x: number, y: number, vx = 0, vy = 0, paddles: Paddle[] = []): World =>
     world(x, y, vx, vy, paddles, 'desert');
   const [wind, mirror] = obstacles('desert', 0);
@@ -1774,38 +1766,107 @@ describe('desert arena', () => {
     expect(w.obs[0]).toMatchObject({ hits: 1, gone: -1 });
   });
 
-  it('shoots a genie out on the first hit, like a penguin: a bounce and the kick, and brings it back', () => {
+  it("vanishes the puck on a genie to the opponents' serve spot: the genie stops, its spell holds the shooter, both go on after", () => {
     for (const t of [100, 900, 1700, 3000]) {
-      const w = desert(0, 0);
+      const shooter = paddle(0, 200, 150, 3);
+      const other = paddle(1, W - 200, 150, 4);
+      [shooter.tx, shooter.ty] = [400, 300];
+      [other.tx, other.ty] = [W - 400, 300];
+      const w = desert(0, 0, 0, 0, [shooter, other]);
       w.tick = t;
+      w.last = 3;
       // At the centre genie where it will be in a few steps, from the side with more room.
       const g = obstacles('desert', t + 8)[5];
       const s = g.y > H / 2 ? -1 : 1;
       Object.assign(w.puck, { x: g.x, y: g.y + s * (g.r + PUCK_R + 15), vx: 0, vy: -s * 1500 });
+      let cast = -1;
       run(w, 60, () => {
-        if (w.bumps.length) {
+        if (w.bumps.length && cast < 0) {
+          cast = w.tick;
           expect(w.bumps).toEqual([5]);
-          expect(w.held).toBe(-1);
-          expect(w.puck.vy * s).toBeGreaterThan(0);
-          expect(speed(w)).toBeGreaterThanOrEqual(KICK - 1e-6);
+          // Gone from there: at rest on the serve column of the shooter's opponents (team 1), out
+          // of play until touched: the serve spot, or a clear one up to two serve steps (160) off.
+          expect(w.puck).toMatchObject({ x: (3 * W) / 4, vx: 0, vy: 0 });
+          expect(Math.abs(w.puck.y - H / 2)).toBeLessThanOrEqual(320);
+          expect(w.live).toBe(false);
+          // Its spell on the shooter; the genie stays in play.
+          expect(w.obs[5]).toMatchObject({ cast, victim: 3, gone: -1 });
         }
       });
-      expect(obs(w)[5].kind).toBe('genie');
-      expect(w.obs[5].hits).toBe(1);
-      const gone = w.obs[5].gone;
-      expect(gone).toBeGreaterThan(t);
-      expect(gone).toBeLessThan(w.tick);
-      // Back in play RESPAWN ticks after, intact (the puck put away, out of its way).
+      expect(cast).toBeGreaterThan(t);
+      // The puck put away, out of the genies' way.
       Object.assign(w.puck, { x: 100, y: 100, vx: 0, vy: 0 });
-      w.tick = gone + RESPAWN - 1;
+      const at = obs(w)[5];
+      const [sx, sy] = [shooter.x, shooter.y];
+      while (w.tick < cast + STUN - 1) {
+        step(w, DT);
+        // Both stand still; the other paddle moves on.
+        expect(obs(w)[5]).toMatchObject({ x: at.x, y: at.y, vx: 0, vy: 0 });
+        expect([shooter.x, shooter.y]).toEqual([sx, sy]);
+      }
+      expect(other.x).toBeLessThan(W - 200);
+      // Over: the genie floats on from where it stood, its route STUN ticks behind; the shooter
+      // goes.
       step(w, DT);
-      expect(w.obs[5]).toMatchObject({ hits: 0, gone: -1 });
+      expect(w.obs[5]).toMatchObject({ cast: -1, lag: STUN });
+      const next = obs(w)[5];
+      expect(Math.hypot(next.x - at.x, next.y - at.y)).toBeLessThan(2);
+      step(w, DT);
+      expect(shooter.x).toBeGreaterThan(sx);
+      expect(obstacles('desert', w.tick - STUN)[5]).toEqual({ ...obs(w)[5] });
     }
+  });
+
+  it('bounces the puck off a genie busy with its spell: one victim at a time', () => {
+    const w = desert(0, 0, 0, 0, [paddle(0, 200, 150, 3), paddle(0, 300, 900, 5)]);
+    w.tick = 100;
+    w.last = 5;
+    w.obs[5] = { hits: 0, gone: -1, angle: 0, cast: 99, victim: 3 };
+    const g = obs(w)[5];
+    const s = g.y > H / 2 ? -1 : 1;
+    Object.assign(w.puck, { x: g.x, y: g.y + s * (g.r + PUCK_R + 15), vx: 0, vy: -s * 1500 });
+    run(w, 30);
+    expect(w.live).toBe(true);
+    expect(w.puck.vy * s).toBeGreaterThan(0);
+    expect(w.obs[5]).toMatchObject({ cast: 99, victim: 3 });
+  });
+
+  it('holds a paddle under a spell still STUN ticks, solid, then lets it go', () => {
+    const p = paddle(0, 300, 300, 3);
+    [p.tx, p.ty] = [400, 600];
+    // A puck sent at it bounces off.
+    const w = desert(300 + RR + 60, 300, -900, 0, [p]);
+    w.obs[5] = { hits: 0, gone: -1, angle: 0, cast: 0, victim: 3 };
+    let back = false;
+    // Goals and all.
+    while (w.tick < STUN - 1) {
+      step(w, DT);
+      expect([p.x, p.y]).toEqual([300, 300]);
+      back ||= w.puck.vx > 0;
+    }
+    expect(back).toBe(true);
+    step(w, DT);
+    step(w, DT);
+    expect(p.x).toBeGreaterThan(300);
+  });
+
+  it('serves the puck off a genie in a prediction too, with no spell: the host casts it', () => {
+    const shooter = paddle(0, 200, 150, 3);
+    const w = desert(0, 0, 0, 0, [shooter]);
+    w.last = 3;
+    const g = obstacles('desert', 108)[5];
+    w.tick = 100;
+    const s = g.y > H / 2 ? -1 : 1;
+    Object.assign(w.puck, { x: g.x, y: g.y + s * (g.r + PUCK_R + 15), vx: 0, vy: -s * 1500 });
+    run(w, 60, undefined, false);
+    expect(w.puck.x).toBe((3 * W) / 4);
+    expect(w.obs[5].cast).toBeUndefined();
   });
 
   it('makes paddles slide around whirlwinds and genies, never into them', () => {
     const p = paddle(0, 100, H / 2);
-    const w = desert(W / 2, H - 100, 0, 0, [p]);
+    // The puck at rest out of the genies' lanes: one would serve it.
+    const w = desert(100, H - 100, 0, 0, [p]);
     for (const [tx, ty] of [
       [wind.x, wind.y],
       [720, H / 2],

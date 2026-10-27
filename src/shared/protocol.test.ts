@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { H, MAX_SIZE, PADDLE_MAX_SPEED, PUCK_MAX_SPEED, PUCK_R, SCALE, W } from './constants';
+import { H, MAX_SIZE, PADDLE_MAX_SPEED, PUCK_MAX_SPEED, PUCK_R, SCALE, STUN, W } from './constants';
 import {
   decodeInput,
   decodeSnapshot,
@@ -115,6 +115,20 @@ describe('snapshot frames', () => {
     });
   });
 
+  it("carry each genie's spell (ticks since it struck, its victim) and its lag", () => {
+    const at = (o: object) =>
+      decodeSnapshot(
+        encodeSnapshot({ ...snapshot, obs: [{ hits: 0, since: -1, angle: 0, ...o }] }),
+      )!.obs![0];
+    expect(at({})).toMatchObject({ cast: -1, victim: 0, lag: 0 });
+    expect(at({ cast: 0, victim: 7, lag: 1200 })).toMatchObject({ cast: 0, victim: 7, lag: 1200 });
+    expect(at({ cast: STUN - 1, victim: 255, lag: 65535 })).toMatchObject({
+      cast: STUN - 1,
+      victim: 255,
+      lag: 65535,
+    });
+  });
+
   it('carry what holds the puck, with the live flag and its time left to the ms', () => {
     const out = decodeSnapshot(encodeSnapshot(snapshot))!;
     expect([out.held, out.left]).toEqual([-1, 0]);
@@ -132,7 +146,7 @@ describe('snapshot frames', () => {
     expect(decodeSnapshot(buf)).toMatchObject({ paddles: [], obs: [] });
   });
 
-  it('carry the obstacle states after the paddles, 5 bytes each', () => {
+  it('carry the obstacle states after the paddles, 10 bytes each', () => {
     const obs = [
       { hits: 0, since: -1, angle: 0 },
       { hits: 2, since: -1, angle: 1 },
@@ -143,7 +157,7 @@ describe('snapshot frames', () => {
       { hits: 1, since: 17, angle: 6.2 },
     ];
     const buf = encodeSnapshot({ ...snapshot, obs });
-    expect(buf.byteLength).toBe(17 + 3 * 5 + 1 + 7 * 5);
+    expect(buf.byteLength).toBe(17 + 3 * 5 + 1 + 7 * 10);
     const out = decodeSnapshot(buf)!;
     expect(out.paddles.map(p => p.id)).toEqual([1, 7, 255]);
     expect(out.obs!.map(({ hits, since }) => [hits, since])).toEqual(

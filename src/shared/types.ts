@@ -68,6 +68,14 @@ export interface ObstacleState {
    * whirlwind) comes back somewhere else in its band each time (see obstacles in arena.ts).
    */
   times?: number;
+  /**
+   * A genie's spell: the tick it struck at, -1 or absent when none. For STUN ticks the genie stands
+   * still and paddle `victim` is paralysed; then `lag` grows by STUN.
+   */
+  cast?: number;
+  victim?: number;
+  /** Ticks a genie stood still under its spells, mod 65536: its float is that far behind the tick. */
+  lag?: number;
 }
 
 export interface World {
@@ -110,6 +118,8 @@ export interface World {
   score: [number, number];
   /** Id of the paddle that touched the puck during the last step, -1 if none. */
   hit: number;
+  /** Id of the paddle that touched the puck last, -1 or absent before any: a genie's spell strikes it. */
+  last?: number;
 }
 
 /** Match rules, set by the host. Defaults in constants.ts (RULES). */
@@ -179,10 +189,18 @@ export interface Snapshot {
   held?: number;
   left?: number;
   /**
-   * World.obs on the wire, with `gone` as ticks since removal (or -1), so it survives the u16 tick
-   * wrap: { hits, since, angle } per obstacle in play.
+   * World.obs on the wire, with `gone` as ticks since removal (or -1), and `cast` as ticks since
+   * the spell struck (or -1), so they survive the u16 tick wrap.
    */
-  obs?: { hits: number; since: number; angle: number; times?: number }[];
+  obs?: {
+    hits: number;
+    since: number;
+    angle: number;
+    times?: number;
+    cast?: number;
+    victim?: number;
+    lag?: number;
+  }[];
 }
 
 /**
