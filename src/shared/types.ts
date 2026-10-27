@@ -29,14 +29,18 @@ export interface Paddle {
 
 /**
  * The scene of a round. 'ice': icebergs and sliding penguins. 'sea' (sea and pirates): rocks and
- * sharks swimming in zig-zag, wooden goals. 'classic': an empty rink.
+ * sharks swimming in zig-zag, wooden goals. 'desert' (an Arabian Nights desert): whirlwinds of sand
+ * and floating genies, Moorish arches for goals. 'classic': an empty rink.
  */
-export type Arena = 'ice' | 'sea' | 'classic';
+export type Arena = 'ice' | 'sea' | 'desert' | 'classic';
 
 /** A round obstacle the puck bounces off like a pinball bumper. Paddles cannot cross it. */
 export interface Obstacle {
-  /** Fixed ones (iceberg, rock) break after ICEBERG_HP hits; movers (penguin, shark) on one. */
-  kind: 'iceberg' | 'penguin' | 'rock' | 'shark';
+  /**
+   * Fixed ones (iceberg, rock, whirlwind) break after ICEBERG_HP hits; movers (penguin, shark,
+   * genie) on one.
+   */
+  kind: 'iceberg' | 'penguin' | 'rock' | 'shark' | 'whirlwind' | 'genie';
   x: number;
   y: number;
   r: number;
@@ -97,7 +101,7 @@ export interface World {
 export interface Rules {
   /**
    * The scene, or scenes taking turns from one round to the next (round 1 the first, round 2 the
-   * second, then round again). Default ['ice', 'sea'].
+   * second, then round again). Default ['ice', 'sea', 'desert'].
    */
   arena: Arena | Arena[];
   /** Rounds in a match; the first team to win a majority of them wins (3 → best of 3). */
