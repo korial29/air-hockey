@@ -28,19 +28,22 @@ export interface Paddle {
 }
 
 /**
- * The scene of a round. 'ice': icebergs and sliding penguins. 'sea' (sea and pirates): rocks and
+ * The scene of a round. 'ice': icebergs and sliding penguins. 'sea' (sea and pirates): vortices and
  * sharks swimming in zig-zag, wooden goals. 'desert' (an Arabian Nights desert): whirlwinds of sand
  * and floating genies, Moorish arches for goals. 'classic': an empty rink.
  */
 export type Arena = 'ice' | 'sea' | 'desert' | 'classic';
 
-/** A round obstacle the puck bounces off like a pinball bumper. Paddles cannot cross it. */
+/**
+ * A round obstacle the puck bounces off like a pinball bumper, unless it grabs it (whirlwind,
+ * vortex, shark). Paddles cannot cross it.
+ */
 export interface Obstacle {
   /**
-   * Fixed ones (iceberg, rock, whirlwind) break after ICEBERG_HP hits; movers (penguin, shark,
-   * genie) on one.
+   * Fixed ones (iceberg, vortex, whirlwind) break after ICEBERG_HP hits; penguins and genies on
+   * one; sharks never.
    */
-  kind: 'iceberg' | 'penguin' | 'rock' | 'shark' | 'whirlwind' | 'genie';
+  kind: 'iceberg' | 'penguin' | 'vortex' | 'shark' | 'whirlwind' | 'genie';
   x: number;
   y: number;
   r: number;
@@ -71,7 +74,7 @@ export interface World {
   size: number;
   /** How many obstacles of the arena are in play (see obstacles). Set at round start. */
   count: number;
-  /** Places the icebergs (rocks, whirlwinds) across the width (see obstacles); 0: the fixed one. */
+  /** Places the icebergs (vortices, whirlwinds) across the width (see obstacles); 0: the fixed one. */
   seed: number;
   /**
    * Physics steps since the world was created; obstacles(arena, tick, size, count, seed) gives the
@@ -85,10 +88,15 @@ export interface World {
    * so a penguin cannot start a round alone, let alone score.
    */
   live: boolean;
-  /** Index of the whirlwind holding the puck (see twirl in physics.ts), -1 when none does. */
+  /**
+   * Index of the obstacle holding the puck (a whirlwind, a vortex or a shark, see twirl in
+   * physics.ts), -1 when none does.
+   */
   held: number;
-  /** Seconds until that whirlwind flings the puck out. */
+  /** Seconds until it lets go. */
   left: number;
+  /** Id of the paddle that touched the puck last, -1 before any: a shark spits the puck at it. */
+  last: number;
   /**
    * State of each obstacle in play, indexed like obstacles(arena, tick, size, count, seed).
    * Reset at round start (every obstacle back, intact).
@@ -161,9 +169,11 @@ export interface Snapshot {
   paddles: { id: number; x: number; y: number }[];
   /** World.live: the puck reacts to obstacles. */
   live?: boolean;
-  /** World.held and World.left: the whirlwind holding the puck and for how long still. */
+  /** World.held and World.left: the obstacle holding the puck and for how long still. */
   held?: number;
   left?: number;
+  /** World.last: the paddle a shark spits the puck at. */
+  last?: number;
   /**
    * World.obs on the wire, with `gone` as ticks since removal (or -1), so it survives the u16 tick
    * wrap: { hits, since, angle } per obstacle in play.

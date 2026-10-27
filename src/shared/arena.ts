@@ -5,7 +5,7 @@
 // nothing gets trapped. Penguins touch the boards at the ends of their lane: what they catch
 // there slides out sideways. A straight shot from the centre spot reaches every point of either
 // goal mouth without meeting an iceberg.
-// Each round the icebergs (rocks) take a new place across the width: same x, a y drawn from the
+// Each round the icebergs (vortices, whirlwinds) take a new place across the width: same x, a y drawn from the
 // round's seed (see obstacles) within a band per pair, the same for both of a mirrored pair. The
 // bands keep every guarantee above for any draw (size 1):
 // - top pair (r 72), y in [217, 355]: ≥ 145 to the top board; its centre ≥ 101 from the line
@@ -14,14 +14,13 @@
 //   line to the bottom post and ≥ 199 from the serve spot.
 // - the pairs stay ≥ 266 apart; spawn columns stand ≥ 130 off their x, clear at any y; the lanes
 //   do not move, so the gaps to them stay as above.
-// The sea arena (sea and pirates) is the same layout, slot for slot: rocks where the icebergs
+// The sea arena (sea and pirates) is the same layout, slot for slot: vortices where the icebergs
 // are, same size, and big sharks (SR, wider than a penguin) in the penguin lanes, swimming board
 // to board in the same period and zig-zagging across their lane: a triangle wave of ZA units
 // either side, ZN back-and-forths per crossing, on the lane at the boards and at mid-height. The
 // swing is wide on purpose, so the sea drops the paddle-and-puck rule while a shark swings by:
-// rocks to the nearest lane narrow down to 84 at the worst draw of the rocks' y (for 1/8 to 1/5
-// of the period, with the draw), the pair's lanes to a
-// centre-line paddle down to 78 (nearly half of it, on every inward swing), lane to lane down to
+// vortices to the nearest lane narrow down to 84 at the worst draw of the vortices' y (for 1/8 to
+// 1/5 of the period, with the draw), the pair's lanes to a centre-line paddle down to 78 (nearly half of it, on every inward swing), lane to lane down to
 // 129 (about 1/20 of it).
 // The puck alone always fits (every gap ≥ 78 > 2 · PUCK_R + 20), so no obstacle traps it, and a
 // paddle caught in a squeeze is pushed out like anywhere else; cornered where a board meets the
@@ -31,6 +30,8 @@
 // the serve spots and the centre-line gap allow together: SR + ZA = 114.
 // The pair zig-zags in mirror, the centre shark across the centre line: half a zig on each
 // side, so it favours neither team over time.
+// At sea a vortex sucks the puck under, and the puck comes up somewhere else on the rink; a shark
+// eats it and spits it at whoever touched it last (see twirl in physics.ts).
 // The desert (an Arabian Nights desert) is the ice layout, slot for slot: whirlwinds of sand where
 // the icebergs are (same size, same y per seed), genies in the penguin lanes. A whirlwind catches
 // the puck, spins it round and flings it out in a random direction (see twirl in physics.ts), in a
@@ -45,7 +46,7 @@ import { H, MAX_SIZE, TICK_HZ, W } from './constants';
 import type { Arena, Obstacle } from './types';
 
 /**
- * Icebergs (rocks at sea, whirlwinds in the desert) of the left half, above and below its serve
+ * Icebergs (vortices at sea, whirlwinds in the desert) of the left half, above and below its serve
  * spot: [x, r, band top, band bottom, y for seed 0]. The right half mirrors.
  */
 const BERGS = [
@@ -95,10 +96,10 @@ export const draw = (seed: number, i: number): number => {
 };
 
 /**
- * Icebergs, rocks and whirlwinds: they break after ICEBERG_HP hits. Penguins, sharks and genies
- * move, go on one.
+ * Icebergs, vortices and whirlwinds: they break after ICEBERG_HP hits. Penguins and genies move, go
+ * on one. Sharks move and never go: they eat the puck.
  */
-export const fixed = (o: Obstacle): boolean => ['iceberg', 'rock', 'whirlwind'].includes(o.kind);
+export const fixed = (o: Obstacle): boolean => ['iceberg', 'vortex', 'whirlwind'].includes(o.kind);
 
 /**
  * Sense a whirlwind spins the puck in, on a rink of that size: 1 clockwise on screen (y down), left
@@ -107,7 +108,7 @@ export const fixed = (o: Obstacle): boolean => ['iceberg', 'rock', 'whirlwind'].
 export const swirl = (o: Obstacle, size = 1): 1 | -1 => (o.x < (W * size) / 2 ? 1 : -1);
 
 /**
- * The obstacles of an arena at tick t: icebergs (rocks, whirlwinds) first, fixed, then penguins
+ * The obstacles of an arena at tick t: icebergs (vortices, whirlwinds) first, fixed, then penguins
  * (sharks, genies), moving. 'classic' has none. t may be fractional, for drawing between steps.
  * The motion repeats with a period that divides 65536 ticks, so the wrap of the u16 snapshot tick
  * is seamless. vx and vy are the velocity, units per second (a shark's heading). The layout is
@@ -120,14 +121,17 @@ export const swirl = (o: Obstacle, size = 1): 1 | -1 => (o.x < (W * size) / 2 ? 
  * at sea and in the desert. Indices follow the returned order and are stable for a given count.
  * Fresh objects every call.
  *
- * `seed` (an integer, picked by the host each round) places the icebergs (rocks, whirlwinds)
+ * `seed` (an integer, picked by the host each round) places the icebergs (vortices, whirlwinds)
  * across the width, each pair in its band (see BERGS), and draws the genies' waypoints; 0 keeps
  * the fixed layout of the icebergs.
  */
 export const obstacles = (arena: Arena, t: number, size = 1, count = 7, seed = 0): Obstacle[] => {
   const sea = arena == 'sea';
   const [still, mover] = (
-    { sea: ['rock', 'shark'], desert: ['whirlwind', 'genie'] } as Record<string, Obstacle['kind'][]>
+    { sea: ['vortex', 'shark'], desert: ['whirlwind', 'genie'] } as Record<
+      string,
+      Obstacle['kind'][]
+    >
   )[arena] ?? ['iceberg', 'penguin'];
   const r = sea ? SR : PR;
   // Travel of a centre, board to board, and the speed to cover it twice per PERIOD (about 245).

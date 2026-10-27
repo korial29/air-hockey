@@ -506,16 +506,16 @@ describe('predict', () => {
       reset(p, 'ready', 'sea');
       expect(p.w).toMatchObject({ arena: 'sea', size: 1, count: 7, obs: [] });
       expect(p.hits).toEqual([]);
-      // In play: the local puck bounces off the first rock, and off the centre shark.
+      // In play: the first vortex sucks the local puck down, the centre shark eats it.
       reset(p, 'play', 'sea');
-      const [rock] = obstacles('sea', 0);
+      const [vortex] = obstacles('sea', 0);
       const s = {
-        ...snap({ x: rock.x - rock.r - PUCK_R - 20, y: rock.y, vx: 1000 }, []),
+        ...snap({ x: vortex.x - vortex.r - PUCK_R - 20, y: vortex.y, vx: 1000 }, []),
         live: true,
         obs: Array(7).fill(intact),
       };
       rebase(p, s, ME, 2000);
-      expect(view(p, s, 2050)!.puck.vx).toBeLessThan(0);
+      expect(view(p, s, 2050)!.held).toBe(0);
       expect(Object.keys(p.hits)).toEqual(['0']);
       const shark = obstacles('sea', 512)[5];
       const m = {
@@ -525,7 +525,7 @@ describe('predict', () => {
         obs: Array(7).fill(intact),
       };
       rebase(p, m, ME, 3000);
-      expect(view(p, m, 3000 + 30 * DT)!.puck.vy).toBeGreaterThan(0);
+      expect(view(p, m, 3000 + 30 * DT)!.held).toBe(5);
       expect(Object.keys(p.hits)).toEqual(['0', '5']);
       // Round 3 in the desert, whirlwinds placed by the round's seed: the sea's hit times go too.
       reset(p, 'break', 'sea');

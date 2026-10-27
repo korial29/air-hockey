@@ -28,7 +28,7 @@ vi.mock('../shared/arena', () => ({
         ]
       : arena == 'sea'
         ? [
-            { kind: 'rock', x: 700, y: 300, r: 70, vx: 0, vy: 0 },
+            { kind: 'vortex', x: 700, y: 300, r: 70, vx: 0, vy: 0 },
             { kind: 'shark', x: 1000, y: 500, r: 50, vx: 120, vy: 180 },
           ]
         : arena == 'desert'
@@ -854,7 +854,7 @@ describe('airHockey', () => {
     fake.obs = undefined;
     game.destroy();
   });
-  it('draws the sea scene: water and waves, rocks, big sharks, the doubloon; the rink repainted per scene', () => {
+  it('draws the sea scene: water and waves, vortices, big sharks, the doubloon; the rink repainted per scene', () => {
     const texts = fakeContext();
     let frame: FrameRequestCallback = () => {};
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
@@ -905,11 +905,10 @@ describe('airHockey', () => {
     expect(texts.styles).toContain('#0b4d6e');
     expect(texts.strokes).toEqual(expect.arrayContaining(['#a8703c', '#d9bf86', '#ffffff45']));
     expect(texts.styles).not.toContain('#e6f2f9');
-    // A rock (grey-brown facets, moss, barnacles, a foam ring), no iceberg facet.
-    expect(facets('hsl(30')).toBeGreaterThan(0);
-    expect(facets('hsl(196')).toBe(0);
-    expect(texts.styles).toEqual(expect.arrayContaining(['#6f8f3acc', '#e8e0cc']));
-    expect(texts.strokes).toContain('#fffc');
+    // A vortex (foam and deep blue bands round a dark core, bubbles), no facet at all.
+    expect(facets('hsl(')).toBe(0);
+    expect(texts.styles).toEqual(expect.arrayContaining(['#03243d', '#d4f2ff']));
+    expect(texts.strokes).toEqual(expect.arrayContaining(['#eaf9ff', '#1d79b0']));
     // A shark (grey back over a pale belly, fins, dorsal fin and its shadow, mouth, teeth, eyes),
     // its gills, no penguin.
     expect(texts.styles).toEqual(
@@ -936,14 +935,13 @@ describe('airHockey', () => {
     expect(draw().styles).not.toContain('#0b4d6e');
     expect(texts.strokes).toContain('#ffffff45');
 
-    // Hit: the rock flashes and throws stone chips; the shark jolts, spins, sees stars, bubbles
-    // burst.
+    // Hit: the vortex spins faster in a white gust ring; the shark jolts, spins, sees stars,
+    // bubbles burst.
     const jolt = () => texts.moves.filter(([x, y]) => x && !y && Math.abs(x) <= 50 * 0.15);
     fake.hits.splice(0, 2, performance.now(), performance.now());
     texts.moves.length = 0;
     expect(draw().filter(t => t == '★')).toHaveLength(3);
     expect(jolt()).toHaveLength(1);
-    expect(texts.styles).toContain('#8f8475');
     expect(texts.strokes).toEqual(expect.arrayContaining(['#fff', '#e8fdff']));
     fake.hits.splice(0, 2, -5000, -5000);
     texts.moves.length = 0;
@@ -962,7 +960,7 @@ describe('airHockey', () => {
     game.destroy();
   });
 
-  it('draws rock and shark damage, removal, ghosts and returns from the obstacle states', () => {
+  it('draws vortex damage, closing, ghosts and returns; never a shark shot out; the puck swallowed', () => {
     const texts = fakeContext();
     let frame: FrameRequestCallback = () => {};
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
@@ -986,70 +984,63 @@ describe('airHockey', () => {
         wins: [1, 0],
       }),
     });
-    socket.onmessage!({
-      data: encodeSnapshot({
-        tick: 4000,
-        score: [0, 0],
-        puck: { x: 300, y: 600, vx: 0, vy: 0 },
-        paddles: [],
-      }),
-    });
+    // Each one a new score: the puck jumps there, no easing toward it.
+    let goals = 0;
+    const snap = (puck = { x: 300, y: 600 }, held = -1) =>
+      socket.onmessage!({
+        data: encodeSnapshot({
+          tick: 4000,
+          score: [0, goals++],
+          puck: { ...puck, vx: 0, vy: 0 },
+          paddles: [],
+          live: true,
+          held,
+          left: 1,
+        }),
+      });
+    snap();
     const sec = (v: number) => v * 240;
-    const set = (rock: [number, number], mer: [number, number], angle = 0) =>
+    const set = (vortex: [number, number], shark: [number, number]) =>
       (fake.obs = [
-        { hits: rock[0], since: rock[1], angle: 0 },
-        { hits: mer[0], since: mer[1], angle },
+        { hits: vortex[0], since: vortex[1], angle: 0 },
+        { hits: shark[0], since: shark[1], angle: 0 },
       ]);
-    const facets = () => texts.styles.filter(v => String(v).startsWith('hsl(30')).length;
-    const cracks = () => texts.strokes.filter(v => v == '#1e1712').length;
+    const core = () => texts.styles.filter(v => v == '#03243d').length;
 
-    // In play: one hit, a crack; two, branching cracks and a chipped corner.
+    // In play: fainter and smaller with each swallow.
     set([0, -1], [0, -1]);
-    const intact = draw().styles.filter(v => String(v).startsWith('hsl(30'));
-    expect(cracks()).toBe(0);
-    expect(texts.strokes).toContain('#fff3');
-    set([1, -1], [0, -1]);
     draw();
-    expect(cracks()).toBe(1);
+    expect(core()).toBe(1);
+    expect(texts.alphas.filter(v => v > 0 && v < 1)).toEqual([]);
     set([2, -1], [0, -1]);
     draw();
-    expect(cracks()).toBe(3);
-    expect(texts.styles.filter(v => String(v).startsWith('hsl(30'))).not.toEqual(intact);
+    expect(core()).toBe(1);
+    expect(texts.alphas).toContain(0.5);
 
-    // Crumbled 0.3 s ago: stones sinking in ripples, no whole rock (no ridges); at 5 s, nothing.
+    // Closed 0.3 s ago: its swirl spreads out and fades; at 5 s, nothing.
     set([3, sec(0.3)], [0, -1]);
     draw();
-    expect(facets()).toBeGreaterThan(0);
-    expect(texts.strokes).toEqual(expect.arrayContaining(['#fff', '#3b3129']));
-    expect(texts.strokes).not.toContain('#fff3');
-    expect(texts.styles).not.toContain('#6f8f3acc');
+    expect(core()).toBe(1);
+    expect(texts.alphas.some(v => Math.abs(v - 0.3125) < 1e-9)).toBe(true);
     set([3, sec(5)], [0, -1]);
     draw();
-    expect(facets()).toBe(0);
+    expect(core()).toBe(0);
 
-    // Shark shot out 0.5 s ago along +x: it flies off spinning in a splash of droplets, stars round it.
-    set([0, -1], [1, sec(0.5)], 0);
-    draw();
-    expect(texts.filter(t => t == '★')).toHaveLength(3);
-    expect(texts.moves).toContainEqual([1000 + 50 * 24 * 0.5, 500]);
-    expect(texts.styles).toContain('#bdf3ff');
-    set([0, -1], [1, sec(2)]);
-    expect(draw().styles).not.toContain('#7f8e9a');
+    // A shark is never shot out: whatever its state, it swims on.
+    set([0, -1], [7, -1]);
+    expect(draw().styles).toContain('#7f8e9a');
 
-    // Ghosts at 8 s and 9.5 s: see-through, a ring, bubbles rising, no crack.
+    // Ghosts at 8 s and 9.5 s: see-through, a ring, bubbles rising.
     for (const t of [8, 9.5]) {
-      set([3, sec(t)], [1, sec(t)]);
+      set([3, sec(t)], [0, -1]);
       draw();
-      expect(facets()).toBeGreaterThan(0);
-      expect(texts.styles).toContain('#7f8e9a');
+      expect(core()).toBe(1);
       expect(texts.strokes.filter(v => v == '#e0fbff').length).toBeGreaterThan(2);
-      expect(texts.strokes).not.toContain('#7fe3ff');
       const a = texts.alphas.filter(v => v < 1);
       expect(a.some(v => v >= 0.25 && v <= 0.45)).toBe(true);
-      expect(cracks()).toBe(0);
     }
 
-    // Back in play: a pop (white ring) for 300 ms, then the plain rock and shark.
+    // Back in play: a pop (white ring) for 300 ms, then the plain vortex.
     const now = performance.now();
     const clock = vi.spyOn(performance, 'now').mockReturnValue(now);
     set([0, -1], [0, -1]);
@@ -1057,6 +1048,25 @@ describe('airHockey', () => {
     clock.mockReturnValue(now + 400);
     expect(draw().strokes).not.toContain('#fff');
     expect(texts.strokes).not.toContain('#e0fbff');
+
+    // The doubloon, free; held by the vortex, smaller down its funnel, gone at its centre; in the
+    // shark's belly, gone too.
+    const gold = () => {
+      texts.arcs.length = 0;
+      return draw().arcs.find(([s]) => s == '#e9b52c')?.[1];
+    };
+    const free = gold()!;
+    expect(free).toBeGreaterThan(0);
+    // Halfway down (it keeps sinking until the frame is drawn).
+    snap({ x: 735, y: 300 }, 0);
+    expect(gold()).toBeGreaterThan(0);
+    expect(gold()).toBeLessThan(free * 0.51);
+    snap({ x: 700, y: 300 }, 0);
+    expect(draw().styles).not.toContain('#e9b52c');
+    snap({ x: 1000, y: 500 }, 1);
+    expect(draw().styles).not.toContain('#e9b52c');
+    snap();
+    expect(draw().styles).toContain('#e9b52c');
     fake.obs = undefined;
     game.destroy();
   });

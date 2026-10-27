@@ -528,46 +528,20 @@ const corners = (x: number, y: number, r: number, i: number) => {
   return [v, x - r * 0.18, y - r * 0.22] as const;
 };
 
-/**
- * Colours of a fixed obstacle, iceberg then rock: facet hue (hsl prefix) and lightness, outline,
- * ridges, crack, crack lip, hit ring, chips, shadow.
- */
-const ROCKS = [
-  ['hsl(196 70% ', 76, '#4f9cc4', '#fffa', '#2b6d96', '#fffd', '#7fe3ff', '#e6faff', '#0a4a7a66'],
-  ['hsl(30 12% ', 44, '#3b3129', '#fff3', '#1e1712', '#e8dcc855', '#fff', '#8f8475', '#02253a88'],
-] as const;
+/** Iceberg outline. */
+const EDGE = '#4f9cc4';
+
+/** Facet colour: bright toward the top left (m: its direction from the centre), l: extra light. */
+const shade = (m: number, l: number) => `hsl(196 70% ${76 + 18 * Math.cos(m + 2.36) + l}%)`;
 
 /**
- * Facet colour: bright toward the top left (m: its direction from the centre), l: extra light;
- * ice, or rock when sea.
+ * An iceberg, in world units: facets lit from the top left. e: hit flash, 1 → 0. hits: puck hits
+ * taken, a crack at 1, deeper branching cracks and a chipped corner at 2. Strokes and the shake
+ * scale with the rink like its radius does.
  */
-const shade = (m: number, l: number, sea = 0) =>
-  `${ROCKS[sea][0]}${ROCKS[sea][1] + 18 * Math.cos(m + 2.36) + l}%)`;
-
-/**
- * An iceberg, or a rock at sea, in world units: facets lit from the top left. e: hit flash, 1 → 0.
- * hits: puck hits taken, a crack at 1, deeper branching cracks and a chipped corner at 2. Strokes
- * and the shake scale with the rink like its radius does. A rock stands in a ring of foam, with
- * moss, barnacles and a wet highlight.
- */
-const berg = (
-  x: number,
-  y: number,
-  r: number,
-  i: number,
-  e: number,
-  age: number,
-  hits = 0,
-  sea = 0,
-  now = 0,
-) => {
-  const [, , edge, ridge, crack, lip, flash, chips, dark] = ROCKS[sea];
+const berg = (x: number, y: number, r: number, i: number, e: number, age: number, hits = 0) => {
   x += Math.sin(age / 12) * e * 8 * u;
-  shadow(x + r * 0.25, y + r * 0.3, r * 1.3, r, dark);
-  if (sea) {
-    circle(x, y, r * 1.25, '#ffffff30');
-    ring(x, y, r * (1.18 + 0.05 * Math.sin(now / 300 + i)), '#fffc', 7 * u);
-  }
+  shadow(x + r * 0.25, y + r * 0.3, r * 1.3, r, '#0a4a7a66');
   const [v, px, py] = corners(x, y, r, i);
   const n = v.length / 2;
   // Two hits: one corner knocked off, the facets around it in shadow.
@@ -584,43 +558,23 @@ const berg = (
     c.lineTo(v[j], v[j + 1]);
     c.lineTo(v[k], v[k + 1]);
     const m = Math.atan2(v[j + 1] + v[k + 1] - 2 * y, v[j] + v[k] - 2 * x);
-    fills(shade(m, 30 * e - (j == chip || k == chip ? (sea ? 20 : 40) : 0), sea));
+    fills(shade(m, 30 * e - (j == chip || k == chip ? 40 : 0)));
   }
   c.beginPath();
   for (let j = 0; j < n * 2; j += 2) {
     c.moveTo(px, py);
     c.lineTo(v[j], v[j + 1]);
   }
-  strokes(ridge, 2 * u);
+  strokes('#fffa', 2 * u);
   c.beginPath();
   for (let j = 0; j < n * 2; j += 2) {
     c.lineTo(v[j], v[j + 1]);
   }
   c.closePath();
-  c.strokeStyle = edge;
+  c.strokeStyle = EDGE;
   c.lineWidth = 4 * u;
   c.lineJoin = 'round';
   c.stroke();
-  if (sea) {
-    // Moss on the top left, barnacles on the bottom right, a wet glint.
-    for (let j = 0; j < 4; j++) {
-      const a = 3.4 + j * 0.5 + rnd(i + j) * 0.4;
-      const d = r * (0.45 + rnd(i + j + 9) * 0.35);
-      circle(
-        x + Math.cos(a) * d,
-        y + Math.sin(a) * d,
-        r * (0.12 + rnd(i + j + 5) * 0.1),
-        '#6f8f3acc',
-      );
-      const bx = x - Math.cos(a) * d * 0.9;
-      const by = y - Math.sin(a) * d * 0.9;
-      circle(bx, by, r * 0.08, '#e8e0cc');
-      circle(bx, by, r * 0.035, '#4a4038');
-    }
-    c.beginPath();
-    c.ellipse(x - r * 0.3, y - r * 0.38, r * 0.32, r * 0.09, -0.6, 0, 7);
-    fills('#fff6');
-  }
   if (hits) {
     // A zigzag crack from one corner across the facets to the far side, lit on its top-left lip.
     const a = ((i * 3) % n) * 2;
@@ -634,8 +588,8 @@ const berg = (
       );
     }
     const w = hits > 1 ? 7 : 4;
-    line(lip, w * u, ...p.map(q => q - w * u));
-    line(crack, w * u, ...p);
+    line('#fffd', w * u, ...p.map(q => q - w * u));
+    line('#2b6d96', w * u, ...p);
     if (hits > 1) {
       // Deeper: two branches toward the next corners.
       for (const [s, t] of [
@@ -643,14 +597,14 @@ const berg = (
         [6, b + 4],
       ]) {
         const q = t % (n * 2);
-        line(crack, 3 * u, p[s], p[s + 1], (p[s] + v[q]) / 2, (p[s + 1] + v[q + 1]) / 2);
+        line('#2b6d96', 3 * u, p[s], p[s + 1], (p[s] + v[q]) / 2, (p[s + 1] + v[q + 1]) / 2);
       }
     }
   }
   if (e) {
     // Bumper flash: a ring spreading out, and ice shards (stone chips) flying off.
     c.globalAlpha = e;
-    ring(x, y, r * (1.3 + (1 - e) * 0.6), flash, 8 * e * u);
+    ring(x, y, r * (1.3 + (1 - e) * 0.6), '#7fe3ff', 8 * e * u);
     for (let j = 0; j < 6; j++) {
       const a = j * 1.05 + i;
       const d = r * (1.1 + (1 - e) * 1.4);
@@ -661,8 +615,8 @@ const berg = (
       c.moveTo(sx, sy - s);
       c.lineTo(sx + s, sy + s);
       c.lineTo(sx - s, sy + s * 0.4);
-      fills(chips);
-      strokes(edge, 2 * u);
+      fills('#e6faff');
+      strokes(EDGE, 2 * u);
     }
     c.globalAlpha = 1;
   }
@@ -881,9 +835,18 @@ const SMOKE = ['#d6c2f5', '#9b72dd'];
 const BRASS = '#f2c230';
 
 /**
- * A dust devil seen from above, in world units: a sand haze, spiral bands turning round a dark
- * core, grains orbiting. It turns the way it spins the puck (swirl in arena.ts): left ones (even i)
- * clockwise, their mirrors anticlockwise. e: hit flash,
+ * Colours of a swirl, at sea (a vortex) then in the desert (a whirlwind): haze, light bands, dark
+ * bands, core, grains (bubbles at sea), gust ring.
+ */
+const SWIRLS = [
+  ['#0b5d8cf0', '#eaf9ff', '#1d79b0', '#03243d', '#d4f2ff', '#fff'],
+  ['#c99254f0', '#fbe6b8', '#9a642c', '#5e3a1c', '#6e4422', '#fff6dc'],
+];
+
+/**
+ * A vortex at sea or a dust devil in the desert, seen from above, in world units: a haze, spiral
+ * bands turning round a dark core, grains (bubbles) orbiting. It turns the way it turns the puck
+ * (swirl in arena.ts): left ones (even i) clockwise, their mirrors anticlockwise. e: hit flash,
  * 1 → 0: it spins faster in a gust ring. hits: smaller, fainter, its bands broken.
  */
 const whirl = (
@@ -894,14 +857,15 @@ const whirl = (
   e: number,
   _age: number,
   hits = 0,
-  _sea: number,
+  sea: number,
   now: number,
 ) => {
+  const [haze, light, dark, core, grain, gust] = SWIRLS[sea - 1];
   const d = i & 1 ? -1 : 1;
   const a = d * (now / 220 + e * 4);
   c.globalAlpha *= 1 - hits * 0.25;
   r *= 1 - hits * 0.15;
-  shadow(x, y, r * 1.25, r * 1.25, '#c99254f0');
+  shadow(x, y, r * 1.25, r * 1.25, haze);
   c.setLineDash(hits ? [r * 0.5, r * 0.2 * hits] : []);
   for (let k = 0; k < 6; k++) {
     const p: number[] = [];
@@ -910,10 +874,10 @@ const whirl = (
       const q = r * (0.15 + j * 0.09);
       p.push(x + Math.cos(b) * q, y + Math.sin(b) * q);
     }
-    line(k & 1 ? '#fbe6b8' : '#9a642c', r * (k & 1 ? 0.07 : 0.13), ...p);
+    line(k & 1 ? light : dark, r * (k & 1 ? 0.07 : 0.13), ...p);
   }
   c.setLineDash([]);
-  circle(x, y, r * 0.24, '#5e3a1c');
+  circle(x, y, r * 0.24, core);
   c.beginPath();
   for (let j = 0; j < 10; j++) {
     const b = a * 1.6 + j * 0.628;
@@ -921,18 +885,21 @@ const whirl = (
     c.moveTo(x + Math.cos(b) * q, y + Math.sin(b) * q);
     c.arc(x + Math.cos(b) * q, y + Math.sin(b) * q, r * 0.05, 0, 7);
   }
-  fills('#6e4422');
+  fills(grain);
   if (e) {
     c.globalAlpha = e;
-    ring(x, y, r * (1.3 + (1 - e) * 0.8), '#fff6dc', 9 * e * u);
+    ring(x, y, r * (1.3 + (1 - e) * 0.8), gust, 9 * e * u);
   }
 };
 
-/** Whirlwind i dissipating, q: 0 → 1 over 800 ms: its swirl spreads into a fading sand cloud. */
-const dust = (x: number, y: number, r: number, i: number, q: number, _sea: number, now: number) => {
+/**
+ * Whirlwind (vortex) i dissipating, q: 0 → 1 over 800 ms: its swirl spreads into a fading sand
+ * cloud (a fading ring of foam).
+ */
+const dust = (x: number, y: number, r: number, i: number, q: number, sea: number, now: number) => {
   c.save();
   c.globalAlpha = 1 - q;
-  whirl(x, y, r * (1 + q * 1.5), i, 0, 0, 2, 2, now);
+  whirl(x, y, r * (1 + q * 1.5), i, 0, 0, 2, sea, now);
   c.restore();
 };
 
@@ -979,7 +946,7 @@ const genie = (
 /** Movers per scene: penguin, shark, genie. */
 const MOVERS = [penguin, shark, genie];
 /** Obstacle kinds: scene = index >> 1, odd ones move. */
-const KINDS = ['iceberg', 'penguin', 'rock', 'shark', 'whirlwind', 'genie'];
+const KINDS = ['iceberg', 'penguin', 'vortex', 'shark', 'whirlwind', 'genie'];
 
 /**
  * A genie's ghost, where it will come back: its small golden oil lamp on the sand, spout toward
@@ -1003,31 +970,22 @@ const lamp = (x: number, y: number, r: number, now: number) => {
 
 /**
  * Iceberg i shattering, q: 0 → 1 over 800 ms. Its facets slide apart on the ice, slowing down,
- * spinning a little and fading, in a puff of ice dust. A rock at sea crumbles: its stones roll a
- * little, then sink (shrink and darken) in rings of ripples.
+ * spinning a little and fading, in a puff of ice dust.
  */
-const shatter = (x: number, y: number, r: number, i: number, q: number, sea: number) => {
+const shatter = (x: number, y: number, r: number, i: number, q: number) => {
   const [v, px, py] = corners(x, y, r, i);
-  const d = r * (sea ? 0.35 : 1.6) * q * (2 - q);
-  const z = 1 - sea * q * 0.9;
+  const d = r * 1.6 * q * (2 - q);
   c.globalAlpha = 1 - q;
   c.beginPath();
-  for (let j = 0; j < (sea ? 3 : 9); j++) {
-    const a = j * (sea ? 2.1 : 0.7) + i;
-    const s = r * (sea ? 0.4 : 0.3 + q * (0.6 + rnd(j + i * 9)));
-    const t = r * (sea ? 0.3 + q * 1.2 : 0.25 + q * 0.35);
+  for (let j = 0; j < 9; j++) {
+    const a = j * 0.7 + i;
+    const s = r * (0.3 + q * (0.6 + rnd(j + i * 9)));
+    const t = r * (0.25 + q * 0.35);
     c.moveTo(x + Math.cos(a) * s + t, y + Math.sin(a) * s);
     c.arc(x + Math.cos(a) * s, y + Math.sin(a) * s, t, 0, 7);
   }
-  if (sea) {
-    c.strokeStyle = '#fff';
-    c.lineWidth = 5 * u;
-  } else {
-    fills('#f8fdff');
-    c.strokeStyle = '#a9d4ea';
-    c.lineWidth = 2 * u;
-  }
-  c.stroke();
+  fills('#f8fdff');
+  strokes('#a9d4ea', 2 * u);
   c.globalAlpha = Math.min(1, 2 - 2 * q);
   for (let j = 0; j < v.length; j += 2) {
     const k = (j + 2) % v.length;
@@ -1038,14 +996,13 @@ const shatter = (x: number, y: number, r: number, i: number, q: number, sea: num
     c.save();
     c.translate(cx + Math.cos(m) * s, cy + Math.sin(m) * s);
     c.rotate((rnd(i + j * 3) - 0.5) * 2.5 * q);
-    c.scale(z, z);
     c.beginPath();
     c.moveTo(px - cx, py - cy);
     c.lineTo(v[j] - cx, v[j + 1] - cy);
     c.lineTo(v[k] - cx, v[k + 1] - cy);
     c.closePath();
-    fills(shade(m, -30 * sea * q, sea));
-    strokes(ROCKS[sea][2], 3 * u);
+    fills(shade(m, 0));
+    strokes(EDGE, 3 * u);
     c.restore();
   }
   c.globalAlpha = 1;
@@ -1054,7 +1011,7 @@ const shatter = (x: number, y: number, r: number, i: number, q: number, sea: num
 /**
  * A penguin shot out, q: 0 → 1 over 1 s, from where the puck hit it (x, y) along a. It flies off,
  * spinning and shrinking, stars around its head, feathers left behind; gone past the boards. A
- * shark (sea 1) leaves a splash: a ring of foam and droplets. A genie (sea 2) wisps of smoke.
+ * genie (sea 2) leaves wisps of smoke. Sharks are never shot out.
  */
 const shot = (
   x: number,
@@ -1067,9 +1024,6 @@ const shot = (
   i = 0,
 ) => {
   c.globalAlpha = 1 - q;
-  if (sea == 1) {
-    ring(x, y, r * (0.6 + q * 1.8), '#fff', 6 * u);
-  }
   for (let j = 0; j < 6; j++) {
     const b = a + 3.14 + (rnd(j + 30) - 0.5) * 3;
     const d = r * (0.4 + q * (1.2 + rnd(j + 40)));
@@ -1092,8 +1046,8 @@ export type ObstacleView = NonNullable<Snapshot['obs']>[number];
 /**
  * An obstacle, in world units; age: ms since the puck last hit it, back: ms since it came back in
  * play. st: its state, absent while intact and in play. Once removed (st.since ≥ 0), from where it
- * was then: an iceberg shatters, a rock crumbles, a whirlwind dissipates, a penguin, a shark or a
- * genie is shot out. Then nothing until its ghost, at o (its lane goes on): see-through, beating
+ * was then: an iceberg shatters, a vortex closes in foam, a whirlwind dissipates, a penguin or a
+ * genie is shot out (a shark never goes). Then nothing until its ghost, at o (its lane goes on): see-through, beating
  * faster and faster, a ring closing on it, bubbles rising at sea; a genie's is its oil lamp. Back
  * in play it pops in.
  */
@@ -1115,7 +1069,7 @@ export const obstacle = (
   if (ms >= 0 && ms < SHOW) {
     if (ms < (fixed ? 800 : 1000)) {
       if (fixed) {
-        (sea > 1 ? dust : shatter)(from.x, from.y, from.r, i, ms / 800, sea, now);
+        (sea ? dust : shatter)(from.x, from.y, from.r, i, ms / 800, sea, now);
       } else {
         shot(from.x, from.y, from.r, st!.angle, ms / 1000, now, sea, i);
       }
@@ -1149,7 +1103,7 @@ export const obstacle = (
     c.translate(-x, -y);
   }
   if (fixed) {
-    (sea > 1 ? whirl : berg)(
+    (sea ? whirl : berg)(
       x,
       y,
       r,

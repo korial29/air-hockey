@@ -381,16 +381,16 @@ describe('the sea arena', () => {
     .slice(4)
     .map(o => o.x);
 
-  it('is the ice layout slot for slot: rocks for icebergs, sharks for penguins', () => {
+  it('is the ice layout slot for slot: vortices for icebergs, sharks for penguins', () => {
     for (const { size, count } of ALL) {
       for (const t of [0, 100.5, 777, 1500]) {
         const a = obstacles('ice', t, size, count);
         const b = obstacles('sea', t, size, count);
-        expect(b.map(o => o.kind)).toEqual(a.map(o => (o.kind == 'iceberg' ? 'rock' : 'shark')));
+        expect(b.map(o => o.kind)).toEqual(a.map(o => (o.kind == 'iceberg' ? 'vortex' : 'shark')));
         b.forEach((o, i) => {
           const c = a[i];
           if (fixed(o)) {
-            expect(o).toEqual({ ...c, kind: 'rock' });
+            expect(o).toEqual({ ...c, kind: 'vortex' });
           } else {
             // Same lane (give or take the zig-zag), same share of the crossing, same direction.
             expect(Math.abs(o.x - c.x)).toBeLessThanOrEqual(ZA * size + 1e-9);
@@ -516,7 +516,7 @@ describe('the sea arena', () => {
         const obs = obstacles('sea', t, rink.size, rink.count);
         obs.forEach((o, i) => {
           if (fixed(o)) {
-            // Rocks to the boards and the side walls: a paddle and a puck, as on the ice.
+            // Vortices to the boards and the side walls: a paddle and a puck, as on the ice.
             expect(Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r)).toBeGreaterThan(
               FIT,
             );
@@ -537,23 +537,23 @@ describe('the sea arena', () => {
     const lane = LANES[0];
     /** Every quarter tick of a period. */
     const QUARTERS = [...Array(4 * PERIOD).keys()].map(t => t / 4);
-    let rockToLane = Infinity;
+    let vortexToLane = Infinity;
     let laneToLane = Infinity;
     let toLine = Infinity;
-    let rockTight = 0;
+    let vortexTight = 0;
     let lineTight = 0;
     let laneTight = 0;
     for (const t of QUARTERS) {
       const [, , , , left, mid, right] = sea(t);
-      const rock = Math.min(...[a, b].map(o => dist(o, left.x, left.y) - o.r - left.r));
+      const vortex = Math.min(...[a, b].map(o => dist(o, left.x, left.y) - o.r - left.r));
       const line = W / 2 - 2 * PADDLE_R - (left.x + left.r);
       const lanes = [left, right].map(o => dist(o, mid.x, mid.y) - o.r - mid.r);
-      rockToLane = Math.min(rockToLane, rock);
+      vortexToLane = Math.min(vortexToLane, vortex);
       toLine = Math.min(toLine, line);
       laneToLane = Math.min(laneToLane, ...lanes);
       // A squeeze only on the side the shark swings to.
-      if (rock < FIT) {
-        rockTight++;
+      if (vortex < FIT) {
+        vortexTight++;
         expect(left.x).toBeLessThan(lane);
       }
       if (line < FIT) {
@@ -570,13 +570,13 @@ describe('the sea arena', () => {
         }
       });
     }
-    // Rocks to the nearest lane: down to about 87, the full outward swing side on, in the rocks'
+    // Vortices to the nearest lane: down to about 87, the full outward swing side on, in the vortices'
     // rows only: under 1/4 of the period.
-    expect(rockToLane).toBeLessThan(FIT);
-    expect(rockToLane).toBeGreaterThanOrEqual(
+    expect(vortexToLane).toBeLessThan(FIT);
+    expect(vortexToLane).toBeGreaterThanOrEqual(
       lane - ZA - r - Math.max(a.x + a.r, b.x + b.r) - 1e-9,
     );
-    expect(rockTight / QUARTERS.length).toBeLessThan(1 / 4);
+    expect(vortexTight / QUARTERS.length).toBeLessThan(1 / 4);
     // The pair's lanes to a centre-line paddle: 78 at the full inward swing, below a paddle and a
     // puck once the swing passes d, on every inward half-zig: (1 - d / ZA) / 2 of the period.
     const d = W / 2 - 2 * PADDLE_R - FIT - r - lane;
@@ -587,16 +587,16 @@ describe('the sea arena', () => {
     expect(laneToLane).toBeGreaterThan(125);
     expect(laneTight / QUARTERS.length).toBeLessThan(1 / 16);
     // The puck alone, always.
-    expect(Math.min(rockToLane, toLine, laneToLane)).toBeGreaterThan(SLIP);
+    expect(Math.min(vortexToLane, toLine, laneToLane)).toBeGreaterThan(SLIP);
   });
 
   it.each([
-    [2, 'rr'],
-    [3, 'rrs'],
-    [4, 'rrss'],
-    [5, 'rrsss'],
-    [6, 'rrrrss'],
-    [7, 'rrrrsss'],
+    [2, 'vv'],
+    [3, 'vvs'],
+    [4, 'vvss'],
+    [5, 'vvsss'],
+    [6, 'vvvvss'],
+    [7, 'vvvvsss'],
   ])('keeps %i obstacles, in the slots of the ice', (count, kinds) => {
     expect(
       obstacles('sea', 333.5, 1, count)
@@ -746,7 +746,7 @@ describe('the desert arena', () => {
   });
 });
 
-describe('icebergs (rocks) across the width', () => {
+describe('icebergs (vortices) across the width', () => {
   const ALL = [2, 3, 4, 5, 6, 7].flatMap(count =>
     [1, Math.SQRT2, Math.sqrt(3), MAX_SIZE].map(size => ({ size, count })),
   );
@@ -796,7 +796,7 @@ describe('icebergs (rocks) across the width', () => {
       const a = obstacles('ice', 0, Math.SQRT2, 7, seed);
       expect(obstacles('ice', 0, Math.SQRT2, 7, seed)).toEqual(a);
       expect(obstacles('ice', 1777.5, Math.SQRT2, 7, seed).slice(0, 4)).toEqual(a.slice(0, 4));
-      // The sea puts its rocks where the ice puts its icebergs, the desert its whirlwinds.
+      // The sea puts its vortices where the ice puts its icebergs, the desert its whirlwinds.
       for (const arena of ['sea', 'desert'] as Arena[]) {
         expect(
           obstacles(arena, 0, Math.SQRT2, 7, seed)
@@ -904,7 +904,7 @@ describe('icebergs (rocks) across the width', () => {
     20_000,
   );
 
-  it('squeezes a rock and a shark under a paddle and a puck for 1/9 to 1/4 of the period', () => {
+  it('squeezes a vortex and a shark under a paddle and a puck for 1/9 to 1/4 of the period', () => {
     const FULL = [...Array(PERIOD).keys()];
     for (const seed of [0, ...SEEDS.slice(0, 20)]) {
       const [a, , b] = obstacles('sea', 0, 1, 7, seed);
@@ -916,7 +916,7 @@ describe('icebergs (rocks) across the width', () => {
         low = Math.min(low, gap);
         tight += +(gap < FIT);
       }
-      // 84 at the worst draw (128 − rock radius from x alone); the puck needs 2 · PUCK_R + 20.
+      // 84 at the worst draw (128 − vortex radius from x alone); the puck needs 2 · PUCK_R + 20.
       expect(low).toBeGreaterThan(83.9);
       expect(tight / FULL.length).toBeGreaterThan(1 / 9);
       expect(tight / FULL.length).toBeLessThan(1 / 4);
@@ -925,11 +925,11 @@ describe('icebergs (rocks) across the width', () => {
 });
 
 describe('fixed', () => {
-  it('is true for icebergs, rocks and whirlwinds, false for penguins, sharks and genies', () => {
+  it('is true for icebergs, vortices and whirlwinds, false for penguins, sharks and genies', () => {
     expect([...ice(), ...sea(), ...desert()].map(o => [o.kind, fixed(o)])).toEqual([
       ...Array(4).fill(['iceberg', true]),
       ...Array(3).fill(['penguin', false]),
-      ...Array(4).fill(['rock', true]),
+      ...Array(4).fill(['vortex', true]),
       ...Array(3).fill(['shark', false]),
       ...Array(4).fill(['whirlwind', true]),
       ...Array(3).fill(['genie', false]),
