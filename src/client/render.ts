@@ -882,7 +882,8 @@ const BRASS = '#f2c230';
 
 /**
  * A dust devil seen from above, in world units: a sand haze, spiral bands turning round a dark
- * core, grains orbiting. A mirrored pair turns opposite ways (i odd: clockwise). e: hit flash,
+ * core, grains orbiting. It turns the way it spins the puck (swirl in arena.ts): left ones (even i)
+ * clockwise, their mirrors anticlockwise. e: hit flash,
  * 1 → 0: it spins faster in a gust ring. hits: smaller, fainter, its bands broken.
  */
 const whirl = (
@@ -896,7 +897,7 @@ const whirl = (
   _sea: number,
   now: number,
 ) => {
-  const d = i & 1 ? 1 : -1;
+  const d = i & 1 ? -1 : 1;
   const a = d * (now / 220 + e * 4);
   c.globalAlpha *= 1 - hits * 0.25;
   r *= 1 - hits * 0.15;

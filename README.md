@@ -8,11 +8,13 @@
 [![license](https://img.shields.io/npm/l/air-hockey.svg)](LICENSE)
 [![play the demo](https://img.shields.io/badge/demo-play%20now-ff6b35)](https://korial29.github.io/air-hockey/)
 
-A multiplayer air hockey game for the browser, written in TypeScript with no game library and no runtime dependency. Players join with a name, get a colour of their own, and play in teams on an ice rink full of icebergs and sliding penguins, then at sea among rocks and sharks.
+A multiplayer air hockey game for the browser, written in TypeScript with no game library and no runtime dependency. Players join with a name, get a colour of their own, and play in teams through three scenes, one per round: an ice rink with icebergs and sliding penguins, the sea with rocks and sharks, and an Arabian Nights desert with whirlwinds and genies.
 
 ![Air hockey on the ice: four players, icebergs, penguins, the puck hitting an iceberg](https://raw.githubusercontent.com/korial29/air-hockey/master/docs/screenshot-ice.png)
 
 ![Round 2 at sea: rocks, sharks and the gold doubloon puck](https://raw.githubusercontent.com/korial29/air-hockey/master/docs/screenshot-sea.png)
+
+![Round 3 in the desert: whirlwinds, genies, the ruby puck and a zellige star](https://raw.githubusercontent.com/korial29/air-hockey/master/docs/screenshot-desert.png)
 
 ## Framework-agnostic, light to add
 
@@ -20,8 +22,8 @@ A multiplayer air hockey game for the browser, written in TypeScript with no gam
 
 | Entry | What it is | Size (gzip) |
 | --- | --- | --- |
-| `air-hockey` | The game client: rendering, input, prediction | ~13.6 KB |
-| `air-hockey/local` | Same-browser multiplayer, no server | ~5.7 KB |
+| `air-hockey` | The game client: rendering, input, prediction | ~15 KB |
+| `air-hockey/local` | Same-browser multiplayer, no server | ~5.8 KB |
 | `air-hockey/server` | Node WebSocket server (needs `ws`) | Node only |
 
 The budgets (15 KB and 6 KB) are checked in CI on every pull request.
@@ -156,7 +158,7 @@ Every field is optional; missing ones keep their default.
 
 | Rule | Default | Description |
 | --- | --- | --- |
-| `arena` | `['ice', 'sea']` | Scene, or scenes taking turns from one round to the next: `'ice'`, `'sea'`, `'classic'` (empty rink). |
+| `arena` | `['ice', 'sea', 'desert']` | Scene, or scenes taking turns from one round to the next: `'ice'`, `'sea'`, `'desert'`, `'classic'` (empty rink). |
 | `rounds` | `3` | Rounds in a match: best of 3. |
 | `goals` | `10` | Goals that win a round. |
 | `hit` | `1` | Points for a hit, when the previous toucher was someone else. |
@@ -178,7 +180,8 @@ serve({ port: 8787, rules: { arena: 'sea', goals: 5, rounds: 1 } });
 
 - **Teams**: players are spread left and right as they join, each with a paddle in their half. Up to 16 players.
 - **The rink grows with the players**, so everybody keeps the same room: ×1 at 2 players, ×1.41 at 4, ×1.73 at 6, ×2 from 8. Obstacles go from 3 to 7 with the player count. The rink adapts while waiting, at round start and at every serve until someone touches the puck.
-- **Obstacles bounce the puck like pinball bumpers.** Icebergs and rocks take a random height every round and shatter after 3 hits. Penguins and sharks slide across the width (sharks in a zig-zag) and are shot out on the first hit. Everything comes back after 10 s, with a ghost for the last 3 s.
+- **Three scenes, one per round**: ice, sea, desert.
+- **Obstacles bounce the puck like pinball bumpers.** Icebergs, rocks and whirlwinds take a random height every round and break after 3 hits; whirlwinds also spin the puck sideways. Penguins, sharks and genies cross the width (sharks in a zig-zag) and are shot out on the first hit. Everything comes back after 10 s, with a ghost for the last 3 s (a genie's ghost is its oil lamp).
 - **Serves**: a served puck ignores obstacles until a player touches it, and is never served under a paddle.
 - **End of match**: a stadium screen with the winning team's cup, a podium of the top scorers and the points ranking.
 
@@ -189,7 +192,7 @@ serve({ port: 8787, rules: { arena: 'sea', goals: 5, rounds: 1 } });
 - [x] Multiplayer over WebSocket, or between tabs of one browser with no server
 - [x] Unique colour per player, name above the paddle, team rosters
 - [x] Teams, best-of-3 matches, individual points ranking, podium screen
-- [x] Two scenes taking turns: ice (icebergs, penguins) and sea (rocks, sharks, wooden goals)
+- [x] Three scenes taking turns: ice (icebergs, penguins), sea (rocks, sharks, wooden goals), Arabian Nights desert (whirlwinds, genies, Moorish arches)
 - [x] Breakable obstacles with respawn and ghost
 - [x] Rink that grows with the number of players
 - [x] Client-side prediction: your paddle and the puck react at once

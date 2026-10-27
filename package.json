@@ -1,6 +1,6 @@
 {
   "name": "air-hockey",
-  "description": "Tiny multiplayer air hockey for the browser: ice and sea scenes, breakable obstacles, teams and tournaments. Zero runtime dependencies, WebSocket or same-browser multi-tab play, pluggable into any JS app.",
+  "description": "Tiny multiplayer air hockey for the browser: ice, sea and desert scenes, breakable obstacles, teams and tournaments. Zero runtime dependencies, WebSocket or same-browser multi-tab play, pluggable into any JS app.",
   "license": "Apache-2.0",
   "version": "0.0.0",
   "type": "module",
