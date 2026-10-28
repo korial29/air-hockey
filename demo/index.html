@@ -116,7 +116,8 @@
       [hidden] {
         display: none !important;
       }
-      /* A phone on its side, in a game: the game gets the whole screen. */
+      /* A phone on its side, in a game: the game gets the whole screen, in its wide frame (the
+         rink full height, the HUD bands beside it: 2430 × 1125 field units). */
       @media (orientation: landscape) and (max-height: 500px) {
         .playing main {
           padding: 0;
@@ -124,6 +125,9 @@
         }
         .playing header {
           display: none;
+        }
+        #game {
+          width: min(100cqw, 100cqh * 2430 / 1125);
         }
       }
     </style>

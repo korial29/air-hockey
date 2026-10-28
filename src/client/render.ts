@@ -5,7 +5,7 @@
 import { CREASE, GHOST, GOAL, H, PUCK_R, RESPAWN, TICK_HZ, W } from '../shared/constants';
 import type { Obstacle, PlayerInfo, Rank, Snapshot, Team } from '../shared/types';
 import type { MatchState } from './index';
-import { BOT, CH, TOP, byTeam, flow, podium, rnd, shown } from './util';
+import { BOT, CH, SIDE, TOP, byTeam, flow, podium, rnd, shown } from './util';
 
 let c: CanvasRenderingContext2D;
 /** Base font size in field units, never under 12 CSS px. */
@@ -1319,14 +1319,82 @@ export const countdown = (label: string, q: number, color = '#fff') => {
 
 const side = (t?: Team) => (t ? 'Right' : 'Left');
 
-/** Score and round line in the band above the rink, team rosters in the band below. */
+/**
+ * Each team in its band beside its goal (WIDE, a phone on its side): its score, a dot per round
+ * (lit for each one won), its roster; the round and the target at the foot of the left band (the
+ * full screen button sits at the foot of the right one); the messages over the rink, on a dark
+ * pill that reads on the ice as on the sand.
+ */
+const bands = (
+  players: PlayerInfo[],
+  you: number,
+  score: string,
+  label: string,
+  { phase, round = 0, rounds = 0, goals, wins = [0, 0], winner }: Partial<MatchState>,
+) => {
+  const lh = f * 1.1;
+  const on = phase == 'play' || phase == 'ready';
+  // Rows left for names under the dots, above the foot lines.
+  const rows = Math.max(1, Math.floor((H - f * 9) / lh));
+  byTeam(players).forEach((team, t) => {
+    const x0 = t ? SIDE + W : 0;
+    const cx = x0 + SIDE / 2;
+    text(side(t as Team), cx, f, f, 'center', '#fff8');
+    text(score.split(' : ')[t] ?? '', cx, f * 3.2, Math.max(f * 2.5, 90), 'center');
+    for (let i = 0; i < rounds; i++) {
+      circle(cx + (i - (rounds - 1) / 2) * f, f * 5.2, f / 3, i < wins[t] ? '#fc3' : '#fff3');
+    }
+    team.forEach((p, i) => {
+      const y = f * 6.6 + i * lh;
+      if (i < rows - 1 || team.length == rows) {
+        circle(x0 + f * 0.7, y, f / 3, p.color);
+        text(p.name, x0 + f * 1.3, y, f, 'left', p.id == you ? '#fc3' : '#fff', SIDE - f * 1.6);
+      } else if (i == rows - 1) {
+        text(`+${team.length - i}`, x0 + f * 1.3, y, f, 'left', '#fff8');
+      }
+    });
+  });
+  if (on) {
+    text(`Round ${round}/${rounds}`, SIDE / 2, H - f * 2.2, f, 'center', '#fffb', SIDE - f / 2);
+    text(`first to ${goals}`, SIDE / 2, H - f, f, 'center', '#fffb', SIDE - f / 2);
+  }
+  const pill = (s: string, y: number, size: number) => {
+    const w = width(s, size) + size;
+    rect(SIDE + (W - w) / 2, y - size * 0.8, w, size * 1.6, '#08131dcc');
+    text(s, SIDE + W / 2, y, size, 'center', label ? '#fc3' : '#fff', W - f);
+  };
+  const say =
+    label ||
+    (phase == 'break'
+      ? `${side(winner)} wins round ${round}`
+      : phase == 'wait'
+        ? 'Waiting for a player on each side'
+        : '');
+  if (say) {
+    pill(say, H * 0.3, Math.max(f * 1.3, 60));
+  }
+  if (phase == 'break' && !label) {
+    pill(`Left ${wins.join(' – ')} Right`, H * 0.3 + Math.max(f * 2.4, 110), f);
+  }
+};
+
+/**
+ * Score and round line in the band above the rink, team rosters in the band below; on WIDE, the
+ * bands beside the rink instead (see bands).
+ */
 export const hud = (
   players: PlayerInfo[],
   you: number,
   score: string,
   label: string,
-  { phase, round = 0, rounds, goals, wins = [0, 0], winner }: Partial<MatchState>,
+  m: Partial<MatchState>,
+  wide = false,
 ) => {
+  if (wide) {
+    bands(players, you, score, label, m);
+    return;
+  }
+  const { phase, round = 0, rounds, goals, wins = [0, 0], winner } = m;
   const brk = phase == 'break';
   text(
     brk ? `${side(winner)} wins round ${round}` : score,

@@ -57,7 +57,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 
 - Fixed step at 240 Hz, `ceil(size)` sub-steps on a bigger rink. Document the no-tunnelling arithmetic (per-step closing distance < contact distance) next to any speed or radius change.
 - **Mirror symmetry**: obstacle layouts, motions and whirlwind senses mirror across the centre line; a centre mover may cross the line or wander on its own if it is fair over time.
-- **Thumb-sized paddles**: `PADDLE_R` 75 (was 44), the user's call for phones: Ø 39 CSS px on a phone on its side. A goalie covers 40 % of the mouth. Bot matches scored about as often as with 44 (within 25 % per scene).
+- **Thumb-sized paddles**: `PADDLE_R` 75 (was 44), the user's call for phones: Ø 52 CSS px on an iPhone on its side (844 × 390), 48 on an 800 × 360 Android. A goalie covers 40 % of the mouth. Bot matches scored about as often as with 44 (within 25 % per scene).
 - **Guarantees on ice**, at every size, count and seed: every gap fits a paddle (150 units; a paddle and a puck, 206, no longer fit with thumb-sized paddles), a side lane to the centre line (a wall for paddles) fits a paddle and a puck, serve spots, centre spot and spawn points stay clear, straight shots from the centre spot reach every point of either goal mouth.
 - **Sea and desert**: the user chose a visible shark zig-zag and wandering genies over the paddle rule; there, only the puck alone must always fit (2 · PUCK_R + 20), and serve spots and spawn points stay clear. Fixed obstacles keep the ice guarantees.
 - **A served puck is not live**: obstacles let it through until a paddle touches it, so no obstacle starts a round or scores alone.
@@ -89,7 +89,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 ## Drawing
 
 - Canvas 2D in a Shadow DOM; nothing leaks into the host page.
-- Game info lives in the bands above and below the rink, never over the play area (the countdown and goal flash are the exceptions).
+- Game info lives in the bands above and below the rink, never over the play area (the countdown and goal flash are the exceptions). On a phone on its side (`WIDE` frame, chosen by the CSS aspect) the bands go beside the rink; the round messages then sit over the rink on a dark pill.
 - Fonts never under 12 CSS px; puck drawn at least 7 CSS px in radius, paddles 11 px (on a big rink: a size-1 rink draws them bigger), whatever the rink size. Physics is unchanged by these minimums.
 - The static rink is painted once per scene, size and canvas size into an offscreen canvas; only light overlays animate. Target 60 fps with 16 players.
 - Check every screen at 343 px wide (phone), at 844 × 390 (a phone on its side, the way it is played) and on dark text against light ground (names on sand and ice).
