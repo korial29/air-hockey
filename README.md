@@ -102,7 +102,17 @@ The game fills the width of its container and keeps its aspect ratio (4:3, score
 }
 ```
 
-A full-screen button sits in the top-right corner of the game.
+On a landscape screen at most 500 px high (a phone on its side) the game switches to a wide frame, 2430 × 1125 (about 2.16:1): the rink fills the height, the score and the rosters go beside it. Let the container grow to that ratio there:
+
+```css
+@media (orientation: landscape) and (max-height: 500px) {
+  #game {
+    max-width: calc(100dvh * 2430 / 1125);
+  }
+}
+```
+
+A full-screen button sits in the top-right corner of the game (bottom-right in the wide frame). In full screen a phone turns landscape where the browser allows it; held upright, it shows a hint to turn it.
 
 ---
 
@@ -200,7 +210,7 @@ serve({ port: 8787, rules: { arena: 'sea', goals: 5, rounds: 1 } });
 - [x] Rink that grows with the number of players
 - [x] Client-side prediction: your paddle and the puck react at once
 - [x] "3, 2, 1, PLAY!" countdown, goal flash, puck beacon and trail
-- [x] Full-screen button, mouse and touch, phone-sized screens: thumb-sized paddles, landscape in full screen, a hint to turn a phone held upright
+- [x] Full-screen button, mouse and touch, phone-sized screens: thumb-sized paddles, the rink full height on a phone on its side (score and rosters beside it), landscape in full screen, a hint to turn a phone held upright
 - [x] Shadow DOM, zero runtime dependencies, size-gated in CI
 
 ---

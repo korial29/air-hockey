@@ -808,6 +808,83 @@ describe('airHockey', () => {
     game.destroy();
   });
 
+  it('fills a phone on its side: the rink full height, the HUD in a band on each side', () => {
+    const texts = fakeContext();
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    let resized = () => {};
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          resized = cb;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    const root = document.body.firstElementChild!.shadowRoot!;
+    // The style gives the canvas that aspect on a landscape screen at most 500 px high.
+    expect(root.querySelector('style')!.textContent).toContain(
+      '@media (orientation:landscape) and (max-height:500px){canvas{aspect-ratio:2430/1125}',
+    );
+    const canvas = root.querySelector('canvas')!;
+    Object.defineProperties(canvas, {
+      clientWidth: { value: 844 },
+      clientHeight: { value: 390 },
+    });
+    resized();
+    expect([canvas.width, canvas.height]).toEqual([844, 390]);
+
+    socket.onopen!();
+    const players = [
+      { id: 3, name: 'Ana', color: '#f00', team: 0 },
+      { id: 4, name: 'Bob', color: '#0f0', team: 1 },
+    ];
+    socket.onmessage!({ data: JSON.stringify({ t: 'roster', you: 3, players }) });
+    const send = (m: object) => socket.onmessage!({ data: JSON.stringify({ t: 'match', ...m }) });
+    send({ phase: 'wait', round: 0, wins: [0, 0] });
+    texts.length = 0;
+    frame(0);
+    // Over the rink, which starts at the top of the canvas.
+    expect(texts.ys.get('Waiting for a player on each side')).toBeCloseTo(1125 * 0.3);
+
+    socket.onmessage!({
+      data: encodeSnapshot({
+        tick: 1,
+        score: [4, 2],
+        puck: { x: 1, y: 1, vx: 0, vy: 0 },
+        paddles: [{ id: 3, x: 400, y: 450 }],
+      }),
+    });
+    send({ phase: 'play', round: 2, rounds: 3, goals: 10, wins: [1, 0] });
+    texts.length = 0;
+    frame(0);
+    // Each score on its own, the round and the target at the foot of the left band.
+    expect(texts).toEqual(
+      expect.arrayContaining(['Left', 'Right', '4', '2', 'Round 2/3', 'first to 10']),
+    );
+    expect(texts).not.toContain('4 : 2');
+    expect(texts.ys.get('Left')).toBeLessThan(100);
+    expect(texts.ys.get('first to 10')).toBeGreaterThan(1000);
+    // The paddle name sits over the paddle: the rink is not shifted down.
+    expect(texts.ys.get('Ana')).toBeLessThan(450);
+
+    // The pointer maps through the WIDE frame.
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 844, height: 390 }) as DOMRect;
+    canvas.dispatchEvent(
+      new MouseEvent('pointermove', { clientX: ((215 + 500) * 844) / 2430, clientY: 195 }),
+    );
+    frame(0);
+    const { x, y } = decodeInput(socket.sent.at(-1) as ArrayBuffer)!;
+    expect(x).toBeCloseTo(500, 0);
+    expect(y).toBeCloseTo(562.5, 0);
+    game.destroy();
+    vi.unstubAllGlobals();
+  });
+
   it('maps the pointer through the canvas rect after the canvas changes size', () => {
     let frame: FrameRequestCallback = () => {};
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
