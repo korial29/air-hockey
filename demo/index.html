@@ -116,6 +116,16 @@
       [hidden] {
         display: none !important;
       }
+      /* A phone on its side, in a game: the game gets the whole screen. */
+      @media (orientation: landscape) and (max-height: 500px) {
+        .playing main {
+          padding: 0;
+          gap: 0;
+        }
+        .playing header {
+          display: none;
+        }
+      }
     </style>
   </head>
   <body>

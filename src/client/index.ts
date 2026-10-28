@@ -80,8 +80,11 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     `button{position:absolute;right:1%;height:clamp(24px,9%,40px);top:calc(${(50 * TOP) / CH}% - clamp(12px,4.5%,20px));aspect-ratio:1;padding:0;border:0;border-radius:8px;background:#fff2;color:#fff;cursor:pointer}` +
     `button:hover{background:#fff4}button:focus-visible{outline:2px solid #fff}svg{width:70%;height:70%}` +
     `:host(:fullscreen){display:flex;align-items:center;justify-content:center;background:#08131d}` +
-    `:host(:fullscreen) div{width:min(100vw,100vh * ${W / CH})}:host(:fullscreen) canvas{border-radius:0}</style>` +
-    `<div><canvas></canvas><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path/></svg></button></div>`;
+    `:host(:fullscreen) div{width:min(100vw,100vh * ${W / CH})}:host(:fullscreen) canvas{border-radius:0}` +
+    // A phone held upright: the landscape rink would be a strip, the paddles too small to steer.
+    `p{display:none;position:absolute;inset:0;margin:0;place-content:center;border-radius:16px;background:#08131de6;color:#fff;font:600 18px system-ui,sans-serif}` +
+    `@media (orientation:portrait) and (pointer:coarse) and (max-width:600px){p{display:grid}}</style>` +
+    `<div><canvas></canvas><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path/></svg></button><p>Turn your phone sideways</p></div>`;
   container.append(wrap);
   const canvas = root.querySelector('canvas')!;
   const c = canvas.getContext('2d');
@@ -207,9 +210,15 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   };
   syncFull();
   button.hidden = opts.fullscreen == false || !document.fullscreenEnabled;
+  // In full screen a phone turns landscape where it can (Android); leaving unlocks it.
+  const turn = () =>
+    (screen.orientation as { lock?: (o: string) => Promise<void> } | undefined)?.lock?.(
+      'landscape',
+    );
   button.addEventListener(
     'click',
-    () => (full() ? document.exitFullscreen() : wrap.requestFullscreen()).catch(() => {}),
+    () =>
+      (full() ? document.exitFullscreen() : wrap.requestFullscreen().then(turn)).catch(() => {}),
     ac,
   );
   document.addEventListener('fullscreenchange', syncFull, ac);

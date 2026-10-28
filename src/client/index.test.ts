@@ -632,7 +632,7 @@ describe('airHockey', () => {
     const [above, name] = label();
     // 1200 px canvas: 0.6 px per unit, the paddle at (TOP + 450) · 0.6 px, the name above it
     // (font 35 units: 21 px).
-    expect(above).toBeCloseTo((TOP + 450 - 44 - 17.5) * 0.6);
+    expect(above).toBeCloseTo((TOP + 450 - PADDLE_R - 17.5) * 0.6);
     expect(name).toBeCloseTo(21);
     expect(draw().styles).not.toContain('#e6f2f9');
 
@@ -651,9 +651,9 @@ describe('airHockey', () => {
       expect.any(Array),
     );
     expect(texts.styles).toContain('#e6f2f9');
-    // The name keeps its size on screen, the paddle (radius 44) shrinks to half.
+    // The name keeps its size on screen, the paddle shrinks to half.
     expect(label()[1]).toBeCloseTo(name);
-    expect(label()[0]).toBeCloseTo((TOP + 450 - 22 - 17.5) * 0.6);
+    expect(label()[0]).toBeCloseTo((TOP + 450 - PADDLE_R / 2 - 17.5) * 0.6);
     expect(texts.styles).toContain('#f00');
     expect(draw().styles).not.toContain('#e6f2f9');
 
@@ -733,16 +733,16 @@ describe('airHockey', () => {
     const [p2, d2] = radii(1440);
     expect(p2).toBeCloseTo((PUCK_R * 1440) / 4000);
     expect(d2).toBeCloseTo((PADDLE_R * 1440) / 4000);
-    // Size 1 on the phone: the paddle is 7.5 px, raised; the puck 4.8 px, raised too.
+    // Size 1 on the phone: the paddle is 12.9 px, its true size; the puck 4.8 px, raised.
     match(1);
     snap(1);
     expect(radii(343).slice(0, 2)).toEqual(
-      [MIN_PUCK_PX, MIN_PADDLE_PX].map(v => expect.closeTo(v)),
+      [MIN_PUCK_PX, (PADDLE_R * 343) / 2000].map(v => expect.closeTo(v)),
     );
     game.destroy();
   });
 
-  it('has a full screen button on the wrapper, unless disabled or unsupported', () => {
+  it('has a full screen button on the wrapper, unless disabled or unsupported', async () => {
     const fs = (on: boolean) =>
       Object.defineProperty(document, 'fullscreenEnabled', { value: on, configurable: true });
     const mount = (opts: object = {}) => {
@@ -766,9 +766,13 @@ describe('airHockey', () => {
     expect(button.hidden).toBe(false);
     expect(button.type).toBe('button');
     expect(button.getAttribute('aria-label')).toBe('Full screen');
+    const lock = vi.fn(() => Promise.reject(new Error('not supported')));
+    vi.stubGlobal('screen', { orientation: { lock } });
     button.click();
     expect(request).toHaveBeenCalledOnce();
     expect(request.mock.contexts[0]).toBe(wrap);
+    // Then landscape, where the browser allows it: a refusal is fine.
+    await vi.waitFor(() => expect(lock).toHaveBeenCalledWith('landscape'));
     // Entered: the label and the icon say how to leave; the button leaves.
     const icon = button.querySelector('path')!.getAttribute('d');
     current = wrap;
@@ -788,9 +792,20 @@ describe('airHockey', () => {
     expect(mount({ fullscreen: false }).button.hidden).toBe(true);
     fs(false);
     expect(mount().button.hidden).toBe(true);
+    vi.unstubAllGlobals();
     // @ts-expect-error jsdom has none: restore that
     delete document.fullscreenEnabled;
     delete (document as { fullscreenElement?: unknown }).fullscreenElement;
+  });
+
+  it('asks to turn a phone held upright sideways, in a hint over the canvas', () => {
+    const game = airHockey(document.body, { name: 'Ana', socket: fakeSocket() });
+    const root = document.body.lastElementChild!.shadowRoot!;
+    expect(root.querySelector('p')!.textContent).toBe('Turn your phone sideways');
+    expect(root.querySelector('style')!.textContent).toContain(
+      '@media (orientation:portrait) and (pointer:coarse) and (max-width:600px){p{display:grid}}',
+    );
+    game.destroy();
   });
 
   it('maps the pointer through the canvas rect after the canvas changes size', () => {

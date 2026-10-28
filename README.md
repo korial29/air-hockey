@@ -200,7 +200,7 @@ serve({ port: 8787, rules: { arena: 'sea', goals: 5, rounds: 1 } });
 - [x] Rink that grows with the number of players
 - [x] Client-side prediction: your paddle and the puck react at once
 - [x] "3, 2, 1, PLAY!" countdown, goal flash, puck beacon and trail
-- [x] Full-screen button, mouse and touch, phone-sized screens
+- [x] Full-screen button, mouse and touch, phone-sized screens: thumb-sized paddles, landscape in full screen, a hint to turn a phone held upright
 - [x] Shadow DOM, zero runtime dependencies, size-gated in CI
 
 ---
