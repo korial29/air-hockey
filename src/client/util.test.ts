@@ -6,10 +6,14 @@ import {
   CH,
   MIN_PADDLE_PX,
   MIN_PUCK_PX,
+  SIDE,
+  TALL,
   TOP,
+  WIDE,
   byTeam,
   drawnR,
   flow,
+  frameOf,
   podium,
   rnd,
   sample,
@@ -35,6 +39,25 @@ describe('toField', () => {
     expect(toField(10, 20 + TOP / 2, rect)).toEqual([0, 0]);
     expect(toField(810, 20 + TOP / 2 + 562.5, rect)).toEqual([2000, 1125]);
     expect(toField(410, 20 + TOP / 2 + 281.25, rect)).toEqual([1000, 562.5]);
+  });
+
+  it('maps through the WIDE frame: the rink full height, a band on each side', () => {
+    // An iPhone on its side: 844 × 390 CSS px.
+    const r = { left: 0, top: 0, width: 844, height: (844 * 1125) / WIDE.w };
+    expect(toField((SIDE * 844) / WIDE.w, 0, r, 1, WIDE)).toEqual([0, 0]);
+    const [x, y] = toField(844 - (SIDE * 844) / WIDE.w, r.height, r, 2, WIDE);
+    expect(x).toBeCloseTo(4000);
+    expect(y).toBeCloseTo(2250);
+    // Over the left band: negative x.
+    expect(toField(0, 0, r, 1, WIDE)).toEqual([-SIDE, 0]);
+  });
+
+  it('picks WIDE for a canvas as wide as a phone on its side, TALL otherwise', () => {
+    expect(WIDE.w / WIDE.h).toBeCloseTo(2.16, 2);
+    expect(frameOf(844 / 390)).toBe(WIDE);
+    expect(frameOf(800 / 360)).toBe(WIDE);
+    expect(frameOf(4 / 3)).toBe(TALL);
+    expect(frameOf(1.5)).toBe(TALL);
   });
 
   it('gives y outside the rink over the HUD bands', () => {

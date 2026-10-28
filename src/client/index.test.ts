@@ -632,7 +632,7 @@ describe('airHockey', () => {
     const [above, name] = label();
     // 1200 px canvas: 0.6 px per unit, the paddle at (TOP + 450) · 0.6 px, the name above it
     // (font 35 units: 21 px).
-    expect(above).toBeCloseTo((TOP + 450 - 44 - 17.5) * 0.6);
+    expect(above).toBeCloseTo((TOP + 450 - PADDLE_R - 17.5) * 0.6);
     expect(name).toBeCloseTo(21);
     expect(draw().styles).not.toContain('#e6f2f9');
 
@@ -651,9 +651,9 @@ describe('airHockey', () => {
       expect.any(Array),
     );
     expect(texts.styles).toContain('#e6f2f9');
-    // The name keeps its size on screen, the paddle (radius 44) shrinks to half.
+    // The name keeps its size on screen, the paddle shrinks to half.
     expect(label()[1]).toBeCloseTo(name);
-    expect(label()[0]).toBeCloseTo((TOP + 450 - 22 - 17.5) * 0.6);
+    expect(label()[0]).toBeCloseTo((TOP + 450 - PADDLE_R / 2 - 17.5) * 0.6);
     expect(texts.styles).toContain('#f00');
     expect(draw().styles).not.toContain('#e6f2f9');
 
@@ -733,16 +733,16 @@ describe('airHockey', () => {
     const [p2, d2] = radii(1440);
     expect(p2).toBeCloseTo((PUCK_R * 1440) / 4000);
     expect(d2).toBeCloseTo((PADDLE_R * 1440) / 4000);
-    // Size 1 on the phone: the paddle is 7.5 px, raised; the puck 4.8 px, raised too.
+    // Size 1 on the phone: the paddle is 12.9 px, its true size; the puck 4.8 px, raised.
     match(1);
     snap(1);
     expect(radii(343).slice(0, 2)).toEqual(
-      [MIN_PUCK_PX, MIN_PADDLE_PX].map(v => expect.closeTo(v)),
+      [MIN_PUCK_PX, (PADDLE_R * 343) / 2000].map(v => expect.closeTo(v)),
     );
     game.destroy();
   });
 
-  it('has a full screen button on the wrapper, unless disabled or unsupported', () => {
+  it('has a full screen button on the wrapper, unless disabled or unsupported', async () => {
     const fs = (on: boolean) =>
       Object.defineProperty(document, 'fullscreenEnabled', { value: on, configurable: true });
     const mount = (opts: object = {}) => {
@@ -766,9 +766,13 @@ describe('airHockey', () => {
     expect(button.hidden).toBe(false);
     expect(button.type).toBe('button');
     expect(button.getAttribute('aria-label')).toBe('Full screen');
+    const lock = vi.fn(() => Promise.reject(new Error('not supported')));
+    vi.stubGlobal('screen', { orientation: { lock } });
     button.click();
     expect(request).toHaveBeenCalledOnce();
     expect(request.mock.contexts[0]).toBe(wrap);
+    // Then landscape, where the browser allows it: a refusal is fine.
+    await vi.waitFor(() => expect(lock).toHaveBeenCalledWith('landscape'));
     // Entered: the label and the icon say how to leave; the button leaves.
     const icon = button.querySelector('path')!.getAttribute('d');
     current = wrap;
@@ -788,9 +792,97 @@ describe('airHockey', () => {
     expect(mount({ fullscreen: false }).button.hidden).toBe(true);
     fs(false);
     expect(mount().button.hidden).toBe(true);
+    vi.unstubAllGlobals();
     // @ts-expect-error jsdom has none: restore that
     delete document.fullscreenEnabled;
     delete (document as { fullscreenElement?: unknown }).fullscreenElement;
+  });
+
+  it('asks to turn a phone held upright sideways, in a hint over the canvas', () => {
+    const game = airHockey(document.body, { name: 'Ana', socket: fakeSocket() });
+    const root = document.body.lastElementChild!.shadowRoot!;
+    expect(root.querySelector('p')!.textContent).toBe('Turn your phone sideways');
+    expect(root.querySelector('style')!.textContent).toContain(
+      '@media (orientation:portrait) and (pointer:coarse) and (max-width:600px){p{display:grid}}',
+    );
+    game.destroy();
+  });
+
+  it('fills a phone on its side: the rink full height, the HUD in a band on each side', () => {
+    const texts = fakeContext();
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    let resized = () => {};
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          resized = cb;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    const root = document.body.firstElementChild!.shadowRoot!;
+    // The style gives the canvas that aspect on a landscape screen at most 500 px high.
+    expect(root.querySelector('style')!.textContent).toContain(
+      '@media (orientation:landscape) and (max-height:500px){canvas{aspect-ratio:2430/1125}',
+    );
+    const canvas = root.querySelector('canvas')!;
+    Object.defineProperties(canvas, {
+      clientWidth: { value: 844 },
+      clientHeight: { value: 390 },
+    });
+    resized();
+    expect([canvas.width, canvas.height]).toEqual([844, 390]);
+
+    socket.onopen!();
+    const players = [
+      { id: 3, name: 'Ana', color: '#f00', team: 0 },
+      { id: 4, name: 'Bob', color: '#0f0', team: 1 },
+    ];
+    socket.onmessage!({ data: JSON.stringify({ t: 'roster', you: 3, players }) });
+    const send = (m: object) => socket.onmessage!({ data: JSON.stringify({ t: 'match', ...m }) });
+    send({ phase: 'wait', round: 0, wins: [0, 0] });
+    texts.length = 0;
+    frame(0);
+    // Over the rink, which starts at the top of the canvas.
+    expect(texts.ys.get('Waiting for a player on each side')).toBeCloseTo(1125 * 0.3);
+
+    socket.onmessage!({
+      data: encodeSnapshot({
+        tick: 1,
+        score: [4, 2],
+        puck: { x: 1, y: 1, vx: 0, vy: 0 },
+        paddles: [{ id: 3, x: 400, y: 450 }],
+      }),
+    });
+    send({ phase: 'play', round: 2, rounds: 3, goals: 10, wins: [1, 0] });
+    texts.length = 0;
+    frame(0);
+    // Each score on its own, the round and the target at the foot of the left band.
+    expect(texts).toEqual(
+      expect.arrayContaining(['Left', 'Right', '4', '2', 'Round 2/3', 'first to 10']),
+    );
+    expect(texts).not.toContain('4 : 2');
+    expect(texts.ys.get('Left')).toBeLessThan(100);
+    expect(texts.ys.get('first to 10')).toBeGreaterThan(1000);
+    // The paddle name sits over the paddle: the rink is not shifted down.
+    expect(texts.ys.get('Ana')).toBeLessThan(450);
+
+    // The pointer maps through the WIDE frame.
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 844, height: 390 }) as DOMRect;
+    canvas.dispatchEvent(
+      new MouseEvent('pointermove', { clientX: ((215 + 500) * 844) / 2430, clientY: 195 }),
+    );
+    frame(0);
+    const { x, y } = decodeInput(socket.sent.at(-1) as ArrayBuffer)!;
+    expect(x).toBeCloseTo(500, 0);
+    expect(y).toBeCloseTo(562.5, 0);
+    game.destroy();
+    vi.unstubAllGlobals();
   });
 
   it('maps the pointer through the canvas rect after the canvas changes size', () => {
