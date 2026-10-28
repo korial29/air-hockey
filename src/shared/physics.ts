@@ -357,12 +357,12 @@ export const createWorld = (arena: Arena = 'ice', size = 1, count = 7, seed = 0)
 /**
  * Spawn point for the n-th paddle of a team, spread over its half of a rink of that size: the
  * n-th spot of the grid below that no obstacle of obs covers (10 units clear).
- * Four columns of three, from the goal outward; the column next to the serve spot
- * (W / 4 from the goal) is 100 units away from it, more than PUCK_R + PADDLE_R. The icebergs
- * stand on cells of the same area (see CELLS in arena.ts), so a spot under one is skipped; the
- * last column is clear of the nearest penguin lane (x 720). A shark swinging out of that lane
- * grazes the last column at sea (a tenth of a unit clear); it is clear by the full margin at
- * tick 0, when a round starts. Past 12 spots the grid repeats, shifted down by 60 units.
+ * Three columns of three, from the goal outward, 150 and 145 apart (a paddle wide, about); the
+ * last column is 105 units short of the serve spot (W / 4 from the goal), more than
+ * PUCK_R + PADDLE_R. The icebergs stand on cells of the same area (see CELLS in arena.ts), so a
+ * spot under one is skipped; the last column is clear of the nearest penguin lane (x 720), of a
+ * shark at the end of its swing and of a genie at the edge of its band. Past 9 spots the grid
+ * repeats, shifted down by 60 units.
  * All of it is drawn on the base rink and scaled with the obstacles, so every clearance grows.
  */
 export const spawnPoint = (
@@ -374,8 +374,8 @@ export const spawnPoint = (
   let p: [number, number];
   let k = 0;
   do {
-    const x = [100, 210, 320, 600][((k / 3) | 0) % 4] * size;
-    const y = (H / 2 + [0, -0.3, 0.3][k % 3] * H + 60 * ((k++ / 12) | 0)) * size;
+    const x = [100, 250, 395][((k / 3) | 0) % 3] * size;
+    const y = (H / 2 + [0, -0.3, 0.3][k % 3] * H + 60 * ((k++ / 9) | 0)) * size;
     p = clampPaddle(team, team ? W * size - x : x, y, size);
   } while (obs.some(o => Math.hypot(p[0] - o.x, p[1] - o.y) <= o.r + PADDLE_R + 10) || n-- > 0);
   return p;
@@ -397,10 +397,10 @@ export const spawnPoint = (
  *
  * No tunnelling at 240 Hz: the puck moves at most 2400 / 240 = 10 units per step (< PUCK_R = 28
  * against walls and posts), a paddle 7200 / 240 = 30, so the closing distance per step is at
- * most 40 < PUCK_R + PADDLE_R = 72: an overlap is always caught before the centres cross.
+ * most 40 < PUCK_R + PADDLE_R = 103: an overlap is always caught before the centres cross.
  * Penguins, sharks (zig-zag included) and genies (at their fastest, mid-glide) move under 1.6
  * units per step: puck to obstacle closes at most 11.6 < 40 + 28 (the smallest obstacle, a penguin
- * or a genie), paddle to obstacle 31.6 < 40 + 44. A caught puck moves with its whirlwind's turn.
+ * or a genie), paddle to obstacle 31.6 < 40 + 75. A caught puck moves with its whirlwind's turn.
  * On a bigger rink top speeds grow with the size, so the step runs in ceil(size) sub-steps, the
  * obstacles taken at fractional ticks: the distances per sub-step stay those above.
  */
