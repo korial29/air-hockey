@@ -12,7 +12,7 @@ export const PUCK_R = 28;
  * defender in it stops the puck (see solid in physics.ts).
  */
 export const CREASE = 300;
-export const PADDLE_R = 44;
+export const PADDLE_R = 75;
 
 /** Units per second. */
 export const PUCK_MAX_SPEED = 2400;

@@ -19,6 +19,7 @@ const status = $('status');
 const playing = (on: boolean) => {
   ['play', 'status', 'leave'].forEach(id => ($(id).hidden = !on));
   [form, $('intro')].forEach(el => (el.hidden = on));
+  document.body.classList.toggle('playing', on);
 };
 
 let game: AirHockey | undefined;

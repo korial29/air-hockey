@@ -13,6 +13,25 @@ export const TOP = 200;
 export const BOT = 175;
 export const CH = TOP + H + BOT;
 
+/** Where the rink sits on a canvas of w × h field units: at x, y, W × H. */
+export interface Frame {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+/** HUD bands above and below the rink: 4:3. */
+export const TALL: Frame = { x: 0, y: TOP, w: W, h: CH };
+/**
+ * A phone on its side: the rink full height, a HUD band on each side, SIDE wide. 2.16:1, an
+ * iPhone's screen held sideways: the rink a third bigger than in TALL.
+ */
+export const SIDE = 215;
+export const WIDE: Frame = { x: SIDE, y: 0, w: W + 2 * SIDE, h: H };
+/** The frame for a canvas of that CSS aspect (width / height): the nearer of the two. */
+export const frameOf = (aspect: number): Frame =>
+  aspect > (TALL.w / TALL.h + WIDE.w / WIDE.h) / 2 ? WIDE : TALL;
+
 /**
  * Smallest drawn radius of the puck and of a paddle, in CSS px. A big rink on a small canvas
  * (8 players on a phone) would draw them at 2 to 4 px; they are drawn bigger, around their true
@@ -25,18 +44,20 @@ export const MIN_PADDLE_PX = 11;
 export const drawnR = (r: number, min: number, px: number): number => Math.max(r, min / px);
 
 /**
- * Client (CSS px) coordinates → world units, given the canvas bounding rect and the rink size
- * factor: the rink always fills the same part of the canvas, W · size × H · size world units.
- * y is measured from the rink's top edge: the HUD bands give negative y or y past H · size.
+ * Client (CSS px) coordinates → world units, given the canvas bounding rect, the rink size factor
+ * and the frame: the rink always fills the same part of the canvas, W · size × H · size world
+ * units. Measured from the rink's top left corner: the HUD bands give negative coordinates, or
+ * coordinates past the rink.
  */
 export const toField = (
   cx: number,
   cy: number,
   r: { left: number; top: number; width: number; height: number },
   size = 1,
+  { x, y, w, h }: Frame = TALL,
 ): [number, number] => [
-  ((cx - r.left) * W * size) / r.width,
-  (((cy - r.top) * CH) / r.height - TOP) * size,
+  (((cx - r.left) * w) / r.width - x) * size,
+  (((cy - r.top) * h) / r.height - y) * size,
 ];
 
 /**

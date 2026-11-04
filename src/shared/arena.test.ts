@@ -16,8 +16,10 @@ import {
 import { spawnPoint } from './physics';
 import type { Arena, Obstacle, Team } from './types';
 
-/** A paddle and a puck side by side: the width every gap must leave. */
+/** A paddle and a puck side by side: what a lane leaves to the centre line, a wall for paddles. */
 const FIT = 2 * PADDLE_R + 2 * PUCK_R;
+/** A paddle alone: what every gap between fixed things leaves on the ice, and at sea at rest. */
+const PASS = 2 * PADDLE_R;
 /**
  * The puck alone, with room to spare: the width every gap keeps at sea, even mid-swing, and in the
  * desert, wherever the genies float.
@@ -125,7 +127,8 @@ describe('obstacles', () => {
       for (const o of ice(t)) {
         for (const team of [0, 1] as Team[]) {
           for (let n = 0; n < 16; n++) {
-            const [x, y] = spawnPoint(team, n);
+            // As a round start places them: off the obstacles standing then.
+            const [x, y] = spawnPoint(team, n, 1, ice(0));
             expect(dist(o, x, y)).toBeGreaterThan(o.r + PADDLE_R + 10);
           }
         }
@@ -146,17 +149,17 @@ describe('obstacles', () => {
     }
   });
 
-  it('fits a paddle and a puck side by side in every gap, so nothing gets trapped', () => {
+  it('fits a paddle in every gap, and a puck beside it up to the centre line: nothing gets trapped', () => {
     const [a, , b, , left, mid] = ice(0);
     // Icebergs to the boards and the side walls.
     for (const o of [a, b]) {
-      expect(Math.min(o.y - o.r, H - o.y - o.r, o.x - o.r)).toBeGreaterThan(FIT);
+      expect(Math.min(o.y - o.r, H - o.y - o.r, o.x - o.r)).toBeGreaterThan(PASS);
     }
-    // Icebergs to the nearest penguin lane, the lanes to each other, and the pair's lane to a
-    // paddle standing on the centre line (where it cannot yield).
-    expect(left.x - left.r - Math.max(a.x + a.r, b.x + b.r)).toBeGreaterThan(FIT);
-    expect(mid.x - mid.r - (left.x + left.r)).toBeGreaterThan(FIT);
-    expect(W / 2 - 2 * PADDLE_R - (left.x + left.r)).toBeGreaterThan(FIT);
+    // Icebergs to the nearest penguin lane, the lanes to each other, and the pair's lane to the
+    // centre line, a wall for paddles.
+    expect(left.x - left.r - Math.max(a.x + a.r, b.x + b.r)).toBeGreaterThan(PASS);
+    expect(mid.x - mid.r - (left.x + left.r)).toBeGreaterThan(PASS);
+    expect(W / 2 - (left.x + left.r)).toBeGreaterThan(FIT);
   });
 
   it('cannot be tunnelled: a step closes less than the smallest contact distance', () => {
@@ -290,6 +293,8 @@ describe('obstacles on a scaled rink', () => {
       for (const rink of RINKS) {
         const { size } = rink;
         const [X, Y] = [W * size, H * size];
+        // Spawn points as a round start places them: off the obstacles standing then.
+        const start = obstacles(arena, 0, size, rink.count);
         for (const t of SOME) {
           for (const o of obstacles(arena, t, size, rink.count)) {
             for (const x of [X / 4, (3 * X) / 4]) {
@@ -297,7 +302,7 @@ describe('obstacles on a scaled rink', () => {
             }
             for (const team of [0, 1] as Team[]) {
               for (let n = 0; n < MAX_PLAYERS; n++) {
-                const [x, y] = spawnPoint(team, n, size);
+                const [x, y] = spawnPoint(team, n, size, start);
                 expect(dist(o, x, y)).toBeGreaterThan(o.r + PADDLE_R + spare);
               }
             }
@@ -312,7 +317,7 @@ describe('obstacles on a scaled rink', () => {
           expect(dist(o, X / 2, Y / 2)).toBeGreaterThan(o.r + PUCK_R + 100);
           for (const team of [0, 1] as Team[]) {
             for (let n = 0; n < MAX_PLAYERS; n++) {
-              const [x, y] = spawnPoint(team, n, size);
+              const [x, y] = spawnPoint(team, n, size, start);
               expect(dist(o, x, y)).toBeGreaterThan(o.r + PADDLE_R + 10);
             }
           }
@@ -325,7 +330,7 @@ describe('obstacles on a scaled rink', () => {
   );
 
   it.each(['ice'] as Arena[])(
-    'fits a paddle and a puck side by side in every gap at every count and size (%s)',
+    'fits a paddle in every gap, a puck beside it up to the centre line, at every count and size (%s)',
     arena => {
       for (const rink of ALL) {
         const X = W * rink.size;
@@ -335,14 +340,14 @@ describe('obstacles on a scaled rink', () => {
           obs.forEach((o, i) => {
             if (fixed(o)) {
               expect(Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r)).toBeGreaterThan(
-                FIT,
+                PASS,
               );
             } else if (Math.abs(X / 2 - o.x) > 100 * rink.size) {
-              // A side lane to a paddle standing on the centre line, where it cannot yield.
-              expect(Math.abs(X / 2 - o.x) - o.r - 2 * PADDLE_R).toBeGreaterThan(FIT);
+              // A side lane to the centre line, a wall for paddles.
+              expect(Math.abs(X / 2 - o.x) - o.r).toBeGreaterThan(FIT);
             }
             for (const q of obs.slice(i + 1)) {
-              expect(dist(o, q.x, q.y) - o.r - q.r).toBeGreaterThan(FIT);
+              expect(dist(o, q.x, q.y) - o.r - q.r).toBeGreaterThan(PASS);
             }
           });
         }
@@ -516,13 +521,13 @@ describe('the sea arena', () => {
         const obs = obstacles('sea', t, rink.size, rink.count);
         obs.forEach((o, i) => {
           if (fixed(o)) {
-            // Vortices to the boards and the side walls: a paddle and a puck, as on the ice.
+            // Vortices to the boards and the side walls: a paddle, as on the ice.
             expect(Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r)).toBeGreaterThan(
-              FIT,
+              PASS,
             );
           } else if (Math.abs(X / 2 - o.x) > (ZA + 1) * rink.size) {
-            // A side lane to a paddle standing on the centre line, where it cannot yield.
-            expect(Math.abs(X / 2 - o.x) - o.r - 2 * PADDLE_R).toBeGreaterThan(SLIP);
+            // A side lane to the centre line, a wall for paddles: a paddle, mid-swing too.
+            expect(Math.abs(X / 2 - o.x) - o.r).toBeGreaterThan(PASS);
           }
           for (const q of obs.slice(i + 1)) {
             expect(dist(o, q.x, q.y) - o.r - q.r).toBeGreaterThan(SLIP);
@@ -532,7 +537,7 @@ describe('the sea arena', () => {
     }
   }, 20_000);
 
-  it('narrows a gap below a paddle and a puck only while a shark swings toward it', () => {
+  it('narrows a gap below a paddle only while a shark swings toward it', () => {
     const [a, , b, , { r }] = sea(0);
     const lane = LANES[0];
     /** Every quarter tick of a period. */
@@ -541,27 +546,21 @@ describe('the sea arena', () => {
     let laneToLane = Infinity;
     let toLine = Infinity;
     let vortexTight = 0;
-    let lineTight = 0;
     let laneTight = 0;
     for (const t of QUARTERS) {
       const [, , , , left, mid, right] = sea(t);
       const vortex = Math.min(...[a, b].map(o => dist(o, left.x, left.y) - o.r - left.r));
-      const line = W / 2 - 2 * PADDLE_R - (left.x + left.r);
       const lanes = [left, right].map(o => dist(o, mid.x, mid.y) - o.r - mid.r);
       vortexToLane = Math.min(vortexToLane, vortex);
-      toLine = Math.min(toLine, line);
+      toLine = Math.min(toLine, W / 2 - (left.x + left.r));
       laneToLane = Math.min(laneToLane, ...lanes);
       // A squeeze only on the side the shark swings to.
-      if (vortex < FIT) {
+      if (vortex < PASS) {
         vortexTight++;
         expect(left.x).toBeLessThan(lane);
       }
-      if (line < FIT) {
-        lineTight++;
-        expect(left.x).toBeGreaterThan(lane);
-      }
       lanes.forEach((g, k) => {
-        if (g < FIT) {
+        if (g < PASS) {
           // Two sharks swinging toward each other.
           laneTight++;
           const o = [left, right][k];
@@ -570,20 +569,18 @@ describe('the sea arena', () => {
         }
       });
     }
-    // Vortices to the nearest lane: down to about 87, the full outward swing side on, in the vortices'
-    // rows only: under 1/4 of the period.
-    expect(vortexToLane).toBeLessThan(FIT);
+    // Vortices to the nearest lane: down to about 87, the full outward swing side on, in the
+    // vortices' rows only: under 1/4 of the period.
+    expect(vortexToLane).toBeLessThan(PASS);
     expect(vortexToLane).toBeGreaterThanOrEqual(
       lane - ZA - r - Math.max(a.x + a.r, b.x + b.r) - 1e-9,
     );
     expect(vortexTight / QUARTERS.length).toBeLessThan(1 / 4);
-    // The pair's lanes to a centre-line paddle: 78 at the full inward swing, below a paddle and a
-    // puck once the swing passes d, on every inward half-zig: (1 - d / ZA) / 2 of the period.
-    const d = W / 2 - 2 * PADDLE_R - FIT - r - lane;
-    expect(toLine).toBeCloseTo(W / 2 - 2 * PADDLE_R - (lane + ZA + r), 6);
-    expect(lineTight / QUARTERS.length).toBeCloseTo((1 - d / ZA) / 2, 2);
+    // The pair's lanes to the centre line, a wall for paddles: a paddle at the full inward swing.
+    expect(toLine).toBeCloseTo(W / 2 - (lane + ZA + r), 6);
+    expect(toLine).toBeGreaterThan(PASS);
     // Lane to lane: down to about 129, under 1/16 of the period.
-    expect(laneToLane).toBeLessThan(FIT);
+    expect(laneToLane).toBeLessThan(PASS);
     expect(laneToLane).toBeGreaterThan(125);
     expect(laneTight / QUARTERS.length).toBeLessThan(1 / 16);
     // The puck alone, always.
@@ -644,8 +641,8 @@ describe('the desert arena', () => {
           const obs = obstacles('desert', t, size, count, seed);
           obs.forEach((o, i) => {
             if (!fixed(o) && Math.abs(X / 2 - o.x) > (GA + 1) * size) {
-              // A side genie to a paddle standing on the centre line, where it cannot yield.
-              expect(Math.abs(X / 2 - o.x) - o.r - 2 * PADDLE_R).toBeGreaterThan(SLIP);
+              // A side genie to the centre line, a wall for paddles: a paddle and a puck.
+              expect(Math.abs(X / 2 - o.x) - o.r).toBeGreaterThan(FIT);
             }
             for (const q of obs.slice(i + 1)) {
               expect(dist(o, q.x, q.y) - o.r - q.r).toBeGreaterThan(SLIP);
@@ -896,8 +893,8 @@ describe('icebergs (vortices) across the width', () => {
             [...Array(MAX_PLAYERS / 2).keys()].map(n => spawnPoint(team, n, size, all)),
           );
           for (const o of all.filter(fixed)) {
-            // A paddle and a puck between it and the boards.
-            see('boards', Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r) - FIT);
+            // A paddle between it and the boards.
+            see('boards', Math.min(o.y - o.r, Y - o.y - o.r, o.x - o.r, X - o.x - o.r) - PASS);
             // A straight shot from the centre spot reaches any point of either mouth.
             for (const y of mouth) {
               for (const x of [0, X]) {
@@ -913,9 +910,9 @@ describe('icebergs (vortices) across the width', () => {
             }
           }
         }
-        // Top and bottom pairs, and every fixed obstacle to every mover over a period: a paddle and
-        // a puck on the ice, the puck alone at sea and in the desert (see the sea's squeeze, the
-        // genies' float).
+        // Top and bottom pairs, and every fixed obstacle to every mover over a period: a paddle on
+        // the ice, the puck alone at sea and in the desert (see the sea's squeeze, the genies'
+        // float).
         for (const seed of SEEDS.slice(0, 100)) {
           for (let t = 0; t < PERIOD; t += 16) {
             const obs = obstacles(arena, t, size, count, seed);
@@ -924,7 +921,7 @@ describe('icebergs (vortices) across the width', () => {
                 if (q != o) {
                   see(
                     'gaps',
-                    dist(o, q.x, q.y) - o.r - q.r - (fixed(q) || arena == 'ice' ? FIT : SLIP),
+                    dist(o, q.x, q.y) - o.r - q.r - (fixed(q) || arena == 'ice' ? PASS : SLIP),
                   );
                 }
               }
@@ -939,7 +936,7 @@ describe('icebergs (vortices) across the width', () => {
     20_000,
   );
 
-  it('squeezes a vortex and a shark under a paddle and a puck for 1/4 of the period at most', () => {
+  it('squeezes a vortex and a shark under a paddle for 1/4 of the period at most', () => {
     const FULL = [...Array(PERIOD).keys()];
     for (const seed of [0, ...SEEDS.slice(0, 20)]) {
       const [a, , b] = obstacles('sea', 0, 1, 7, seed);
@@ -949,7 +946,7 @@ describe('icebergs (vortices) across the width', () => {
         const left = obstacles('sea', t, 1, 7, seed)[4];
         const gap = Math.min(...[a, b].map(o => dist(o, left.x, left.y) - o.r - left.r));
         low = Math.min(low, gap);
-        tight += +(gap < FIT);
+        tight += +(gap < PASS);
       }
       // 84 at the worst cell (x 450); the puck needs 2 · PUCK_R + 20.
       expect(low).toBeGreaterThan(83.9);

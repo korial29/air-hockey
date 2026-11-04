@@ -35,7 +35,18 @@ import {
   veil,
   waves,
 } from './render';
-import { CH, MIN_PADDLE_PX, MIN_PUCK_PX, TOP, drawnR, sample, toField } from './util';
+import {
+  CH,
+  MIN_PADDLE_PX,
+  MIN_PUCK_PX,
+  TALL,
+  TOP,
+  WIDE,
+  drawnR,
+  frameOf,
+  sample,
+  toField,
+} from './util';
 import type { Stamped } from './util';
 
 export type { Phase, PlayerInfo, Rank, SocketLike, Team } from '../shared/types';
@@ -74,14 +85,20 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   const wrap = document.createElement('div');
   const root = wrap.attachShadow({ mode: 'open' });
   // The canvas keeps its W × CH aspect in full screen too, centred on the dark background: its
-  // bounding rect stays the drawn area, which the pointer mapping relies on.
+  // bounding rect stays the drawn area, which the pointer mapping relies on. A phone on its side
+  // (a landscape screen at most 500 px high) gets the WIDE aspect instead: the frame follows it.
   root.innerHTML =
     `<style>div{position:relative}canvas{display:block;width:100%;aspect-ratio:${W}/${CH};touch-action:none;border-radius:16px}` +
     `button{position:absolute;right:1%;height:clamp(24px,9%,40px);top:calc(${(50 * TOP) / CH}% - clamp(12px,4.5%,20px));aspect-ratio:1;padding:0;border:0;border-radius:8px;background:#fff2;color:#fff;cursor:pointer}` +
     `button:hover{background:#fff4}button:focus-visible{outline:2px solid #fff}svg{width:70%;height:70%}` +
     `:host(:fullscreen){display:flex;align-items:center;justify-content:center;background:#08131d}` +
-    `:host(:fullscreen) div{width:min(100vw,100vh * ${W / CH})}:host(:fullscreen) canvas{border-radius:0}</style>` +
-    `<div><canvas></canvas><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path/></svg></button></div>`;
+    `:host(:fullscreen) div{width:min(100vw,100vh * ${W / CH})}:host(:fullscreen) canvas{border-radius:0}` +
+    `@media (orientation:landscape) and (max-height:500px){canvas{aspect-ratio:${WIDE.w}/${WIDE.h}}button{top:auto;bottom:2%}` +
+    `:host(:fullscreen) div{width:min(100vw,100vh * ${WIDE.w / WIDE.h})}}` +
+    // A phone held upright: the landscape rink would be a strip, the paddles too small to steer.
+    `p{display:none;position:absolute;inset:0;margin:0;place-content:center;border-radius:16px;background:#08131de6;color:#fff;font:600 18px system-ui,sans-serif}` +
+    `@media (orientation:portrait) and (pointer:coarse) and (max-width:600px){p{display:grid}}</style>` +
+    `<div><canvas></canvas><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path/></svg></button><p>Turn your phone sideways</p></div>`;
   container.append(wrap);
   const canvas = root.querySelector('canvas')!;
   const c = canvas.getContext('2d');
@@ -93,6 +110,8 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     listeners.forEach(([e, cb]) => (e == event ? cb(payload) : 0));
 
   const buf: Stamped[] = [];
+  /** Where the rink sits on the canvas: TALL, or WIDE on a phone on its side (see the style). */
+  let L = TALL;
   let players = new Map<number, PlayerInfo>();
   let you = -1;
   /** Pointer, clamped to the own half: the own paddle's target. */
@@ -187,7 +206,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       const z = P.w.size;
       me = clampPaddle(
         team,
-        ...toField(e.clientX, e.clientY, canvas.getBoundingClientRect(), z),
+        ...toField(e.clientX, e.clientY, canvas.getBoundingClientRect(), z, L),
         z,
       );
       dirty = true;
@@ -207,21 +226,29 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   };
   syncFull();
   button.hidden = opts.fullscreen == false || !document.fullscreenEnabled;
+  // In full screen a phone turns landscape where it can (Android); leaving unlocks it.
+  const turn = () =>
+    (screen.orientation as { lock?: (o: string) => Promise<void> } | undefined)?.lock?.(
+      'landscape',
+    );
   button.addEventListener(
     'click',
-    () => (full() ? document.exitFullscreen() : wrap.requestFullscreen()).catch(() => {}),
+    () =>
+      (full() ? document.exitFullscreen() : wrap.requestFullscreen().then(turn)).catch(() => {}),
     ac,
   );
   document.addEventListener('fullscreenchange', syncFull, ac);
 
   const ro = new ResizeObserver(() => {
+    L = canvas.clientHeight ? frameOf(canvas.clientWidth / canvas.clientHeight) : TALL;
     canvas.width = canvas.clientWidth * devicePixelRatio;
-    canvas.height = (canvas.width * CH) / W;
+    canvas.height = (canvas.width * L.h) / L.w;
   });
   ro.observe(canvas);
 
   const draw = (c: CanvasRenderingContext2D, now: number) => {
-    const k = canvas.width / W;
+    const k = canvas.width / L.w;
+    const [x0, y0] = [k * L.x, k * L.y];
     // Font size in field units, never under 12 CSS px.
     const f = Math.max(35, (12 * devicePixelRatio) / k);
     // Rink size factor of the round, obstacles in play and their seed: the defaults before any
@@ -231,9 +258,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     c.setTransform(k, 0, 0, k, 0, 0);
     c.textBaseline = 'middle';
     c.fillStyle = '#08131d';
-    c.fillRect(0, 0, W, CH);
+    c.fillRect(0, 0, L.w, L.h);
     // The rink, between the HUD bands: field coordinates from here on.
-    c.setTransform(k, 0, 0, k, 0, k * TOP);
+    c.setTransform(k, 0, 0, k, x0, y0);
     const arena = match?.arena ?? 'ice';
     const ice = arena == 'ice';
     const sea = arena == 'sea';
@@ -247,7 +274,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     }
     // The world, W · size × H · size, on the same rink area: puck and paddles look smaller on a
     // bigger rink. Names keep their size on screen: g world units.
-    c.setTransform(k / size, 0, 0, k / size, 0, k * TOP);
+    c.setTransform(k / size, 0, 0, k / size, x0, y0);
     const g = f * size;
     // Puck and paddles never drawn under MIN_PUCK_PX and MIN_PADDLE_PX: CSS px per world unit.
     const px = k / devicePixelRatio / size;
@@ -376,7 +403,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       });
     }
     // Back to base rink coordinates: snow and veils cover the rink area whatever its size.
-    c.setTransform(k, 0, 0, k, 0, k * TOP);
+    c.setTransform(k, 0, 0, k, x0, y0);
     if (ice) {
       snow(now);
     }
@@ -398,8 +425,14 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       veil('#000a');
     }
     c.setTransform(k, 0, 0, k, 0, 0);
-    hud([...players.values()], you, s ? s.score.join(' : ') : '', label, match ?? {});
+    hud([...players.values()], you, s ? s.score.join(' : ') : '', label, match ?? {}, L == WIDE);
     if (phase == 'end' && !label) {
+      // W × CH, scaled to the canvas height and centred: on WIDE, the bands still show the score,
+      // the rink between them goes dark.
+      c.fillStyle = '#08131d';
+      c.fillRect(L.x, 0, L.w - 2 * L.x, L.h);
+      const z = (k * L.h) / CH;
+      c.setTransform(z, 0, 0, z, (k * L.w - z * W) / 2, 0);
       stadium(ranking, winner, now);
     }
   };

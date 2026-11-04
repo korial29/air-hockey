@@ -1,14 +1,14 @@
 // The ice arena: four fixed icebergs and three penguins sliding on their belly, board to board.
-// Every gap fits a paddle and a puck side by side (2 · PADDLE_R + 2 · PUCK_R = 144), edge to edge:
-// icebergs to the boards ≥ 145, icebergs to the nearest penguin lane 158, lane to lane 200, and
-// 152 from the pair's lanes to a paddle on the centre line. So a paddle can always yield and
-// nothing gets trapped. Penguins touch the boards at the ends of their lane: what they catch
+// Paddles are thumb-sized (PADDLE_R 75, for phones), so every gap fits a paddle (2 · PADDLE_R =
+// 150), edge to edge: icebergs to the boards ≥ 153, icebergs to the nearest penguin lane 158, lane
+// to lane 200; the pair's lanes to the centre line, a wall for paddles, 240: a paddle and a puck
+// side by side (206). So a paddle can always get through and nothing gets trapped. Penguins touch the boards at the ends of their lane: what they catch
 // there slides out sideways. A straight shot from the centre spot reaches every point of either
 // goal mouth without meeting an iceberg.
 // Each game and round the icebergs (vortices, whirlwinds) take a new place, drawn from the round's
 // seed (see obstacles): each one on a cell of the grid in front of its goal (CELLS), the two of a
 // pair in opposite halves (one top, one bottom: neither team gets both), the two of a side too.
-// Every cell keeps every guarantee above for the biggest radius (r 72, size 1): ≥ 145 to the
+// Every cell keeps every guarantee above for the biggest radius (r 72, size 1): ≥ 153 to the
 // boards and the goal line, ≥ 100 from any straight shot from the centre spot into a goal mouth,
 // ≥ 200 from the serve and centre spots, clear of the crease, and x ≤ 450, so the gaps to the
 // lanes stay as above. Halves 525 apart at least. Spawn points under one are skipped (see
@@ -17,10 +17,10 @@
 // are, same size, and big sharks (SR, wider than a penguin) in the penguin lanes, swimming board
 // to board in the same period and zig-zagging across their lane: a triangle wave of ZA units
 // either side, ZN back-and-forths per crossing, on the lane at the boards and at mid-height. The
-// swing is wide on purpose, so the sea drops the paddle-and-puck rule while a shark swings by:
-// vortices to the nearest lane narrow down to 84 at the worst draw of the vortices' y (for 1/8 to
-// 1/5 of the period, with the draw), the pair's lanes to a centre-line paddle down to 78 (nearly half of it, on every inward swing), lane to lane down to
-// 129 (about 1/20 of it).
+// swing is wide on purpose, so the sea drops the paddle rule while a shark swings by: vortices to
+// the nearest lane narrow down to 84 at the worst draw of the vortices' y (for 1/8 to 1/5 of the
+// period, with the draw), lane to lane down to 129 (about 1/20 of it); the pair's lanes to the
+// centre line keep a paddle (166).
 // The puck alone always fits (every gap ≥ 78 > 2 · PUCK_R + 20), so no obstacle traps it, and a
 // paddle caught in a squeeze is pushed out like anywhere else; cornered where a board meets the
 // centre line, it slips past the shark (see out in physics.ts). The serve spots stay ≥ 101 clear,
@@ -84,7 +84,7 @@ const LANES = [
 export const PERIOD = 2048;
 /**
  * Shark zig-zag: amplitude either side of its lane, and back-and-forths per crossing. Wide enough
- * to read at a glance: it narrows some gaps below a paddle and a puck while it swings (see top).
+ * to read at a glance: it narrows some gaps below a paddle while it swings (see top).
  */
 export const ZA = 70;
 export const ZN = 3;
