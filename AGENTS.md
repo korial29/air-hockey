@@ -15,6 +15,7 @@ Read this file before any change. It records the rules agreed while building the
 | `src/shared/protocol.ts` | Wire format: JSON text frames, binary input and snapshot frames |
 | `src/shared/room.ts` | One game, transport-agnostic: roster, teams, rounds, points, rink size, scenes |
 | `src/server/` | Node `ws` adapter (`air-hockey/server`) and its CLI |
+| `src/room/` | `Room` alone (`air-hockey/room`), for hosts with their own transport: never import `ws` from it |
 | `src/local/` | Same-browser multiplayer over BroadcastChannel (`air-hockey/local`) |
 | `src/client/` | `airHockey()` API (`index.ts`), local prediction (`predict.ts`), drawing (`render.ts`), helpers (`util.ts`) |
 | `demo/` | Demo page, deployed to gh-pages on every merge to `master` |

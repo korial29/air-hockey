@@ -19,6 +19,10 @@
     "./server": {
       "types": "./dist/types/server/index.d.ts",
       "default": "./dist/server.js"
+    },
+    "./room": {
+      "types": "./dist/types/room/index.d.ts",
+      "default": "./dist/room.js"
     }
   },
   "bin": {

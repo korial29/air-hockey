@@ -12,7 +12,7 @@ const isBuildingLocal = process.env.BUILD_LOCAL === 'true';
 // - default: the browser client (dist/index.js)
 // - BUILD_LOCAL: the same-browser host (dist/local.js). Built apart from the client so
 //   neither carries the other's code in a shared chunk; both are size-gated by scripts/size.mjs
-// - BUILD_SERVER: the Node WebSocket adapter and its CLI
+// - BUILD_SERVER: the Node WebSocket adapter, its CLI, and the bare Room for other transports
 // - BUILD_DEMO: the static demo deployed to gh-pages
 const libBuild = {
   lib: {
@@ -39,6 +39,7 @@ const serverBuild = {
     input: {
       server: resolve(root, 'src/server/index.ts'),
       cli: resolve(root, 'src/server/cli.ts'),
+      room: resolve(root, 'src/room/index.ts'),
     },
     external: ['ws', /^node:/],
     output: { format: 'es' as const, entryFileNames: '[name].js' },
