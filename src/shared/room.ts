@@ -183,9 +183,13 @@ export class Room {
         this.add((this.last = p), rules.hit, 'hits');
       }
       if (goal !== -1) {
-        // Own goals and goals nobody touched credit nobody.
-        if (this.last?.info.team === goal) {
-          this.add(this.last, rules.goal, 'goals');
+        // The last toucher scores, or pays for an own goal. Goals nobody touched count for nobody.
+        if (this.last) {
+          this.add(
+            this.last,
+            this.last.info.team === goal ? rules.goal : -rules.ownGoal,
+            this.last.info.team === goal ? 'goals' : undefined,
+          );
         }
         this.last = undefined;
         this.broadcast(

@@ -162,7 +162,8 @@ Every field is optional; missing ones keep their default.
 | `rounds` | `3` | Rounds in a match, all of them played, one scene each: the team that wins the most wins the match. |
 | `goals` | `5` | Goals that win a round. |
 | `hit` | `1` | Points for a hit, when the previous toucher was someone else. |
-| `goal` | `20` | Points for the scorer of a goal (own goals credit nobody). |
+| `goal` | `20` | Points for the scorer of a goal. |
+| `ownGoal` | `10` | Points taken from the last toucher of an own goal. |
 | `roundWin` | `10` | Points for each player of the team that wins a round. |
 | `matchWin` | `30` | Points for each player of the team that wins the match. |
 | `headStart` | `1` | Uneven teams: goals the smaller team starts each round with, per missing player. |

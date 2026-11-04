@@ -54,6 +54,7 @@ export const RULES: Rules = {
   goals: 5,
   hit: 1,
   goal: 20,
+  ownGoal: 10,
   roundWin: 10,
   matchWin: 30,
   headStart: 1,

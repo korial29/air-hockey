@@ -731,7 +731,7 @@ describe('Room tournament', () => {
     expect(line(b, 'B')).toMatchObject({ hits: 1, goals: 0, points: 1 });
   });
 
-  it('credits the goal to its last toucher, never on an own goal or an untouched puck', () => {
+  it('credits the goal to its last toucher, takes ownGoal on an own goal, nothing untouched', () => {
     const a = join(room, 'A');
     join(room, 'B');
     start();
@@ -741,7 +741,7 @@ describe('Room tournament', () => {
     goal(1); // nobody touched it since the serve
     const m = lastMatch(a);
     expect(m).toMatchObject({ phase: 'break', round: 1, wins: [0, 1], winner: 1 });
-    expect(line(a, 'A')).toMatchObject({ goals: 1, hits: 2, points: 1 + 20 + 1 });
+    expect(line(a, 'A')).toMatchObject({ goals: 1, hits: 2, points: 1 + 20 + 1 - 10 });
     expect(line(a, 'B')).toMatchObject({ goals: 0, hits: 0, points: 10 });
   });
 
@@ -928,8 +928,8 @@ describe('Room tournament', () => {
     expect(texts(c).map(m => m.t)).toEqual(['roster', 'match']);
     expect(lastMatch(c)).toMatchObject({ t: 'match', phase: 'play', round: 1, wins: [0, 0] });
     expect(me(c).team).toBe(0);
-    winRound(a, 1);
-    expect(line(a, 'A')).toMatchObject({ points: 1, hits: 1 });
+    winRound(a, 1); // A touched last: own goal
+    expect(line(a, 'A')).toMatchObject({ points: 1 - 10, hits: 1 });
     expect(line(a, 'C')).toMatchObject({ points: 0, hits: 0 });
   });
 
@@ -1200,7 +1200,7 @@ describe('Room tournament', () => {
   });
 
   it('ranks by points, then goals, then hits, then who got there first', () => {
-    room = new Room({ ...RULES, hit: 1, goal: 2, roundWin: 0 });
+    room = new Room({ ...RULES, hit: 1, goal: 2, ownGoal: 0, roundWin: 0 });
     const conns = ['A', 'B', 'C', 'D'].map(name => join(room, name));
     const [a, b, c, d] = conns.map(c => me(c).id);
     start();
@@ -1208,7 +1208,7 @@ describe('Room tournament', () => {
     touch(a, 0); // A: 1 hit + 1 goal = 3
     touch(d, 1); // D: 3 as well, later
     [c, b, c, b, c].forEach(id => touch(id)); // B reaches 3 hits before C
-    goal(1); // own goal by C: the round ends, nobody credited
+    goal(1); // own goal by C, free here: the round ends
     expect(lastMatch(conns[0]).ranking!.map(r => [r.name, r.points, r.goals, r.hits])).toEqual([
       ['A', 3, 1, 1],
       ['D', 3, 1, 1],

@@ -140,6 +140,8 @@ export interface Rules {
   hit: number;
   /** Points for the last toucher of a goal, unless it is an own goal. */
   goal: number;
+  /** Points taken from the last toucher of an own goal. */
+  ownGoal: number;
   /** Points for each player of the team that wins a round. */
   roundWin: number;
   /** Points for each player of the team that wins the match. */
