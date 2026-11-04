@@ -106,8 +106,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 ## Git, PRs and releases
 
 - Branch from `master`: `feature/…`, `fix/…`, `docs/…`. One PR per change; keep unrelated work apart.
-- Every PR carries exactly one label: `release:major`, `release:minor`, `release:patch` or `release:skip`. Merging into `master` proposes the release; it waits for approval on the `release` environment, then a 2FA validation on npmjs.com.
-- The release job publishes `master` as it is at approval time: with several runs waiting, cancel all but the last, or the same code ships under several versions.
+- Every PR carries exactly one label: `release:major`, `release:minor`, `release:patch` or `release:skip`. Merging into `master` releases at once, no approval: the run publishes `master` with the strongest label among the PRs merged since the latest tag, one run at a time. Pick the label with care: merging is releasing.
 - Stacked PRs: merge one, wait until the next shows `master` as its base, then merge it. Merged in a burst, they land in their base branches instead.
 - Update a branch with a rebase on `origin/master` and `--force-with-lease`, never a merge commit.
 - Pushing changes under `.github/workflows/` needs the `workflow` scope: if the shell's `GITHUB_TOKEN` lacks it, push with `env -u GITHUB_TOKEN`. Large binary pushes may need `git -c http.postBuffer=157286400 push`.

@@ -5,9 +5,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # No runtime dependency: every npm bump is a dev tool, and merging releases.
+    # Label a bump that changes the published package by hand.
     labels:
       - dependencies
-      - 'release:patch'
+      - 'release:skip'
     # typescript-eslint pins its TypeScript peer range: a TypeScript major
     # breaks `npm ci` until typescript-eslint supports it. Bump both by hand.
     ignore:
