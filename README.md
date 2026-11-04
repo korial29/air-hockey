@@ -25,6 +25,7 @@ A multiplayer air hockey game for the browser, written in TypeScript with no gam
 | `air-hockey` | The game client: rendering, input, prediction | ~15.7 KB |
 | `air-hockey/local` | Same-browser multiplayer, no server | ~6.6 KB |
 | `air-hockey/server` | Node WebSocket server (needs `ws`) | Node only |
+| `air-hockey/room` | One game, for any transport you already have (Socket.io…) | Node only |
 
 The budgets (20 KB and 8 KB) are checked in CI on every pull request.
 
@@ -90,6 +91,39 @@ One room per URL path: `/my-room` and `/other` are two separate games. A ready-m
 ```sh
 PORT=8787 npx air-hockey-server
 ```
+
+### Over a transport you already have
+
+An app that already talks to its server (Socket.io, an existing WebSocket, a worker) can carry the game itself. On the server, drive a `Room` from `air-hockey/room`, which needs no `ws`. On the client, pass a `socket` that relays the same frames:
+
+```ts
+// server: one Room per game, fed the frames of each peer
+import { Room } from 'air-hockey/room';
+
+const room = new Room({ goals: 3 });
+room.start();
+const conn = { send: (data: string | ArrayBuffer) => peer.emit('game', data) };
+room.connect(conn);
+peer.on('game', (data: string | ArrayBuffer) => room.receive(conn, data));
+peer.on('disconnect', () => room.disconnect(conn)); // room.stop() once nobody is left
+```
+
+```ts
+// client: a SocketLike over the same channel
+airHockey(el, {
+  name: 'Ana',
+  socket: {
+    binaryType: 'arraybuffer',
+    onopen: null,
+    onclose: null,
+    onmessage: null,
+    send: data => io.emit('game', data),
+    close: () => io.emit('leave'),
+  },
+}); // then call its onopen() once the server has the peer, and onmessage({ data }) per frame
+```
+
+Text frames are JSON; binary frames (inputs, snapshots) must reach the room as an `ArrayBuffer` of exactly their bytes. Cap what a peer may send: inputs are 5 bytes, a join a few dozen.
 
 ### Sizing
 
@@ -159,6 +193,10 @@ A same-browser socket for `airHockey`. `rules` apply to the match the tab hosts:
 ### `serve({ port | server, rules? })` — `air-hockey/server`
 
 Starts the WebSocket server and returns an async `stop()`. `rules` apply to every room.
+
+### `new Room(rules?)` — `air-hockey/room`
+
+One game. `start()` and `stop()` run its clock; `connect(conn)`, `receive(conn, data)` and `disconnect(conn)` feed it a peer and its frames, and it answers through `conn.send(data)`. `size` is the number of joined players.
 
 ---
 
