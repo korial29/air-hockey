@@ -242,12 +242,14 @@ export const obstacles = (
 
 /**
  * Rink geometry for a number of players. The area grows with the players so each keeps the same
- * room: size = √(players / 2) on each side, from 1 (2 players) to MAX_SIZE (8 and more).
+ * room past 4: size = √(players / 4) on each side, from 1 (up to 4 players) to MAX_SIZE (16).
+ * It used to be √(players / 2): with 8 players the rink was twice as big on the same screen, the
+ * paddles drawn at half size, too small to play.
  * Obstacles: players / 2 + 2, from 3 (2 players: icebergs and the centre penguin) to 7 (10 and
  * more), always in mirrored pairs plus, when odd, a penguin on the centre line.
  */
 export const layout = (players: number): { size: number; count: number } => ({
-  size: Math.min(MAX_SIZE, Math.max(1, Math.sqrt(players / 2))),
+  size: Math.min(MAX_SIZE, Math.max(1, Math.sqrt(players / 4))),
   count: Math.min(7, Math.max(3, ((players / 2) | 0) + 2)),
 });
 

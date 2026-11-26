@@ -267,9 +267,8 @@ describe('Room', () => {
     }
     const snap = decodeSnapshot(binaries(c).at(-1)!)!;
     // Team 1 had one paddle left, so the newcomer takes spot #1 of team 1, on the rink of 4
-    // players (the puck is still waiting at its serve spot, so the rink grew).
-    const at = (v: number) => Math.round(v * Math.SQRT2 * 16) / 16;
-    expect(snap.paddles.find(p => p.id === me(c).id)).toMatchObject({ x: at(1200), y: at(200) });
+    // players (the puck is still waiting at its serve spot: one obstacle more, same size).
+    expect(snap.paddles.find(p => p.id === me(c).id)).toMatchObject({ x: 1200, y: 200 });
     // Every spot off the obstacles where they stand: on joining, and on the new rink.
     for (const [, , , obs] of vi.mocked(spawnPoint).mock.calls) {
       expect(obs).toEqual([expect.objectContaining({ kind: 'iceberg' })]);
@@ -621,14 +620,15 @@ describe('Room tournament', () => {
 
     it('tells a joiner mid-countdown the time left, and a refit keeps the countdown', () => {
       const a = join(room, 'A');
-      join(room, 'B');
+      ['B', 'B2', 'B3'].forEach(name => join(room, name));
       ticks(2);
-      // A third player calls for a bigger rink: refit, told to everyone with the time left.
+      // A fifth player calls for a bigger rink: refit, told to everyone with the time left.
       const c = join(room, 'C');
+      const z = Math.sqrt(5 / 4);
       expect(lastMatch(c)).toMatchObject({ phase: 'ready', round: 1, left: left(2) });
-      expect(lastMatch(a)).toMatchObject({ phase: 'ready', size: Math.sqrt(1.5), left: left(2) });
+      expect(lastMatch(a)).toMatchObject({ phase: 'ready', size: z, left: left(2) });
       expect(snap(c).paddles.map(p => p.x)).toEqual(
-        [400, 1200, 400].map(x => Math.round(x * Math.sqrt(1.5) * 16) / 16),
+        [400, 1200, 400, 1200, 400].map(x => Math.round(x * z * 16) / 16),
       );
       // So does a leave.
       room.disconnect(c);
@@ -640,14 +640,14 @@ describe('Room tournament', () => {
     });
 
     it('tells a joiner the time left when the rink stays as it is', () => {
-      // From 10 players on the rink is the biggest, with every obstacle: the 11th changes nothing.
-      const conns = Array.from({ length: 10 }, (_, i) => join(room, `P${i}`));
+      // 2 and 3 players play the same rink, size 1 with 3 obstacles: the 3rd changes nothing.
+      const conns = Array.from({ length: 2 }, (_, i) => join(room, `P${i}`));
       ticks(3);
       const n = matches(conns[0]).length;
       const late = join(room, 'late');
       expect(matches(conns[0])).toHaveLength(n);
       expect(texts(late).map(m => m.t)).toEqual(['roster', 'match']);
-      expect(lastMatch(late)).toMatchObject({ phase: 'ready', size: 2, count: 7, left: left(3) });
+      expect(lastMatch(late)).toMatchObject({ phase: 'ready', size: 1, count: 3, left: left(3) });
     });
 
     it('skips the countdown at readySec 0', () => {
@@ -673,9 +673,10 @@ describe('Room tournament', () => {
     const b = join(room, 'B');
     expect(physics.seeds.at(-1)).toBe(seed(0.25));
     expect(lastMatch(a)).toMatchObject({ phase: 'ready', round: 1, seed: seed(0.25) });
-    // A refit mid-countdown keeps the round's place.
+    // A refit mid-countdown (a 4th obstacle for 4 players) keeps the round's place.
     const c = join(room, 'C');
-    expect(lastMatch(a)).toMatchObject({ phase: 'ready', size: Math.sqrt(1.5), seed: seed(0.25) });
+    const d = join(room, 'D');
+    expect(lastMatch(a)).toMatchObject({ phase: 'ready', count: 4, seed: seed(0.25) });
     expect(physics.seeds.slice(-2)).toEqual([seed(0.25), seed(0.25)]);
     // Round 2: another one.
     start();
@@ -685,6 +686,7 @@ describe('Room tournament', () => {
     // Rebuilt while waiting: another one again.
     room.disconnect(b);
     room.disconnect(c);
+    room.disconnect(d);
     expect(lastMatch(a)).toMatchObject({ phase: 'wait', size: 1, seed: seed(0.75) });
     expect(physics.seeds.at(-1)).toBe(seed(0.75));
     expect(new Set(physics.seeds.map(String)).size).toBe(4);
@@ -1105,23 +1107,20 @@ describe('Room tournament', () => {
       join(room, 'B');
       expect(rink(a)).toEqual([1, 3]);
 
-      // Two newcomers during the countdown: the rink grows at once, told to everyone, paddles
+      // Six newcomers during the countdown: the rink grows at once, told to everyone, paddles
       // respawned on it, the puck on its scaled serve spot.
       const c = join(room, 'C');
-      join(room, 'D');
-      expect(lastMatch(a)).toMatchObject({ phase: 'ready', round: 1, size: Math.SQRT2, count: 4 });
-      expect(rink(c)).toEqual([Math.SQRT2, 4]);
+      ['D', 'C2', 'D2', 'C3', 'D3'].forEach(name => join(room, name));
+      expect(lastMatch(a)).toMatchObject({ phase: 'ready', round: 1, size: Math.SQRT2, count: 6 });
+      expect(rink(c)).toEqual([Math.SQRT2, 6]);
       // As many obstacle states as obstacles on the new rink, all of them intact.
       expect(snap(a).obs).toEqual(
-        Array(4).fill({ hits: 0, since: -1, angle: 0, times: 0, cast: -1, victim: 0, lag: 0 }),
+        Array(6).fill({ hits: 0, since: -1, angle: 0, times: 0, cast: -1, victim: 0, lag: 0 }),
       );
       expect(snap(a).paddles.map(p => [p.x, p.y])).toEqual(
-        [
-          [400, 100],
-          [1200, 100],
-          [400, 200],
-          [1200, 200],
-        ].map(([x, y]) => [x * Math.SQRT2, y * Math.SQRT2].map(v => Math.round(v * 16) / 16)),
+        [100, 100, 200, 200, 300, 300, 400, 400]
+          .map((y, i) => [i % 2 ? 1200 : 400, y])
+          .map(([x, y]) => [x * Math.SQRT2, y * Math.SQRT2].map(v => Math.round(v * 16) / 16)),
       );
       room.receive(c, encodeInput(1500, 300));
       expect(clampPaddle).toHaveBeenLastCalledWith(0, 1500, 300, Math.SQRT2);
@@ -1136,51 +1135,52 @@ describe('Room tournament', () => {
       join(room, 'F');
       expect(matches(a)).toHaveLength(n);
       expect(physics.rinks).toHaveLength(made);
-      expect(rink(e)).toEqual([Math.SQRT2, 4]);
+      expect(rink(e)).toEqual([Math.SQRT2, 6]);
 
-      // The next serve (after a goal) fits the 6 players, the score kept.
+      // The next serve (after a goal) fits the 10 players, the score kept.
       goal(0);
-      expect(lastMatch(a)).toMatchObject({ phase: 'play', size: Math.sqrt(3), count: 5 });
+      expect(lastMatch(a)).toMatchObject({ phase: 'play', size: Math.sqrt(2.5), count: 7 });
       expect(snap(a).score).toEqual([1, 0]);
     });
 
     it('follows arrivals and departures live while waiting, the score kept', () => {
-      const conns = ['A', 'B', 'C', 'D', 'E', 'F'].map(name => join(room, name));
+      const conns = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'].map(name => join(room, name));
       const [a] = conns;
       start();
       winRound(a, 0);
       nextRound();
-      expect(rink(a)).toEqual([Math.sqrt(3), 5]);
+      expect(rink(a)).toEqual([Math.sqrt(2.5), 7]);
       goal(0);
       touch(me(a).id);
-      // Team 1 empties with the puck in play: waiting with 3 players, told once.
+      // Team 1 empties with the puck in play: waiting with 5 players, told once.
       const n = matches(a).length;
-      [1, 3, 5].forEach(i => room.disconnect(conns[i]));
+      [1, 3, 5, 7, 9].forEach(i => room.disconnect(conns[i]));
       expect(matches(a).slice(n)).toEqual([
-        expect.objectContaining({ phase: 'wait', size: Math.sqrt(1.5), count: 3 }),
+        expect.objectContaining({ phase: 'wait', size: Math.sqrt(1.25), count: 4 }),
       ]);
       const s = snap(a);
       expect(s.score).toEqual([1, 0]);
       expect(s.paddles.map(p => p.x)).toEqual(
-        [400, 400, 400].map(x => Math.round(x * Math.sqrt(1.5) * 16) / 16),
+        [400, 400, 400, 400, 400].map(x => Math.round(x * Math.sqrt(1.25) * 16) / 16),
       );
 
-      // One more leaves: back to size 1, told to the others; one joins on team 1: a new match.
-      room.disconnect(conns[2]);
+      // Three more leave: back to size 1, told to the others; one joins on team 1: a new match.
+      [2, 4, 6].forEach(i => room.disconnect(conns[i]));
       expect(lastMatch(a)).toMatchObject({ phase: 'wait', size: 1, count: 3 });
       expect(snap(a).obs).toHaveLength(3);
+      // Respawned on the rink of 3 (spots 0, 1, 2); the last leave, 3 to 2, keeps that rink.
       expect(snap(a)).toMatchObject({
         score: [1, 0],
         paddles: [
           { x: 400, y: 100 },
-          { x: 400, y: 200 },
+          { x: 400, y: 300 },
         ],
       });
       const g = join(room, 'G');
       expect(lastMatch(g)).toMatchObject({
         phase: 'ready',
         round: 1,
-        size: Math.sqrt(1.5),
+        size: 1,
         count: 3,
       });
       expect(texts(g).map(m => m.t)).toEqual(['roster', 'match']);
