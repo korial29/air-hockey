@@ -883,6 +883,7 @@ describe('airHockey', () => {
     resized();
     expect(box.style.width).toBe((2430 * 600) / 1125 + 'px');
     expect(canvas.style.aspectRatio.replace(/ /g, '')).toBe('2430/1125');
+    expect(root.querySelector('nav')!.style.bottom).toBe('2%');
     game.destroy();
     // Without fill, the page sets the width: nothing is forced.
     airHockey(document.body, { name: 'Ana', socket: fakeSocket() }).destroy();

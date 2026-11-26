@@ -300,6 +300,8 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       const [F, z] = fit(wrap.clientWidth, wrap.clientHeight);
       box.style.width = F.w * z + 'px';
       canvas.style.aspectRatio = F.w + '/' + F.h;
+      // On the sides, the buttons go to the foot of the right band, clear of the score.
+      root.querySelector('nav')!.style.cssText = F == WIDE ? 'top:auto;bottom:2%' : '';
     }
     L = canvas.clientHeight ? frameOf(canvas.clientWidth / canvas.clientHeight) : TALL;
     canvas.width = canvas.clientWidth * devicePixelRatio;
