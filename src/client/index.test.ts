@@ -843,6 +843,23 @@ describe('airHockey', () => {
     game.destroy();
   });
 
+  it('mutes and unmutes from its button, hidden with the sound option off', () => {
+    const game = airHockey(document.body, { name: 'Ana', socket: fakeSocket() });
+    const mute = document.body.lastElementChild!.shadowRoot!.querySelectorAll('button')[1];
+    expect(mute.hidden).toBe(false);
+    expect(mute.getAttribute('aria-label')).toBe('Sound off');
+    mute.click();
+    expect(mute.getAttribute('aria-label')).toBe('Sound on');
+    mute.click();
+    expect(mute.getAttribute('aria-label')).toBe('Sound off');
+    game.destroy();
+    const quiet = airHockey(document.body, { name: 'Ana', socket: fakeSocket(), sound: false });
+    expect(document.body.lastElementChild!.shadowRoot!.querySelectorAll('button')[1].hidden).toBe(
+      true,
+    );
+    quiet.destroy();
+  });
+
   it('fills its container with the frame that draws the rink biggest', () => {
     let resized = () => {};
     vi.stubGlobal(

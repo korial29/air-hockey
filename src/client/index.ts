@@ -14,6 +14,7 @@ import { decodeSnapshot, encodeInput, parseText } from '../shared/protocol';
 import type { ServerText } from '../shared/protocol';
 import type { PlayerInfo, SocketLike, Team } from '../shared/types';
 import { latency, predict, rebase, reset, view } from './predict';
+import { sound } from './sound';
 import {
   beacon,
   bolt,
@@ -81,6 +82,8 @@ export interface AirHockeyOptions {
    * Default false: the full width, the height following the aspect.
    */
   fill?: boolean;
+  /** Sound effects, and their mute button next to the full screen one. Default true. */
+  sound?: boolean;
 }
 
 export type AirHockeyEvent = 'roster' | 'score' | 'goal' | 'match' | 'open' | 'close';
@@ -101,23 +104,26 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   // (a landscape screen at most 500 px high) gets the WIDE aspect instead: the frame follows it.
   root.innerHTML =
     `<style>div{position:relative}canvas{display:block;width:100%;aspect-ratio:${W}/${CH};touch-action:none;border-radius:16px}` +
-    `button{position:absolute;right:1%;height:clamp(24px,9%,40px);top:calc(${(50 * TOP) / CH}% - clamp(12px,4.5%,20px));aspect-ratio:1;padding:0;border:0;border-radius:8px;background:#fff2;color:#fff;cursor:pointer}` +
+    `nav{position:absolute;right:1%;height:clamp(24px,9%,40px);top:calc(${(50 * TOP) / CH}% - clamp(12px,4.5%,20px));display:flex;flex-direction:row-reverse;gap:6px}` +
+    `button{height:100%;aspect-ratio:1;padding:0;border:0;border-radius:8px;background:#fff2;color:#fff;cursor:pointer}` +
     `button:hover{background:#fff4}button:focus-visible{outline:2px solid #fff}svg{width:70%;height:70%}` +
     `:host(:fullscreen){display:flex;align-items:center;justify-content:center;background:#08131d}` +
     `:host(:fullscreen) div{width:min(100vw,100vh * ${W / CH})}:host(:fullscreen) canvas{border-radius:0}` +
-    `@media (orientation:landscape) and (max-height:500px){canvas{aspect-ratio:${WIDE.w}/${WIDE.h}}button{top:auto;bottom:2%}` +
+    `@media (orientation:landscape) and (max-height:500px){canvas{aspect-ratio:${WIDE.w}/${WIDE.h}}nav{top:auto;bottom:2%}` +
     `:host(:fullscreen) div{width:min(100vw,100vh * ${WIDE.w / WIDE.h})}}` +
     // A phone held upright: the landscape rink would be a strip, the paddles too small to steer.
     `p{display:none;position:absolute;inset:0;margin:0;place-content:center;border-radius:16px;background:#08131de6;color:#fff;font:600 18px system-ui,sans-serif}` +
     `@media (orientation:portrait) and (pointer:coarse) and (max-width:600px){p{display:grid}}` +
     (opts.fill ? ':host{display:flex;align-items:center;justify-content:center;height:100%}' : '') +
     `</style>` +
-    `<div><canvas></canvas><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path/></svg></button><p>Turn your phone sideways</p></div>`;
+    `<div><canvas></canvas><nav><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path/></svg></button>` +
+    `<button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z"/><path/></svg></button></nav><p>Turn your phone sideways</p></div>`;
   container.append(wrap);
   const canvas = root.querySelector('canvas')!;
   const c = canvas.getContext('2d');
-  const button = root.querySelector('button')!;
+  const [button, mute] = root.querySelectorAll('button');
   const path = root.querySelector('path')!;
+  const wave = mute.querySelectorAll('path')[1];
 
   const listeners = new Set<Listener>();
   const emit = (event: AirHockeyEvent, payload?: unknown) =>
@@ -187,10 +193,14 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     const m = parseText<ServerText>(data);
     if (m?.t == 'roster') {
       you = m.you;
+      if (m.players.length > players.size && players.size) {
+        sfx.play('join');
+      }
       players = new Map(m.players.map(p => [p.id, p]));
       emit('roster', { you, players: m.players });
     } else if (m?.t == 'goal') {
       goalAt = performance.now();
+      sfx.play(players.get(you)?.team == 1 - m.team ? 'conceded' : 'goal');
       emit('goal', { team: m.team, score: m.score });
     } else if (m?.t == 'match') {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -210,6 +220,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         me = undefined;
       }
       reset(P, m.phase, m.arena, m.size, m.count, m.seed);
+      if ((m.phase == 'break' || m.phase == 'end') && match?.phase == 'play') {
+        sfx.play(players.get(you)?.team == 1 - (m.winner ?? 0) ? 'lose' : 'win');
+      }
       emit('match', (match = rest));
     } else if (m?.t == 'pong') {
       latency(P, performance.now() - m.n);
@@ -219,6 +232,17 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   };
 
   const ac = new AbortController();
+  const sfx = sound(root, ac.signal, opts.sound != false);
+  const syncMute = () => {
+    mute.setAttribute('aria-label', sfx.muted ? 'Sound on' : 'Sound off');
+    wave.setAttribute('d', sfx.muted ? 'M16 9l5 6m0-6l-5 6' : 'M16 9a4 4 0 010 6m3-9a8 8 0 010 12');
+  };
+  syncMute();
+  mute.hidden = opts.sound == false;
+  mute.addEventListener('click', () => ((sfx.muted = !sfx.muted), syncMute()), ac);
+  /** Sound state: countdown second last beeped, obstacles under a spell. */
+  let beeped = 0;
+  const casting: boolean[] = [];
   const onPointer = (e: PointerEvent) => {
     const team = players.get(you)?.team;
     if (team != null) {
@@ -347,6 +371,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       if (since < 0 && was[i] >= 0) {
         back[i] = now;
       }
+      if (since >= 0 && was[i] == -1) {
+        sfx.play('crash');
+      }
       was[i] = since;
       const then =
         since >= 0 && since < RESPAWN - GHOST
@@ -361,6 +388,18 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
           : o;
       obstacle(o, i, now - (hits?.[i] ?? -1e9), now, st, now - (back[i] ?? -1e9), then);
     });
+    // The local puck's contacts: paddles, obstacles (each kind its own), boards.
+    for (const [kind, id] of P.fx.splice(0)) {
+      sfx.play(
+        kind == 'hit'
+          ? id == you
+            ? 'hit'
+            : 'tap'
+          : kind == 'wall'
+            ? 'wall'
+            : (all[id]?.kind ?? ''),
+      );
+    }
     if (s) {
       const { x, y, vx, vy } = s.puck;
       // At sea, what holds it takes it under: a vortex down its funnel, a shark into its belly.
@@ -371,6 +410,7 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       if (sunk >= 0 && !h) {
         rose = now;
         spot = [x, y];
+        sfx.play('splash');
       }
       sunk = h?.kind == 'vortex' ? s.held! : -1;
       const q = (now - rose) / RISE;
@@ -436,6 +476,10 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       all.forEach((o, i) => {
         const t = spell(i);
         const v = s.paddles.find(p => p.id == s.obs?.[i]?.victim);
+        if (t >= 0 && v && !casting[i]) {
+          sfx.play('zap', v.id == you ? 1 : 0.5);
+        }
+        casting[i] = t >= 0;
         if (t >= 0 && v) {
           stunned(v.x, v.y, dr, 1 - t / STUN, Math.ceil((STUN - t) / TICK_HZ), now);
           bolt(o.x, o.y, v.x, v.y, Math.max(0, 1 - (STUN - t) / ZAP), now);
@@ -453,7 +497,15 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       const t = (goAt - now) / 1000;
       const n = Math.max(1, Math.ceil(t));
       countdown(n + '', Math.min(1, n - t));
+      if (n != beeped && t <= 3) {
+        sfx.play('beep');
+      }
+      beeped = n;
     } else if (phase == 'play' && now - playAt < 600) {
+      if (beeped) {
+        sfx.play('go');
+      }
+      beeped = 0;
       countdown('PLAY!', (now - playAt) / 600, '#fc3');
     }
     const label = msg || (open ? '' : 'Connecting…');

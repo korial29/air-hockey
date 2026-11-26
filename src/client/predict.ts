@@ -64,6 +64,13 @@ export interface Prediction {
   lag: number;
   /** Smoothed round trip, ms; 0 before the first measure. */
   rtt: number;
+  /**
+   * Contacts of the local puck since the renderer last emptied it, for sounds: a paddle that
+   * touches it (its id), an obstacle (its index), a board (-1).
+   */
+  fx: ['hit' | 'bump' | 'wall', number][];
+  /** Paddle touching the puck on the last step, -1: none; a push over many steps sounds once. */
+  touch: number;
   /** Score of the last snapshot. When it changes the puck was served: rebased without easing. */
   score: string;
   /** Snapshot.live of the last snapshot: a serve takes it from true to false. */
@@ -83,6 +90,8 @@ export const predict = (): Prediction => ({
   hold: 0,
   lag: 0,
   rtt: 0,
+  fx: [],
+  touch: -1,
   score: '',
   hits: [],
 });
@@ -103,8 +112,18 @@ const advance = (p: Prediction, now: number, ease = true): void => {
       skate(w, DT / 1000);
       continue;
     }
-    const { x, y } = k;
+    const { x, y, vx, vy } = k;
+    const was = w.bumps;
     const goal = step(w, DT / 1000, false);
+    if (w.hit != -1 && w.hit != p.touch) {
+      p.fx.push(['hit', w.hit]);
+    }
+    p.touch = w.hit;
+    w.bumps.forEach(i => was.includes(i) || p.fx.push(['bump', i]));
+    // Turned back with nothing else touched: a board.
+    if (w.hit == -1 && !w.bumps.length && (vx * k.vx < 0 || vy * k.vy < 0)) {
+      p.fx.push(['wall', -1]);
+    }
     if (goal != -1) {
       // The host owns the score and the serve: undo both.
       w.score[goal]--;

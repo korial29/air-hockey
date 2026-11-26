@@ -186,6 +186,24 @@ describe('predict', () => {
     expect(p.w.puck.x).toBe(500);
   });
 
+  it('records each contact once for the sounds: paddle, board', () => {
+    const p = classic();
+    // Toward the own paddle, then on to the left board.
+    rebase(p, snap({ x: 500, y: 450, vx: -1500 }), ME, 1000);
+    for (let t = 1000; t < 1400; t += 16) {
+      draw(p, snap({}), t);
+    }
+    expect(p.fx[0]).toEqual(['hit', ME]);
+    expect(p.fx.filter(([k]) => k == 'hit')).toHaveLength(1);
+    p.fx.length = 0;
+    // Straight at the top board, nothing else around.
+    rebase(p, snap({ x: 1000, y: 200, vy: -1500 }, []), ME, 2000);
+    for (let t = 2000; t < 2200; t += 16) {
+      draw(p, snap({}, []), t);
+    }
+    expect(p.fx).toEqual([['wall', -1]]);
+  });
+
   it('keeps a puck at rest still whatever the snapshot timing', () => {
     const p = classic();
     const s = snap({ x: 500.0625, y: 299.9375 });
