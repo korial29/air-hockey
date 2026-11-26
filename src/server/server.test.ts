@@ -62,6 +62,10 @@ describe('serve', () => {
   });
 
   it('joins two clients in one room: roster, snapshots, inputs', async () => {
+    // An empty rink: on ice, a round's seed can put an iceberg on the paddle's target (cells
+    // reach (300, 825), within contact of (300, 700)), and the paddle stops short of it.
+    await stop();
+    stop = serve({ server: http, rules: { arena: 'classic' } });
     const a = client('/demo', 'Ann');
     const b = client('/demo', 'Bob');
     await until(() => a.names().length === 2 && b.names().length === 2);
