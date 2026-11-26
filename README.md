@@ -8,7 +8,9 @@
 [![license](https://img.shields.io/npm/l/air-hockey.svg)](LICENSE)
 [![play the demo](https://img.shields.io/badge/demo-play%20now-ff6b35)](https://korial29.github.io/air-hockey/)
 
-A multiplayer air hockey game for the browser, written in TypeScript with no game library and no runtime dependency. Players join with a name, get a colour of their own, and play in teams through three scenes, one per round: an ice rink with icebergs and sliding penguins, the sea with vortices and sharks, and an Arabian Nights desert with whirlwinds and genies.
+A multiplayer air hockey game for the browser, written in TypeScript with no game library and no runtime dependency. Players join with a name, get a colour of their own, and play in teams through three scenes, one per round: an ice rink with icebergs and sliding penguins, the sea with vortices and sharks, and an Arabian Nights desert with whirlwinds and genies. Every hit, bounce, goal and spell has its sound, synthesised in the browser.
+
+Up to 16 players, comfortable at 8: the rink grows with the players, clears its obstacles when it gets crowded, and the client compensates for network lag.
 
 ![Air hockey on the ice: four players, icebergs, penguins, the puck hitting an iceberg](https://raw.githubusercontent.com/korial29/air-hockey/master/docs/screenshot-ice.png)
 
@@ -18,12 +20,12 @@ A multiplayer air hockey game for the browser, written in TypeScript with no gam
 
 ## Framework-agnostic, light to add
 
-`airHockey()` mounts the game into any element, inside its own Shadow DOM: React, Vue, Angular, Svelte or a plain page, nothing leaks in or out. Everything is drawn on one canvas, with no images, fonts or assets to serve.
+`airHockey()` mounts the game into any element, inside its own Shadow DOM: React, Vue, Angular, Svelte or a plain page, nothing leaks in or out. Everything is drawn on one canvas and every sound is synthesised with Web Audio: no images, fonts, audio files or other assets to serve.
 
 | Entry | What it is | Size (gzip) |
 | --- | --- | --- |
-| `air-hockey` | The game client: rendering, input, prediction | ~15.7 KB |
-| `air-hockey/local` | Same-browser multiplayer, no server | ~6.6 KB |
+| `air-hockey` | The game client: rendering, input, prediction, sound | ~18.6 KB |
+| `air-hockey/local` | Same-browser multiplayer, no server | ~6.9 KB |
 | `air-hockey/server` | Node WebSocket server (needs `ws`) | Node only |
 | `air-hockey/room` | One game, for any transport you already have (Socket.io…) | Node only |
 
@@ -127,7 +129,20 @@ Text frames are JSON (`join`, and a `ping` every 2 s the room answers with a `po
 
 ### Sizing
 
-The game fills the width of its container and keeps its aspect ratio (4:3, score band and rosters included). Give the container a width; to fit a screen, cap it by the height too:
+The simplest is to give the game a box and let it fill it: with `fill: true` the container sets both the width and the height, and the game draws the rink as big as it fits in it. In a box wider than it is tall (a page on a laptop, under a header) the score and the rosters go beside the rink, which then takes the full height.
+
+```ts
+airHockey(el, { name: 'Ana', socket, fill: true });
+```
+
+```css
+#game {
+  width: 100%;
+  height: calc(100dvh - 64px); /* whatever the page leaves */
+}
+```
+
+Without `fill`, the game fills the width of its container and keeps its aspect ratio (4:3, score band and rosters included). Give the container a width; to fit a screen, cap it by the height too:
 
 ```css
 #game {
@@ -146,7 +161,11 @@ On a landscape screen at most 500 px high (a phone on its side) the game switche
 }
 ```
 
-A full-screen button sits in the top-right corner of the game (bottom-right in the wide frame). In full screen a phone turns landscape where the browser allows it; held upright, it shows a hint to turn it.
+A mute button and a full-screen button sit in the top-right corner of the game (bottom-right in the wide frame). In full screen a phone turns landscape where the browser allows it; held upright, it shows a hint to turn it.
+
+### Sound
+
+Every action has a sound: your hits and the others', bounces off the boards, each kind of obstacle, a break, a splash, a genie's spell, the countdown, a goal for or against your team, a round or a match won or lost, a player joining. Browsers keep audio locked until the page is used, so the game stays silent until the first click or touch on it. Muting is remembered per browser; `sound: false` turns it all off and hides the button.
 
 ---
 
@@ -230,7 +249,8 @@ serve({ port: 8787, rules: { arena: 'sea', goals: 5, rounds: 1 } });
 ## How a match plays
 
 - **Teams**: players are spread left and right as they join, each with a paddle in their half. Up to 16 players.
-- **The rink grows with the players**, so everybody keeps the same room: ×1 at 2 players, ×1.41 at 4, ×1.73 at 6, ×2 from 8. Obstacles go from 3 to 7 with the player count. The rink adapts while waiting, at round start and at every serve until someone touches the puck.
+- **The rink grows with the players**, so everybody keeps the same room: ×1 up to 3 players, ×1.15 at 4, ×1.41 at 6, ×1.63 at 8, ×2 from 12.
+- **The more players, the fewer obstacles**: 8 minus the number of players, from 7 for a player alone down to none from 8 players on, when the rink is busy enough. The rink adapts while waiting, at round start and at every serve until someone touches the puck.
 - **Three scenes, one per round**: ice, sea, desert.
 - **Obstacles bounce the puck like pinball bumpers**, except those that grab it. Icebergs, vortices and whirlwinds stand in front of the goals, each on a random square of a grid there, every game and every round: one side's in the top half, the other's in the bottom half. They break after 3 hits and come back on another square. Penguins cross the width and are shot out on the first hit. Genies float at random along their lane and never go: a genie hit makes the puck vanish, served again in front of the shooter's opponents, and the genie stops to strike the shooter with lightning, a bolt between them, a countdown on the paddle: both stand still for 5 s, then the genie floats on. One victim at a time: a genie under its spell bounces the puck. Everything comes back after 10 s, with a ghost for the last 3 s.
 - **Some obstacles grab the puck.** A whirlwind spins it round for about a second and flings it out in a random direction. A vortex sucks it under the water and lets it up, at rest, somewhere else on the rink. A shark, zig-zagging across the width, eats it and spits it out in a random direction; sharks are never shot out. A puck that comes up splashes and pops back to its size.
@@ -248,11 +268,24 @@ serve({ port: 8787, rules: { arena: 'sea', goals: 5, rounds: 1 } });
 - [x] One goalie per crease: no wall of defenders in front of a goal
 - [x] Three scenes taking turns, each with its own play: ice (icebergs, sliding penguins), sea (vortices that swallow the puck, zig-zagging sharks that spit it out, wooden goals), Arabian Nights desert (whirlwinds that catch and fling the puck, wandering genies whose lightning paralyses the shooter, Moorish arches)
 - [x] Breakable obstacles with respawn and ghost
-- [x] Rink that grows with the number of players
+- [x] Rink that grows with the number of players, fewer obstacles as it fills, none from 8 players
 - [x] Client-side prediction: your paddle and the puck react at once
+- [x] Lag compensation: the round trip is measured, the puck drawn where the host has it now, inputs sent on the pointer event
+- [x] Synthesised sound for every action, with a mute button, no audio files
+- [x] `fill` mode: the rink as big as the page's box allows
 - [x] "3, 2, 1, PLAY!" countdown, goal flash, puck beacon and trail
 - [x] Full-screen button, mouse and touch, phone-sized screens: thumb-sized paddles, the rink full height on a phone on its side (score and rosters beside it), landscape in full screen, a hint to turn a phone held upright
 - [x] Shadow DOM, zero runtime dependencies, size-gated in CI
+
+---
+
+## Upgrading from 0.x
+
+1.0 changes nothing in the API you call, but:
+
+- **Your own transport** (`air-hockey/room` behind Socket.io or similar) must forward the client's `ping` text frames to the room, as it forwards `join`; the room answers each with a `pong`. Without it the game still plays, with no lag compensation.
+- **Rink sizes and obstacle counts changed** for most player counts (see [How a match plays](#how-a-match-plays)).
+- **Sound is on by default.** Pass `sound: false` to keep the game silent.
 
 ---
 
