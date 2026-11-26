@@ -372,12 +372,13 @@ describe('Room', () => {
     room = new Room({ arena: 'classic' });
     const a = join(room);
     expect(texts(a).at(-1)).toMatchObject({ t: 'match', phase: 'wait', arena: 'classic' });
-    // Round start and last one out: fresh worlds, same arena.
+    // Round start (on a rink of 6 obstacles for 2), a leave and the last one out: fresh worlds,
+    // same arena.
     const b = join(room);
     expect(texts(a).at(-1)).toMatchObject({ t: 'match', phase: 'ready', arena: 'classic' });
     room.disconnect(a);
     room.disconnect(b);
-    expect(physics.arenas).toEqual(['ice', 'classic', 'classic', 'classic']);
+    expect(physics.arenas).toEqual(['ice', ...Array(4).fill('classic')]);
   });
 
   it('stamps snapshots with the world tick, 16 bits on the wire: obstacles wrap with it', () => {
@@ -652,14 +653,14 @@ describe('Room tournament', () => {
     });
 
     it('tells a joiner the time left when the rink stays as it is', () => {
-      // 2 and 3 players play the same rink, size 1 with 3 obstacles: the 3rd changes nothing.
-      const conns = Array.from({ length: 2 }, (_, i) => join(room, `P${i}`));
+      // From 12 players on the rink is the biggest, with no obstacles: the 13th changes nothing.
+      const conns = Array.from({ length: 12 }, (_, i) => join(room, `P${i}`));
       ticks(3);
       const n = matches(conns[0]).length;
       const late = join(room, 'late');
       expect(matches(conns[0])).toHaveLength(n);
       expect(texts(late).map(m => m.t)).toEqual(['roster', 'match']);
-      expect(lastMatch(late)).toMatchObject({ phase: 'ready', size: 1, count: 7, left: left(3) });
+      expect(lastMatch(late)).toMatchObject({ phase: 'ready', size: 2, count: 0, left: left(3) });
     });
 
     it('skips the countdown at readySec 0', () => {
@@ -685,10 +686,10 @@ describe('Room tournament', () => {
     const b = join(room, 'B');
     expect(physics.seeds.at(-1)).toBe(seed(0.25));
     expect(lastMatch(a)).toMatchObject({ phase: 'ready', round: 1, seed: seed(0.25) });
-    // A refit mid-countdown (a 4th obstacle for 4 players) keeps the round's place.
+    // A refit mid-countdown (4 obstacles for 4 players) keeps the round's place.
     const c = join(room, 'C');
     const d = join(room, 'D');
-    expect(lastMatch(a)).toMatchObject({ phase: 'ready', count: 6, seed: seed(0.25) });
+    expect(lastMatch(a)).toMatchObject({ phase: 'ready', count: 4, seed: seed(0.25) });
     expect(physics.seeds.slice(-2)).toEqual([seed(0.25), seed(0.25)]);
     // Round 2: another one.
     start();
@@ -716,15 +717,15 @@ describe('Room tournament', () => {
     expect(snap(a).obs!.map(o => [o.hits, o.since >= 0])).toEqual([
       [2, true],
       [1, false],
-      ...Array(5).fill([0, false]),
+      ...Array(4).fill([0, false]),
     ]);
     winRound(a, 0);
     // Frozen in the break: as they were.
-    expect(snap(a).obs!.map(o => o.hits)).toEqual([2, 1, 0, 0, 0, 0, 0]);
+    expect(snap(a).obs!.map(o => o.hits)).toEqual([2, 1, 0, 0, 0, 0]);
     ticks(BREAK);
     expect(lastMatch(a)).toMatchObject({ phase: 'ready', round: 2 });
     expect(snap(a).obs).toEqual(
-      Array(7).fill({ hits: 0, since: -1, angle: 0, times: 0, cast: -1, victim: 0, lag: 0 }),
+      Array(6).fill({ hits: 0, since: -1, angle: 0, times: 0, cast: -1, victim: 0, lag: 0 }),
     );
   });
 
@@ -1049,7 +1050,7 @@ describe('Room tournament', () => {
       join(room, 'C');
       join(room, 'D');
       goal(0);
-      expect(lastMatch(a)).toMatchObject({ phase: 'play', round: 2, arena: 'sea', count: 6 });
+      expect(lastMatch(a)).toMatchObject({ phase: 'play', round: 2, arena: 'sea', count: 4 });
       expect(physics.arenas.slice(-2)).toEqual(['sea', 'sea']);
     });
 
@@ -1115,32 +1116,25 @@ describe('Room tournament', () => {
       const { clampPaddle } = await import('./physics');
       const a = join(room, 'A');
       join(room, 'B');
-      expect(rink(a)).toEqual([1, 7]);
+      expect(rink(a)).toEqual([1, 6]);
 
-      // Six newcomers during the countdown: the rink grows at once, told to everyone, paddles
+      // Four newcomers during the countdown: the rink grows at once, told to everyone, paddles
       // respawned on it, the puck on its scaled serve spot.
       const c = join(room, 'C');
-      ['D', 'C2', 'D2', 'C3', 'D3'].forEach(name => join(room, name));
-      expect(lastMatch(a)).toMatchObject({
-        phase: 'ready',
-        round: 1,
-        size: Math.sqrt(8 / 3),
-        count: 4,
-      });
-      expect(rink(c)).toEqual([Math.sqrt(8 / 3), 4]);
+      ['D', 'C2', 'D2'].forEach(name => join(room, name));
+      expect(lastMatch(a)).toMatchObject({ phase: 'ready', round: 1, size: Math.SQRT2, count: 2 });
+      expect(rink(c)).toEqual([Math.SQRT2, 2]);
       // As many obstacle states as obstacles on the new rink, all of them intact.
       expect(snap(a).obs).toEqual(
-        Array(4).fill({ hits: 0, since: -1, angle: 0, times: 0, cast: -1, victim: 0, lag: 0 }),
+        Array(2).fill({ hits: 0, since: -1, angle: 0, times: 0, cast: -1, victim: 0, lag: 0 }),
       );
       expect(snap(a).paddles.map(p => [p.x, p.y])).toEqual(
-        [100, 100, 200, 200, 300, 300, 400, 400]
+        [100, 100, 200, 200, 300, 300]
           .map((y, i) => [i % 2 ? 1200 : 400, y])
-          .map(([x, y]) =>
-            [x * Math.sqrt(8 / 3), y * Math.sqrt(8 / 3)].map(v => Math.round(v * 16) / 16),
-          ),
+          .map(([x, y]) => [x * Math.SQRT2, y * Math.SQRT2].map(v => Math.round(v * 16) / 16)),
       );
       room.receive(c, encodeInput(1500, 300));
-      expect(clampPaddle).toHaveBeenLastCalledWith(0, 1500, 300, Math.sqrt(8 / 3));
+      expect(clampPaddle).toHaveBeenLastCalledWith(0, 1500, 300, Math.SQRT2);
 
       // In play: a newcomer gets the current rink, nobody else is bothered.
       start();
@@ -1152,11 +1146,11 @@ describe('Room tournament', () => {
       join(room, 'F');
       expect(matches(a)).toHaveLength(n);
       expect(physics.rinks).toHaveLength(made);
-      expect(rink(e)).toEqual([Math.sqrt(8 / 3), 4]);
+      expect(rink(e)).toEqual([Math.SQRT2, 2]);
 
-      // The next serve (after a goal) fits the 10 players, the score kept.
+      // The next serve (after a goal) fits the 8 players, no obstacles left, the score kept.
       goal(0);
-      expect(lastMatch(a)).toMatchObject({ phase: 'play', size: Math.sqrt(10 / 3), count: 3 });
+      expect(lastMatch(a)).toMatchObject({ phase: 'play', size: Math.sqrt(8 / 3), count: 0 });
       expect(snap(a).score).toEqual([1, 0]);
     });
 
@@ -1168,14 +1162,14 @@ describe('Room tournament', () => {
       start();
       winRound(a, 0);
       nextRound();
-      expect(rink(a)).toEqual([Math.sqrt(10 / 3), 3]);
+      expect(rink(a)).toEqual([Math.sqrt(10 / 3), 0]);
       goal(0);
       touch(me(a).id);
       // Team 1 empties with the puck in play: waiting with 5 players, told once.
       const n = matches(a).length;
       [1, 3, 5, 7, 9].forEach(i => room.disconnect(conns[i]));
       expect(matches(a).slice(n)).toEqual([
-        expect.objectContaining({ phase: 'wait', size: Math.sqrt(5 / 3), count: 6 }),
+        expect.objectContaining({ phase: 'wait', size: Math.sqrt(5 / 3), count: 3 }),
       ]);
       const s = snap(a);
       expect(s.score).toEqual([1, 0]);
@@ -1185,14 +1179,14 @@ describe('Room tournament', () => {
 
       // Three more leave: back to size 1, told to the others; one joins on team 1: a new match.
       [2, 4, 6].forEach(i => room.disconnect(conns[i]));
-      expect(lastMatch(a)).toMatchObject({ phase: 'wait', size: 1, count: 7 });
-      expect(snap(a).obs).toHaveLength(7);
-      // Respawned on the rink of 3 (spots 0, 1, 2); the last leave, 3 to 2, keeps that rink.
+      expect(lastMatch(a)).toMatchObject({ phase: 'wait', size: 1, count: 6 });
+      expect(snap(a).obs).toHaveLength(6);
+      // Respawned on the rink of 2, spots 0 and 1.
       expect(snap(a)).toMatchObject({
         score: [1, 0],
         paddles: [
           { x: 400, y: 100 },
-          { x: 400, y: 300 },
+          { x: 400, y: 200 },
         ],
       });
       const g = join(room, 'G');
@@ -1200,7 +1194,7 @@ describe('Room tournament', () => {
         phase: 'ready',
         round: 1,
         size: 1,
-        count: 7,
+        count: 5,
       });
       expect(texts(g).map(m => m.t)).toEqual(['roster', 'match']);
     });

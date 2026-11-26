@@ -93,8 +93,8 @@ const ZV = (8 * ZA * ZN * TICK_HZ) / PERIOD;
 /** How far a genie strays either side of its lane, and ticks from one waypoint to the next. */
 export const GA = 30;
 export const WANDER = 1024;
-/** Obstacles kept for a count of 2 to 7 (see obstacles): bit i keeps index i of the full layout. */
-const MASKS = [0b11, 0b100011, 0b1010011, 0b1110011, 0b1011111, 0b1111111];
+/** Obstacles kept for a count of 0 to 7 (see obstacles): bit i keeps index i of the full layout. */
+const MASKS = [0, 0b100000, 0b11, 0b100011, 0b1010011, 0b1110011, 0b1011111, 0b1111111];
 
 /**
  * A share in [0, 1) for draw i of a seed (pair i of icebergs, a genie's waypoint, a whirlwind's
@@ -129,7 +129,8 @@ export const swirl = (o: Obstacle, size = 1): 1 | -1 => (o.x < (W * size) / 2 ? 
  *
  * The layout is drawn for the base rink and scaled by `size` (positions, radii, speeds: the
  * crossing time stays the same). `count` picks which obstacles stay, in the order above and
- * mirror-symmetric at every count: top icebergs (2), centre penguin (3), side penguins instead of
+ * mirror-symmetric at every count: none (0), the centre penguin alone (1), top icebergs (2), centre
+ * penguin too (3), side penguins instead of
  * the centre one (4), all three penguins (5), bottom icebergs too (6), everything (7). Same slots
  * at sea and in the desert. Indices follow the returned order and are stable for a given count.
  * Fresh objects every call.
@@ -149,7 +150,7 @@ export const obstacles = (
   times: (number | undefined)[] = [],
   lags: number[] = [],
 ): Obstacle[] => {
-  const mask = MASKS[count - 2] ?? 127;
+  const mask = MASKS[count] ?? 127;
   const sea = arena == 'sea';
   const [still, mover] = (
     { sea: ['vortex', 'shark'], desert: ['whirlwind', 'genie'] } as Record<
@@ -245,13 +246,13 @@ export const obstacles = (
  * room past 3: size = √(players / 3) on each side, from 1 (up to 3 players) to MAX_SIZE (12 and
  * more): 8 players play on ×1.63. It used to be √(players / 2): with 8 players the rink was twice
  * as big on the same screen, the paddles drawn at half size, too small to play.
- * Obstacles: 8 - players / 2, from 7 (up to 3 players) down to 3 (10 and more: icebergs and the
- * centre penguin): the more players, the fewer obstacles, the room is theirs (the user's call; it
- * was the other way round). Always in mirrored pairs plus, when odd, a penguin on the centre line.
+ * Obstacles: 8 - players, from 7 (1 player) down to none from 8 players on: the more players, the
+ * fewer obstacles, the room is theirs (the user's call; it was the other way round). Always in
+ * mirrored pairs plus, when odd, a penguin on the centre line.
  */
 export const layout = (players: number): { size: number; count: number } => ({
   size: Math.min(MAX_SIZE, Math.max(1, Math.sqrt(players / 3))),
-  count: Math.min(7, Math.max(3, 8 - ((players / 2) | 0))),
+  count: Math.min(7, Math.max(0, 8 - players)),
 });
 
 /** The scene of round n (from 1; 0 while waiting plays round 1's): the rules' list takes turns. */
