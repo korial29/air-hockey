@@ -71,7 +71,11 @@ describe('toField', () => {
     // Width-bound: TALL, the full width.
     expect(fit(800, 900)).toEqual([TALL, 800 / W]);
     // Never past the room.
-    for (const [w, h] of [[1000, 700], [300, 900], [2400, 500]]) {
+    for (const [w, h] of [
+      [1000, 700],
+      [300, 900],
+      [2400, 500],
+    ]) {
       const [G, k] = fit(w, h);
       expect(G.w * k).toBeLessThanOrEqual(w + 1e-9);
       expect(G.h * k).toBeLessThanOrEqual(h + 1e-9);

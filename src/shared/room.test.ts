@@ -1144,7 +1144,9 @@ describe('Room tournament', () => {
     });
 
     it('follows arrivals and departures live while waiting, the score kept', () => {
-      const conns = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'].map(name => join(room, name));
+      const conns = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'].map(name =>
+        join(room, name),
+      );
       const [a] = conns;
       start();
       winRound(a, 0);
