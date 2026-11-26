@@ -172,19 +172,19 @@ describe('obstacles', () => {
 
 describe('layout', () => {
   it.each([
-    [0, 1, 3],
-    [1, 1, 3],
-    [2, 1, 3],
-    [3, 1, 3],
-    [4, Math.sqrt(4 / 3), 4],
-    [5, Math.sqrt(5 / 3), 4],
+    [0, 1, 7],
+    [1, 1, 7],
+    [2, 1, 7],
+    [3, 1, 7],
+    [4, Math.sqrt(4 / 3), 6],
+    [5, Math.sqrt(5 / 3), 6],
     [6, Math.SQRT2, 5],
     [7, Math.sqrt(7 / 3), 5],
-    [8, Math.sqrt(8 / 3), 6],
-    [9, Math.sqrt(3), 6],
-    [10, Math.sqrt(10 / 3), 7],
-    [12, 2, 7],
-    [16, 2, 7],
+    [8, Math.sqrt(8 / 3), 4],
+    [9, Math.sqrt(3), 4],
+    [10, Math.sqrt(10 / 3), 3],
+    [12, 2, 3],
+    [16, 2, 3],
   ])('%i players: size %f, %i obstacles', (players, size, count) => {
     expect(layout(players)).toEqual({ size, count });
   });

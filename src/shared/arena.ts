@@ -245,12 +245,13 @@ export const obstacles = (
  * room past 3: size = √(players / 3) on each side, from 1 (up to 3 players) to MAX_SIZE (12 and
  * more): 8 players play on ×1.63. It used to be √(players / 2): with 8 players the rink was twice
  * as big on the same screen, the paddles drawn at half size, too small to play.
- * Obstacles: players / 2 + 2, from 3 (2 players: icebergs and the centre penguin) to 7 (10 and
- * more), always in mirrored pairs plus, when odd, a penguin on the centre line.
+ * Obstacles: 8 - players / 2, from 7 (up to 3 players) down to 3 (10 and more: icebergs and the
+ * centre penguin): the more players, the fewer obstacles, the room is theirs (the user's call; it
+ * was the other way round). Always in mirrored pairs plus, when odd, a penguin on the centre line.
  */
 export const layout = (players: number): { size: number; count: number } => ({
   size: Math.min(MAX_SIZE, Math.max(1, Math.sqrt(players / 3))),
-  count: Math.min(7, Math.max(3, ((players / 2) | 0) + 2)),
+  count: Math.min(7, Math.max(3, 8 - ((players / 2) | 0))),
 });
 
 /** The scene of round n (from 1; 0 while waiting plays round 1's): the rules' list takes turns. */

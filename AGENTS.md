@@ -76,7 +76,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 | Points | Hit +1 (only when the previous toucher was someone else, or after a serve), goal +20, own goal −10 (last toucher), round won +10 per player, match won +30 per player. |
 | Uneven teams | The smaller team starts each round with 1 goal per missing player; an upset win multiplies its match bonus by bigger / smaller. |
 | Rink size | √(players / 3), from 1 (up to 3 players) to 2 (12 and more): ×1.63 at 8. Was √(players / 2): at 8 players everything was drawn at half size, unplayable; √(players / 4) then felt cramped (the user's calls). Host pages should give the game all the height they can (`fill`). Puck and paddle radii do not scale; speeds, goals and obstacles do. |
-| Obstacles | players / 2 + 2, from 3 to 7, in mirrored pairs plus a centre mover when odd. |
+| Obstacles | 8 − players / 2, from 7 (up to 3 players) down to 3 (10 and more): the more players, the fewer obstacles (the user's call, it was the other way round). In mirrored pairs plus a centre mover when odd. |
 | When the rink changes | While waiting, at round start, and at every serve until someone touches the puck. Never while the puck is in play. |
 | Scenes | One per round, in turn, each with its own play: ice (icebergs, sliding penguins), sea (vortices, zig-zag sharks), desert (whirlwinds, wandering genies). `classic` is an empty rink. |
 | Vortices | Suck the puck under for 0.6 to 1.4 s (a random draw), then let it up at rest on a random spot clear of paddles and obstacles, at least 300 units from the goal lines, mirrored for a vortex right of the centre line. The client draws a splash there and pops the puck back to its size (`RISE`, 700 ms). |
