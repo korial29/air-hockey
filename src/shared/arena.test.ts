@@ -172,25 +172,26 @@ describe('obstacles', () => {
 
 describe('layout', () => {
   it.each([
-    [0, 1, 3],
-    [1, 1, 3],
-    [2, 1, 3],
-    [3, Math.sqrt(1.5), 3],
-    [4, Math.SQRT2, 4],
-    [5, Math.sqrt(2.5), 4],
-    [6, Math.sqrt(3), 5],
-    [7, Math.sqrt(3.5), 5],
-    [8, 2, 6],
-    [9, 2, 6],
-    [10, 2, 7],
-    [16, 2, 7],
+    [0, 1, 7],
+    [1, 1, 7],
+    [2, 1, 6],
+    [3, 1, 5],
+    [4, Math.sqrt(4 / 3), 4],
+    [5, Math.sqrt(5 / 3), 3],
+    [6, Math.SQRT2, 2],
+    [7, Math.sqrt(7 / 3), 1],
+    [8, Math.sqrt(8 / 3), 0],
+    [9, Math.sqrt(3), 0],
+    [10, Math.sqrt(10 / 3), 0],
+    [12, 2, 0],
+    [16, 2, 0],
   ])('%i players: size %f, %i obstacles', (players, size, count) => {
     expect(layout(players)).toEqual({ size, count });
   });
 
-  it('keeps the area per player from 2 to 8 players', () => {
-    for (let n = 2; n <= 8; n++) {
-      expect((layout(n).size ** 2 * W * H) / n).toBeCloseTo((W * H) / 2, 6);
+  it('keeps the area per player from 3 to 12 players', () => {
+    for (let n = 3; n <= 12; n++) {
+      expect((layout(n).size ** 2 * W * H) / n).toBeCloseTo((W * H) / 3, 6);
     }
     expect(layout(MAX_PLAYERS).size).toBe(MAX_SIZE);
   });
@@ -199,7 +200,7 @@ describe('layout', () => {
 describe('obstacles on a scaled rink', () => {
   /** Every size and count the room can pick. */
   const RINKS = [...Array(MAX_PLAYERS + 1).keys()].map(n => layout(n));
-  const ALL = [2, 3, 4, 5, 6, 7].flatMap(count =>
+  const ALL = [0, 1, 2, 3, 4, 5, 6, 7].flatMap(count =>
     [1, Math.SQRT2, Math.sqrt(3), MAX_SIZE].map(size => ({ size, count })),
   );
   /** A period sampled every 8 ticks, plus fractional ticks. */
@@ -376,7 +377,7 @@ describe('obstacles on a scaled rink', () => {
 });
 
 describe('the sea arena', () => {
-  const ALL = [2, 3, 4, 5, 6, 7].flatMap(count =>
+  const ALL = [0, 1, 2, 3, 4, 5, 6, 7].flatMap(count =>
     [1, Math.SQRT2, Math.sqrt(3), MAX_SIZE].map(size => ({ size, count })),
   );
   /** Every tick of a crossing, board to board. */
@@ -604,7 +605,7 @@ describe('the sea arena', () => {
 });
 
 describe('the desert arena', () => {
-  const ALL = [2, 3, 4, 5, 6, 7].flatMap(count =>
+  const ALL = [0, 1, 2, 3, 4, 5, 6, 7].flatMap(count =>
     [1, Math.SQRT2, Math.sqrt(3), MAX_SIZE].map(size => ({ size, count })),
   );
   const SEEDS = [0, 1, 77, 123456789, 2 ** 32 - 1];
@@ -728,7 +729,7 @@ describe('the desert arena', () => {
   });
 
   it('spins each whirlwind clockwise left of the centre line, its mirror counter-clockwise', () => {
-    for (const { size, count } of ALL) {
+    for (const { size, count } of ALL.filter(r => r.count >= 2)) {
       const X = W * size;
       const obs = obstacles('desert', 0, size, count, 77).filter(fixed);
       // One on each side at least.
@@ -743,7 +744,7 @@ describe('the desert arena', () => {
 });
 
 describe('icebergs (vortices) across the width', () => {
-  const ALL = [2, 3, 4, 5, 6, 7].flatMap(count =>
+  const ALL = [0, 1, 2, 3, 4, 5, 6, 7].flatMap(count =>
     [1, Math.SQRT2, Math.sqrt(3), MAX_SIZE].map(size => ({ size, count })),
   );
   /** 500 seeds as the room draws them (1 to 2^32 - 1), spread out, plus the extremes. */
@@ -818,7 +819,7 @@ describe('icebergs (vortices) across the width', () => {
   });
 
   it('puts each iceberg on a cell in front of its goal, a pair and a side split top and bottom', () => {
-    for (const { size, count } of ALL) {
+    for (const { size, count } of ALL.filter(r => r.count >= 2)) {
       const seen = new Set<string>();
       let tops = 0;
       let same = 0;

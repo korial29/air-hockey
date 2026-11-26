@@ -14,7 +14,7 @@ import {
 } from '../shared/constants';
 import { HOLD, createWorld, step } from '../shared/physics';
 import type { Puck, Snapshot } from '../shared/types';
-import { predict, rebase, reset, view } from './predict';
+import { MAX_LAG, latency, predict, rebase, reset, view } from './predict';
 
 /** One physics step, ms. */
 const DT = 1000 / TICK_HZ;
@@ -153,6 +153,55 @@ describe('predict', () => {
       err = e;
     }
     expect(err).toBeLessThan(0.5);
+  });
+
+  it('smooths the measured round trip, half of it the lag, capped', () => {
+    const p = classic();
+    expect(p.lag).toBe(0);
+    latency(p, 60);
+    expect([p.rtt, p.lag]).toEqual([60, 30]);
+    latency(p, 100);
+    expect([p.rtt, p.lag]).toEqual([70, 35]);
+    for (let i = 0; i < 50; i++) {
+      latency(p, 1000);
+    }
+    expect(p.lag).toBe(MAX_LAG);
+  });
+
+  it('draws the puck where the host has it now: the snapshot is lag ms old', () => {
+    // Times from 1000 ms on: page clocks start at 0, the game comes later.
+    const p = classic();
+    latency(p, 80);
+    rebase(p, snap({ x: 800, y: 450, vx: 1000 }), ME, 1000);
+    // 40 ms at 1000 units per s: 40 units further than the snapshot says, at once.
+    expect(draw(p, snap({}), 1000).puck.x).toBeCloseTo(840, 0);
+    // The next snapshot, on time, changes nothing drawn: no jump, no gap to fade.
+    const before = draw(p, snap({}), 1016).puck.x;
+    rebase(p, snap({ x: 816, y: 450, vx: 1000 }), ME, 1016);
+    expect(draw(p, snap({}), 1016).puck.x).toBeCloseTo(before, 6);
+    expect(Math.hypot(...p.o)).toBeLessThan(0.5);
+    // Frozen host (break): drawn as is.
+    reset(p, 'break', 'classic');
+    rebase(p, snap({ x: 500, y: 450, vx: 1000 }), ME, 1032);
+    expect(p.w.puck.x).toBe(500);
+  });
+
+  it('records each contact once for the sounds: paddle, board', () => {
+    const p = classic();
+    // Toward the own paddle, then on to the left board.
+    rebase(p, snap({ x: 500, y: 450, vx: -1500 }), ME, 1000);
+    for (let t = 1000; t < 1400; t += 16) {
+      draw(p, snap({}), t);
+    }
+    expect(p.fx[0]).toEqual(['hit', ME]);
+    expect(p.fx.filter(([k]) => k == 'hit')).toHaveLength(1);
+    p.fx.length = 0;
+    // Straight at the top board, nothing else around.
+    rebase(p, snap({ x: 1000, y: 200, vy: -1500 }, []), ME, 2000);
+    for (let t = 2000; t < 2200; t += 16) {
+      draw(p, snap({}, []), t);
+    }
+    expect(p.fx).toEqual([['wall', -1]]);
   });
 
   it('keeps a puck at rest still whatever the snapshot timing', () => {

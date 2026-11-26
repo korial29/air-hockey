@@ -4,12 +4,14 @@
 import { SCALE } from './constants';
 import type { Arena, Phase, PlayerInfo, Rank, Snapshot, Team } from './types';
 
-export type ClientText = { t: 'join'; name: string };
+/** `ping`: the client's clock (ms), sent back as is in a `pong` to measure the round trip. */
+export type ClientText = { t: 'join'; name: string } | { t: 'ping'; n: number };
 
 export type ServerText =
   | { t: 'roster'; you: number; players: PlayerInfo[] }
   | { t: 'goal'; team: Team; score: [number, number] }
   | { t: 'full' }
+  | { t: 'pong'; n: number }
   | {
       /** Sent on every phase change, and to a player who joins mid-match. */
       t: 'match';

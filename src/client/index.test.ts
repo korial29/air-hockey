@@ -210,12 +210,15 @@ describe('airHockey', () => {
     expect(socket.onmessage).toBeNull();
   });
 
-  it('sends the pointer as an input at most once per frame, only when it moved', () => {
+  it('sends the pointer at once, at most one input per 8 ms, the rest on the next frame', () => {
     let frame: FrameRequestCallback = () => {};
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    let now = 1000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
     const socket = fakeSocket();
     const game = airHockey(document.body, { name: 'Ana', socket });
     socket.onopen!();
+    const inputs = () => socket.sent.filter(d => typeof d != 'string') as ArrayBuffer[];
     const canvas = document.body.firstElementChild!.shadowRoot!.querySelector('canvas')!;
     // 800 × 600 CSS px for 2000 × 1500 field units: 0.4 px per unit, the rink TOP × 0.4 px down.
     canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 }) as DOMRect;
@@ -224,16 +227,48 @@ describe('airHockey', () => {
 
     move(100);
     frame(0);
-    expect(socket.sent).toHaveLength(1); // no team yet: pointer ignored
+    expect(inputs()).toHaveLength(0); // no team yet: pointer ignored
 
     const players = [{ id: 3, name: 'Ana', color: '#f00', team: 0 }];
     socket.onmessage!({ data: JSON.stringify({ t: 'roster', you: 3, players }) });
     move(100);
+    // Sent on the event, before any frame.
+    expect(inputs()).toHaveLength(1);
+    expect(decodeInput(inputs()[0])).toEqual({ x: 250, y: 250 });
+    now += 4;
     move(200);
+    expect(inputs()).toHaveLength(1);
     frame(0);
     frame(0);
-    expect(socket.sent).toHaveLength(2);
-    expect(decodeInput(socket.sent[1] as ArrayBuffer)).toEqual({ x: 500, y: 250 });
+    // The newer one on the next frame, once: nothing moved since.
+    expect(inputs()).toHaveLength(2);
+    expect(decodeInput(inputs()[1])).toEqual({ x: 500, y: 250 });
+    game.destroy();
+  });
+
+  it('measures the round trip with a ping every 2 s, answered by a pong', () => {
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => ((frame = cb), 1));
+    let now = 5000;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const socket = fakeSocket();
+    const game = airHockey(document.body, { name: 'Ana', socket });
+    const pings = () => socket.sent.filter(d => typeof d == 'string' && d.includes('ping'));
+    frame(0);
+    expect(pings()).toHaveLength(0); // not open yet
+    socket.onopen!();
+    frame(0);
+    expect(pings()).toEqual([JSON.stringify({ t: 'ping', n: 5000 })]);
+    now += 1999;
+    frame(0);
+    expect(pings()).toHaveLength(1);
+    now += 1;
+    frame(0);
+    expect(pings()).toHaveLength(2);
+    // Answered: no error, nothing sent back.
+    const n = socket.sent.length;
+    socket.onmessage!({ data: JSON.stringify({ t: 'pong', n: 5000 }) });
+    expect(socket.sent).toHaveLength(n);
     game.destroy();
   });
 
@@ -808,6 +843,52 @@ describe('airHockey', () => {
     game.destroy();
   });
 
+  it('mutes and unmutes from its button, hidden with the sound option off', () => {
+    const game = airHockey(document.body, { name: 'Ana', socket: fakeSocket() });
+    const mute = document.body.lastElementChild!.shadowRoot!.querySelectorAll('button')[1];
+    expect(mute.hidden).toBe(false);
+    expect(mute.getAttribute('aria-label')).toBe('Sound off');
+    mute.click();
+    expect(mute.getAttribute('aria-label')).toBe('Sound on');
+    mute.click();
+    expect(mute.getAttribute('aria-label')).toBe('Sound off');
+    game.destroy();
+    const quiet = airHockey(document.body, { name: 'Ana', socket: fakeSocket(), sound: false });
+    expect(document.body.lastElementChild!.shadowRoot!.querySelectorAll('button')[1].hidden).toBe(
+      true,
+    );
+    quiet.destroy();
+  });
+
+  it('fills its container with the frame that draws the rink biggest', () => {
+    let resized = () => {};
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          resized = cb;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const game = airHockey(document.body, { name: 'Ana', socket: fakeSocket(), fill: true });
+    const wrap = document.body.lastElementChild as HTMLElement;
+    const root = wrap.shadowRoot!;
+    expect(root.querySelector('style')!.textContent).toContain(':host{display:flex;');
+    const box = root.querySelector('div')!;
+    const canvas = root.querySelector('canvas')!;
+    // A laptop's retro page: height-bound, the score bands go on the sides.
+    Object.defineProperties(wrap, { clientWidth: { value: 1360 }, clientHeight: { value: 600 } });
+    resized();
+    expect(box.style.width).toBe((2430 * 600) / 1125 + 'px');
+    expect(canvas.style.aspectRatio.replace(/ /g, '')).toBe('2430/1125');
+    expect(root.querySelector('nav')!.style.bottom).toBe('2%');
+    game.destroy();
+    // Without fill, the page sets the width: nothing is forced.
+    airHockey(document.body, { name: 'Ana', socket: fakeSocket() }).destroy();
+  });
+
   it('fills a phone on its side: the rink full height, the HUD in a band on each side', () => {
     const texts = fakeContext();
     let frame: FrameRequestCallback = () => {};
@@ -904,7 +985,7 @@ describe('airHockey', () => {
         }),
       );
       frame(0);
-      return decodeInput(socket.sent.at(-1) as ArrayBuffer);
+      return decodeInput(socket.sent.filter(d => typeof d != 'string').at(-1) as ArrayBuffer);
     };
     // The same spot of the drawn canvas, in the page and letterboxed in full screen.
     const page = input({ left: 16, top: 60, width: 800, height: 600 } as DOMRect, 0.25, 0.5);

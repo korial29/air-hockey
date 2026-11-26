@@ -1,7 +1,8 @@
 // Client prediction: a local World stepped with the host's physics, no DOM, unit-tested.
 // The own paddle moves toward the pointer exactly like on the host. The puck is rebased on each
-// snapshot (taken as the host state at its arrival) and simulated forward, so a fast puck is
-// drawn where it is and an own hit redirects it at once. Other paddles stand at their latest
+// snapshot, taken as the host state `lag` ms before its arrival (half the measured round trip),
+// and simulated forward to now: a fast puck is drawn where the host has it now, not where it was
+// when the snapshot left, and an own hit redirects it at once. Other paddles stand at their latest
 // snapshot position for collisions; they are drawn interpolated, INTERP_DELAY in the past.
 // Obstacles follow the world tick, rebased on the snapshot tick: the arena is a pure function of
 // it, so the local puck bounces off the same penguins as the host's, and goes where the same
@@ -29,6 +30,8 @@ const EASE = 0.85 ** (120 / TICK_HZ);
 const GRACE = 200;
 /** Steps replayed at most per advance, so a stalled tab does not spiral. */
 const MAX_CATCH_UP = 20;
+/** Most a snapshot is taken to be late, in ms: half a 160 ms round trip, within MAX_CATCH_UP. */
+export const MAX_LAG = 80;
 /**
  * w.tick runs this far ahead of the host's u16 tick: obstacles repeat over it, and an obstacle
  * removed `since` ticks ago (since < 65536) gets a tick gone = w.tick - since that is never -1,
@@ -57,6 +60,17 @@ export interface Prediction {
   off?: boolean;
   /** Phase 'ready': local steps move the paddles only (skate). */
   ready?: boolean;
+  /** How late a snapshot arrives, ms: half the smoothed round trip (see latency), ≤ MAX_LAG. */
+  lag: number;
+  /** Smoothed round trip, ms; 0 before the first measure. */
+  rtt: number;
+  /**
+   * Contacts of the local puck since the renderer last emptied it, for sounds: a paddle that
+   * touches it (its id), an obstacle (its index), a board (-1).
+   */
+  fx: ['hit' | 'bump' | 'wall', number][];
+  /** Paddle touching the puck on the last step, -1: none; a push over many steps sounds once. */
+  touch: number;
   /** Score of the last snapshot. When it changes the puck was served: rebased without easing. */
   score: string;
   /** Snapshot.live of the last snapshot: a serve takes it from true to false. */
@@ -74,12 +88,22 @@ export const predict = (): Prediction => ({
   o: [0, 0],
   t: -1,
   hold: 0,
+  lag: 0,
+  rtt: 0,
+  fx: [],
+  touch: -1,
   score: '',
   hits: [],
 });
 
-/** Steps w up to now. */
-const advance = (p: Prediction, now: number): void => {
+/** A measured round trip, in ms: smoothed, half of it the lag of the next snapshots. */
+export const latency = (p: Prediction, rtt: number): void => {
+  p.rtt = p.rtt ? p.rtt * 0.75 + rtt * 0.25 : rtt;
+  p.lag = Math.min(MAX_LAG, p.rtt / 2);
+};
+
+/** Steps w up to now; the drawn correction fades on each step, unless `ease` is false. */
+const advance = (p: Prediction, now: number, ease = true): void => {
   const { w } = p;
   const k = w.puck;
   p.t = Math.max(p.t, now - MAX_CATCH_UP * DT);
@@ -88,8 +112,18 @@ const advance = (p: Prediction, now: number): void => {
       skate(w, DT / 1000);
       continue;
     }
-    const { x, y } = k;
+    const { x, y, vx, vy } = k;
+    const was = w.bumps;
     const goal = step(w, DT / 1000, false);
+    if (w.hit != -1 && w.hit != p.touch) {
+      p.fx.push(['hit', w.hit]);
+    }
+    p.touch = w.hit;
+    w.bumps.forEach(i => was.includes(i) || p.fx.push(['bump', i]));
+    // Turned back with nothing else touched: a board.
+    if (w.hit == -1 && !w.bumps.length && (vx * k.vx < 0 || vy * k.vy < 0)) {
+      p.fx.push(['wall', -1]);
+    }
     if (goal != -1) {
       // The host owns the score and the serve: undo both.
       w.score[goal]--;
@@ -99,11 +133,14 @@ const advance = (p: Prediction, now: number): void => {
       Object.assign(k, { x, y, vx: 0, vy: 0 });
     }
     if (p.me && w.hit == p.me.id) {
-      p.hold = p.t + GRACE;
+      // The host shows our hit a round trip later at the earliest.
+      p.hold = p.t + GRACE + 2 * p.lag;
     }
     w.bumps.forEach(i => (p.hits[i] = p.t + DT));
-    p.o[0] *= EASE;
-    p.o[1] *= EASE;
+    if (ease) {
+      p.o[0] *= EASE;
+      p.o[1] *= EASE;
+    }
   }
 };
 
@@ -137,10 +174,9 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
   // Unless the host has not seen our hit yet (its puck still runs against ours): then the local
   // puck and tick stay.
   if (jump || now >= p.hold || n.vx * k.vx + n.vy * k.vy >= 0) {
-    // Where the puck is drawn at now (see view) minus where the host has it: the gap to fade.
-    const r = (now - p.t) / 1000;
-    p.o = jump ? [0, 0] : [p.o[0] + k.x + k.vx * r - n.x, p.o[1] + k.y + k.vy * r - n.y];
-    p.t = now;
+    // Where the puck is drawn at now (see view).
+    let r = (now - p.t) / 1000;
+    const [dx, dy] = [p.o[0] + k.x + k.vx * r, p.o[1] + k.y + k.vy * r];
     p.hold = 0;
     p.wait = false;
     w.tick = s.tick + WRAP;
@@ -148,6 +184,13 @@ export const rebase = (p: Prediction, s: Snapshot, you: number, now: number): vo
     w.held = s.held ?? -1;
     w.left = s.left ?? 0;
     Object.assign(k, n);
+    // The snapshot left the host lag ms ago: the host's world now is that much further on.
+    // Not while the host is frozen (break, end).
+    p.t = now - (p.off ? 0 : p.lag);
+    advance(p, now, false);
+    // Minus where the host has it now: the gap to fade.
+    r = (now - p.t) / 1000;
+    p.o = jump ? [0, 0] : [dx - k.x - k.vx * r, dy - k.y - k.vy * r];
   }
   // The host's obstacles, in any case: what it removed lets the local puck through at once.
   // Ticks since become ticks: a spell still on (or none) holds the own paddle as on the host.
