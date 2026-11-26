@@ -12,6 +12,7 @@ import {
   WIDE,
   byTeam,
   drawnR,
+  fit,
   flow,
   frameOf,
   podium,
@@ -58,6 +59,23 @@ describe('toField', () => {
     expect(frameOf(800 / 360)).toBe(WIDE);
     expect(frameOf(4 / 3)).toBe(TALL);
     expect(frameOf(1.5)).toBe(TALL);
+  });
+
+  it('fits the frame that draws the rink biggest in a room', () => {
+    // A retro page on a laptop: 1360 × 600 CSS px left for the game, height-bound.
+    const [F, z] = fit(1360, 600);
+    expect(F).toBe(WIDE);
+    expect(z).toBeCloseTo(600 / WIDE.h);
+    // The rink a third bigger than in TALL there (H / CH of the height).
+    expect((z * W) / (fit(600 * (W / CH), 600)[1] * W)).toBeCloseTo(CH / WIDE.h);
+    // Width-bound: TALL, the full width.
+    expect(fit(800, 900)).toEqual([TALL, 800 / W]);
+    // Never past the room.
+    for (const [w, h] of [[1000, 700], [300, 900], [2400, 500]]) {
+      const [G, k] = fit(w, h);
+      expect(G.w * k).toBeLessThanOrEqual(w + 1e-9);
+      expect(G.h * k).toBeLessThanOrEqual(h + 1e-9);
+    }
   });
 
   it('gives y outside the rink over the HUD bands', () => {

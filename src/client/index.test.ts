@@ -808,6 +808,34 @@ describe('airHockey', () => {
     game.destroy();
   });
 
+  it('fills its container with the frame that draws the rink biggest', () => {
+    let resized = () => {};
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          resized = cb;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const game = airHockey(document.body, { name: 'Ana', socket: fakeSocket(), fill: true });
+    const wrap = document.body.lastElementChild as HTMLElement;
+    const root = wrap.shadowRoot!;
+    expect(root.querySelector('style')!.textContent).toContain(':host{display:flex;');
+    const box = root.querySelector('div')!;
+    const canvas = root.querySelector('canvas')!;
+    // A laptop's retro page: height-bound, the score bands go on the sides.
+    Object.defineProperties(wrap, { clientWidth: { value: 1360 }, clientHeight: { value: 600 } });
+    resized();
+    expect(box.style.width).toBe((2430 * 600) / 1125 + 'px');
+    expect(canvas.style.aspectRatio.replace(/ /g, '')).toBe('2430/1125');
+    game.destroy();
+    // Without fill, the page sets the width: nothing is forced.
+    airHockey(document.body, { name: 'Ana', socket: fakeSocket() }).destroy();
+  });
+
   it('fills a phone on its side: the rink full height, the HUD in a band on each side', () => {
     const texts = fakeContext();
     let frame: FrameRequestCallback = () => {};

@@ -43,6 +43,7 @@ import {
   TOP,
   WIDE,
   drawnR,
+  fit,
   frameOf,
   sample,
   toField,
@@ -69,6 +70,12 @@ export interface AirHockeyOptions {
   socket?: SocketLike;
   /** Full screen button in the top band, where the browser allows it. Default true. */
   fullscreen?: boolean;
+  /**
+   * Fill the container, which sets the room (its width and height): the canvas takes the frame
+   * that draws the rink biggest in it, score bands above and below or on the sides, centred.
+   * Default false: the full width, the height following the aspect.
+   */
+  fill?: boolean;
 }
 
 export type AirHockeyEvent = 'roster' | 'score' | 'goal' | 'match' | 'open' | 'close';
@@ -97,7 +104,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
     `:host(:fullscreen) div{width:min(100vw,100vh * ${WIDE.w / WIDE.h})}}` +
     // A phone held upright: the landscape rink would be a strip, the paddles too small to steer.
     `p{display:none;position:absolute;inset:0;margin:0;place-content:center;border-radius:16px;background:#08131de6;color:#fff;font:600 18px system-ui,sans-serif}` +
-    `@media (orientation:portrait) and (pointer:coarse) and (max-width:600px){p{display:grid}}</style>` +
+    `@media (orientation:portrait) and (pointer:coarse) and (max-width:600px){p{display:grid}}` +
+    (opts.fill ? ':host{display:flex;align-items:center;justify-content:center;height:100%}' : '') +
+    `</style>` +
     `<div><canvas></canvas><button type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path/></svg></button><p>Turn your phone sideways</p></div>`;
   container.append(wrap);
   const canvas = root.querySelector('canvas')!;
@@ -239,12 +248,22 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   );
   document.addEventListener('fullscreenchange', syncFull, ac);
 
+  const box = root.querySelector('div')!;
   const ro = new ResizeObserver(() => {
+    if (opts.fill) {
+      // The frame drawing the rink (W units wide in both) biggest in the room, and its width.
+      const [F, z] = fit(wrap.clientWidth, wrap.clientHeight);
+      box.style.width = F.w * z + 'px';
+      canvas.style.aspectRatio = F.w + '/' + F.h;
+    }
     L = canvas.clientHeight ? frameOf(canvas.clientWidth / canvas.clientHeight) : TALL;
     canvas.width = canvas.clientWidth * devicePixelRatio;
     canvas.height = (canvas.width * L.h) / L.w;
   });
   ro.observe(canvas);
+  if (opts.fill) {
+    ro.observe(wrap);
+  }
 
   const draw = (c: CanvasRenderingContext2D, now: number) => {
     const k = canvas.width / L.w;

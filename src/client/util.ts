@@ -33,6 +33,15 @@ export const frameOf = (aspect: number): Frame =>
   aspect > (TALL.w / TALL.h + WIDE.w / WIDE.h) / 2 ? WIDE : TALL;
 
 /**
+ * The frame that draws the rink biggest in a room of w × h CSS px, and its scale (CSS px per
+ * field unit): WIDE when the room is height-bound, as a retro page on a laptop is.
+ */
+export const fit = (w: number, h: number): [Frame, number] => {
+  const [a, b] = [TALL, WIDE].map(F => Math.min(w / F.w, h / F.h));
+  return b > a ? [WIDE, b] : [TALL, a];
+};
+
+/**
  * Smallest drawn radius of the puck and of a paddle, in CSS px. A big rink on a small canvas
  * (8 players on a phone) would draw them at 2 to 4 px; they are drawn bigger, around their true
  * position, while the physics keeps PUCK_R and PADDLE_R.
