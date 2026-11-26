@@ -176,22 +176,22 @@ describe('layout', () => {
     [1, 1, 3],
     [2, 1, 3],
     [3, 1, 3],
-    [4, 1, 4],
-    [5, Math.sqrt(1.25), 4],
-    [6, Math.sqrt(1.5), 5],
-    [7, Math.sqrt(1.75), 5],
-    [8, Math.SQRT2, 6],
-    [9, 1.5, 6],
-    [10, Math.sqrt(2.5), 7],
-    [12, Math.sqrt(3), 7],
+    [4, Math.sqrt(4 / 3), 4],
+    [5, Math.sqrt(5 / 3), 4],
+    [6, Math.SQRT2, 5],
+    [7, Math.sqrt(7 / 3), 5],
+    [8, Math.sqrt(8 / 3), 6],
+    [9, Math.sqrt(3), 6],
+    [10, Math.sqrt(10 / 3), 7],
+    [12, 2, 7],
     [16, 2, 7],
   ])('%i players: size %f, %i obstacles', (players, size, count) => {
     expect(layout(players)).toEqual({ size, count });
   });
 
-  it('keeps the area per player from 4 to 16 players', () => {
-    for (let n = 4; n <= 16; n++) {
-      expect((layout(n).size ** 2 * W * H) / n).toBeCloseTo((W * H) / 4, 6);
+  it('keeps the area per player from 3 to 12 players', () => {
+    for (let n = 3; n <= 12; n++) {
+      expect((layout(n).size ** 2 * W * H) / n).toBeCloseTo((W * H) / 3, 6);
     }
     expect(layout(MAX_PLAYERS).size).toBe(MAX_SIZE);
   });

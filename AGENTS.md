@@ -75,7 +75,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 | Match | 3 rounds to 5 goals, all played (one scene each; most rounds won takes the match, the last round's winner on a tie), a "3, 2, 1, PLAY!" countdown (3 s) before each round. |
 | Points | Hit +1 (only when the previous toucher was someone else, or after a serve), goal +20, own goal −10 (last toucher), round won +10 per player, match won +30 per player. |
 | Uneven teams | The smaller team starts each round with 1 goal per missing player; an upset win multiplies its match bonus by bigger / smaller. |
-| Rink size | √(players / 4), from 1 (up to 4 players) to 2 (16). Was √(players / 2): at 8 players everything was drawn at half size, unplayable (the user's call). Puck and paddle radii do not scale; speeds, goals and obstacles do. |
+| Rink size | √(players / 3), from 1 (up to 3 players) to 2 (12 and more): ×1.63 at 8. Was √(players / 2): at 8 players everything was drawn at half size, unplayable; √(players / 4) then felt cramped (the user's calls). Host pages should give the game all the height they can (`fill`). Puck and paddle radii do not scale; speeds, goals and obstacles do. |
 | Obstacles | players / 2 + 2, from 3 to 7, in mirrored pairs plus a centre mover when odd. |
 | When the rink changes | While waiting, at round start, and at every serve until someone touches the puck. Never while the puck is in play. |
 | Scenes | One per round, in turn, each with its own play: ice (icebergs, sliding penguins), sea (vortices, zig-zag sharks), desert (whirlwinds, wandering genies). `classic` is an empty rink. |
