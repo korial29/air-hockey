@@ -120,6 +120,8 @@ export class Room {
       const msg = parseText<ClientText>(data);
       if (p === null && msg?.t === 'join') {
         this.join(conn, msg.name);
+      } else if (p && msg?.t === 'ping' && typeof msg.n === 'number') {
+        conn.send(JSON.stringify({ t: 'pong', n: msg.n } satisfies ServerText));
       }
       return;
     }

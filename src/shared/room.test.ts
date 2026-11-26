@@ -275,6 +275,21 @@ describe('Room', () => {
     }
   });
 
+  it('answers a ping with a pong to that player only, not before the join', () => {
+    const a = join(room, 'a');
+    const b = join(room, 'b');
+    const ghost = fakeConn();
+    room.connect(ghost);
+    room.receive(ghost, JSON.stringify({ t: 'ping', n: 1 }));
+    expect(ghost.sent).toHaveLength(0);
+    const before = b.sent.length;
+    room.receive(a, JSON.stringify({ t: 'ping', n: 1234.5 }));
+    room.receive(a, JSON.stringify({ t: 'ping', n: 'x' }));
+    expect(texts(a).at(-1)).toEqual({ t: 'pong', n: 1234.5 });
+    expect(texts(a).filter(m => m.t === 'pong')).toHaveLength(1);
+    expect(b.sent).toHaveLength(before);
+  });
+
   it('sends the roster again on leave, and nothing to the leaver', () => {
     const a = join(room, 'a');
     const b = join(room, 'b');

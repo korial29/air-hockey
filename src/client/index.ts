@@ -13,7 +13,7 @@ import { clampPaddle, solid } from '../shared/physics';
 import { decodeSnapshot, encodeInput, parseText } from '../shared/protocol';
 import type { ServerText } from '../shared/protocol';
 import type { PlayerInfo, SocketLike, Team } from '../shared/types';
-import { predict, rebase, reset, view } from './predict';
+import { latency, predict, rebase, reset, view } from './predict';
 import {
   beacon,
   bolt,
@@ -57,6 +57,11 @@ const ZAP = 72;
 
 /** A puck let up by a vortex: its splash lasts RISE ms, the puck pops up in the first 60 %. */
 const RISE = 700;
+
+/** A round trip is measured every PING ms. */
+const PING = 2000;
+/** Inputs go out on the pointer event, at most one per SEND ms; the rest on the next frame. */
+const SEND = 8;
 
 /** Payload of the 'match' event: the host's match message, without its type tag. */
 export type MatchState = Omit<Extract<ServerText, { t: 'match' }>, 't'>;
@@ -129,6 +134,9 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
   const P = predict();
   let dirty = false;
   let open = false;
+  /** When the last input and the last ping went out (ms). */
+  let sent = 0;
+  let pinged = -PING;
   let score = '';
   let goalAt = -1e4;
   /** Countdown: when play starts (ms), from the 'ready' message; when it did, from 'play'. */
@@ -203,6 +211,8 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
       }
       reset(P, m.phase, m.arena, m.size, m.count, m.seed);
       emit('match', (match = rest));
+    } else if (m?.t == 'pong') {
+      latency(P, performance.now() - m.n);
     } else if (m?.t == 'full') {
       msg = 'Room is full';
     }
@@ -219,6 +229,17 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
         z,
       );
       dirty = true;
+      // At once, not on the next frame: up to 16 ms sooner on the host.
+      if (performance.now() - sent >= SEND) {
+        input();
+      }
+    }
+  };
+  const input = () => {
+    if (dirty && open && me) {
+      ws.send(encodeInput(...me));
+      sent = performance.now();
+      dirty = false;
     }
   };
   canvas.addEventListener('pointermove', onPointer, ac);
@@ -458,12 +479,13 @@ export const airHockey = (container: HTMLElement, opts: AirHockeyOptions): AirHo
 
   const frame = () => {
     raf = requestAnimationFrame(frame);
-    if (dirty && open && me) {
-      ws.send(encodeInput(...me));
-      dirty = false;
+    input();
+    const now = performance.now();
+    if (open && now - pinged >= PING) {
+      ws.send(JSON.stringify({ t: 'ping', n: (pinged = now) }));
     }
     if (c && canvas.width) {
-      draw(c, performance.now());
+      draw(c, now);
     }
   };
   raf = requestAnimationFrame(frame);
