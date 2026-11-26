@@ -123,7 +123,7 @@ airHockey(el, {
 }); // then call its onopen() once the server has the peer, and onmessage({ data }) per frame
 ```
 
-Text frames are JSON; binary frames (inputs, snapshots) must reach the room as an `ArrayBuffer` of exactly their bytes. Cap what a peer may send: inputs are 5 bytes, a join a few dozen.
+Text frames are JSON (`join`, and a `ping` every 2 s the room answers with a `pong`: forward both); binary frames (inputs, snapshots) must reach the room as an `ArrayBuffer` of exactly their bytes. Cap what a peer may send: inputs are 5 bytes, a join or a ping a few dozen.
 
 ### Sizing
 
@@ -162,6 +162,8 @@ Mounts the game and joins. Returns `{ on, destroy }`.
 | `url` | `string` | — | WebSocket URL, room in the path. Ignored when `socket` is given. |
 | `socket` | `SocketLike` | — | Any WebSocket-like object, e.g. `localSocket('room')`. |
 | `fullscreen` | `boolean` | `true` | Show the full-screen button (hidden anyway where the browser does not allow it). |
+| `fill` | `boolean` | `false` | Fill the container (give it a width and a height): the rink is drawn as big as it fits, the score bands on the sides when the container is height-bound. |
+| `sound` | `boolean` | `true` | Synthesised sound effects (no files) and their mute button. |
 
 ### Events
 

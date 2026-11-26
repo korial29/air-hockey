@@ -47,7 +47,8 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 ## Architecture
 
 - **The host is authoritative**: the Node server or the local host tab. Clients send only their pointer target.
-- **The client predicts** its own paddle and the puck with the shared physics, rebased on each snapshot and eased on corrections. Other paddles are interpolated 35 ms behind.
+- **The client predicts** its own paddle and the puck with the shared physics, rebased on each snapshot and eased on corrections. A snapshot is taken as the host state half a round trip ago (`ping` / `pong` every 2 s, at most 80 ms) and simulated to now. Inputs go out on the pointer event, at most one per 8 ms. Other paddles are interpolated 35 ms behind.
+- **Sound**: Web Audio synthesis only (`src/client/sound.ts`), no audio files; silent until the first press, muted remembered in `localStorage`.
 - **`src/shared` never touches the DOM or Node APIs.**
 - **Obstacles are a pure function of the tick** (and the round's seed): every screen computes them with no extra traffic. Their motion period divides 65536 ticks so the u16 snapshot tick wraps seamlessly. Only their state (hits, removal, flight angle) travels, plus which obstacle holds the puck and for how long still. Randomness comes from `draw(seed, i)`, never `Math.random`, so host and prediction draw the same.
 - **Wire format**: coordinates in fixed point (`SCALE` 16, up to 4095 units), snapshots at 60 Hz, a `match` message on every phase change carrying the round's scene, rink size, obstacle count and seed.
@@ -74,7 +75,7 @@ The demo reads `?name=`, `?mode=local|server`, `?url=`, `?goals=` and `?rounds=`
 | Match | 3 rounds to 5 goals, all played (one scene each; most rounds won takes the match, the last round's winner on a tie), a "3, 2, 1, PLAY!" countdown (3 s) before each round. |
 | Points | Hit +1 (only when the previous toucher was someone else, or after a serve), goal +20, own goal −10 (last toucher), round won +10 per player, match won +30 per player. |
 | Uneven teams | The smaller team starts each round with 1 goal per missing player; an upset win multiplies its match bonus by bigger / smaller. |
-| Rink size | √(players / 2), from 1 to 2. Puck and paddle radii do not scale; speeds, goals and obstacles do. |
+| Rink size | √(players / 4), from 1 (up to 4 players) to 2 (16). Was √(players / 2): at 8 players everything was drawn at half size, unplayable (the user's call). Puck and paddle radii do not scale; speeds, goals and obstacles do. |
 | Obstacles | players / 2 + 2, from 3 to 7, in mirrored pairs plus a centre mover when odd. |
 | When the rink changes | While waiting, at round start, and at every serve until someone touches the puck. Never while the puck is in play. |
 | Scenes | One per round, in turn, each with its own play: ice (icebergs, sliding penguins), sea (vortices, zig-zag sharks), desert (whirlwinds, wandering genies). `classic` is an empty rink. |
